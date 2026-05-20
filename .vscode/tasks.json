@@ -1,0 +1,41 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "bun: build",
+      "type": "shell",
+      "command": "bun run build",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": [],
+      "detail": "Build the extension with bun"
+    },
+    {
+      "label": "bun: watch",
+      "type": "shell",
+      "command": "bun run watch",
+      "isBackground": true,
+      "group": "build",
+      "problemMatcher": {
+        "owner": "typescript",
+        "pattern": [
+          {
+            "regexp": "\\[error\\] (.+): (\\d+): (\\d+): (.+)",
+            "file": 1,
+            "line": 2,
+            "column": 3,
+            "message": 4
+          }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "\\[watch\\]",
+          "endsPattern": "\\[watch\\] build finished"
+        }
+      },
+      "detail": "Watch and rebuild extension on changes"
+    }
+  ]
+}
