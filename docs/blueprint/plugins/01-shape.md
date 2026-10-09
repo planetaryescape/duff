@@ -1,6 +1,6 @@
 # Shape: built-in plugin interface
 
-Status: proposed, awaiting feedback. Built-in distribution is accepted in [D005](../02-decision-log.md#d005-trusted-built-in-registry-for-the-first-plugins); the interface below is not implemented.
+Status: shape confirmed, not implemented. Built-in distribution is accepted in [D005](../02-decision-log.md#d005-trusted-built-in-registry-for-the-first-plugins). The owner confirmed one shared capability contract for GitHub and Azure DevOps; detailed [contracts](03-contracts.md) remain proposed.
 Scope and invariants: [problem frame](00-problem.md).
 
 ## Key domain concepts
@@ -76,4 +76,4 @@ Authentication acquisition remains inside the selected adapter. Provider-account
 - Interruption alone does not prevent late publication. Preserve request-generation checks at the editor boundary, as existing Git-context commands do.
 - Trusted built-ins can still leak secrets or mutate Git. The interface is not a sandbox; adapter checks, privacy tests, and review remain necessary. No provider-specific fence ships with this document.
 
-Next checkpoint: confirm this shape, then compare meaningful alternatives if needed and write the TypeScript contracts. Authentication transport can remain open while defining the capability boundary.
+Next checkpoint: review the [TypeScript contracts](03-contracts.md). Authentication transport can remain open while defining the capability boundary.

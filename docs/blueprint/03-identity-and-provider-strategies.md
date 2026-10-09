@@ -59,7 +59,9 @@ The plugin owns remote recognition, provider authentication, and read-only PR di
 The host owns repository selection, plugin selection, refresh/cancellation, and native UI rendering.
 The local BranchReview service stays provider-neutral.
 
-Proposed public jobs, not compiled interfaces:
+The owner confirmed one shared capability contract for GitHub and Azure DevOps. The staged [plugin contracts](plugins/03-contracts.md) define the proposed TypeScript boundary, including repository-bound operations, normalized results, and typed failures. Neither plugin gets its own incompatible public API.
+
+Conceptual public jobs, refined by that contract rather than compiled interfaces here:
 
 - `recognizeRemote`: sanitized remote context → unsupported or a provider-specific repository handle.
 - `inspectAuthentication`: repository handle → authenticated account, unauthenticated, or unknown.

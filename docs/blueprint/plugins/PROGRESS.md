@@ -7,9 +7,9 @@ It covers the general plugin interface, with provider discovery as its first con
 Drafted layers are not accepted decisions or implemented behavior.
 
 - [x] Layer 0: Problem frame (confirmed; built-ins accepted in D005)
-- [ ] Layer 1: Shape (drafted, awaiting feedback)
-- [ ] Layer 2: Alternatives
-- [ ] Layer 3: Contracts
+- [x] Layer 1: Shape (confirmed; one shared provider capability)
+- [x] Layer 2: Alternatives (skipped; no competing design requested)
+- [ ] Layer 3: Contracts (drafted, awaiting feedback)
 - [ ] Layer 4: Flows
 - [ ] Layer 5: File map
 - [ ] Layer 6: Test plan
@@ -22,3 +22,5 @@ Drafted layers are not accepted decisions or implemented behavior.
 - 2026-10-09: Drafted problem frame for the general plugin boundary; paused before shape and typed contracts.
 - 2026-10-09: Owner confirmed built-in plugins; recorded D005 as accepted and confirmed the problem frame.
 - 2026-10-09: Drafted [shape](01-shape.md); paused before alternatives and typed contracts.
+- 2026-10-09: Owner confirmed the shape and equal GitHub/Azure capability through one contract. Skipped alternatives.
+- 2026-10-09: Drafted [contracts](03-contracts.md), separating local credential strategy from provider API authentication; paused for feedback.
