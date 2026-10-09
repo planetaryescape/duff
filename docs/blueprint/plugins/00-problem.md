@@ -1,6 +1,6 @@
 # General plugin interface
 
-Status: proposed problem frame, awaiting feedback. No plugin runtime exists yet.
+Status: problem frame confirmed; built-in plugins accepted in D005. Detailed shape and contracts remain proposed. No plugin runtime exists yet.
 
 ## Summary
 
@@ -13,7 +13,7 @@ Define how a plugin contributes a capability to Duff without changing the local 
 - [extension.ts](../../../packages/extension/src/extension.ts) composes Layers and owns one managed runtime. Feature modules own native commands and views.
 - There is no plugin registry, plugin loader, provider API adapter, or PR-discovery UI.
 - [D004](../02-decision-log.md#d004-provider-behavior-belongs-in-plugins) accepts plugins, starting with GitHub and Azure DevOps.
-- [D005](../02-decision-log.md#d005-trusted-built-in-registry-for-the-first-plugins) proposes trusted built-ins. Distribution and authentication remain undecided.
+- [D005](../02-decision-log.md#d005-trusted-built-in-registry-for-the-first-plugins) accepts trusted built-ins bundled with Duff. Authentication remains undecided.
 
 ## Problem
 
@@ -70,10 +70,9 @@ These exclusions limit the first design. They do not decide how independently di
 
 ## Open questions
 
-1. Should the first contract target trusted built-in modules only, or independently installed VS Code extensions too? Recommendation: built-ins first, keep D005 proposed until confirmed.
-2. Which authentication mechanism should each provider use? This may affect construction but must not leak into discovery callers.
-3. Is there a concrete second contribution beyond provider discovery? Without one, avoid inventing a general hook catalog. Define a small envelope and one explicit contribution first.
-4. How should overlapping recognition be resolved? Recommendation: surface ambiguity rather than select by registration order.
+1. Which authentication mechanism should each provider use? This may affect construction but must not leak into discovery callers.
+2. Is there a concrete second contribution beyond provider discovery? Without one, avoid inventing a general hook catalog. Define a small envelope and one explicit contribution first.
+3. How should overlapping recognition be resolved? Recommendation: surface ambiguity rather than select by registration order.
 
 ## Design references
 
@@ -82,4 +81,4 @@ These exclusions limit the first design. They do not decide how independently di
 - [Existing architecture references](../01-architecture.md#reference-codebases-and-deferred-effect-tools): OpenCode v2 and the documented differences from rat-stack.
 - Owner's tech-spec-pro and maintaining-blueprints skills: staged design, owner feedback, and separate proposal/delivery evidence.
 
-Next layer: shape. Describe the plugin definition, contribution boundary, registration, construction, selection, and disposal before writing full TypeScript contracts.
+Next layer: [shape](01-shape.md). Describe the plugin definition, contribution boundary, registration, construction, selection, and disposal before writing full TypeScript contracts.

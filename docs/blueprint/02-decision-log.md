@@ -42,12 +42,12 @@ Revisit when: a provider cannot satisfy the shared contract without losing impor
 
 ## D005: Trusted built-in registry for the first plugins
 
-Status: proposed, not implemented. Date: 2026-10-09.
+Status: accepted, not implemented. Date: 2026-10-09.
 
-Proposal: define a plugin contract and compose trusted built-in GitHub/Azure implementations first.
+Chosen: the owner confirmed trusted built-in plugins. Define a plugin contract and compose GitHub/Azure implementations inside Duff.
 Reason: it establishes plugin boundaries without immediately designing packaging, third-party trust, or extension-to-extension APIs.
 Alternatives: separately installed VS Code extensions provide stronger distribution independence but need API-version and lifetime contracts.
-Consequences: plugins would be replaceable modules, not arbitrary scripts loaded from repository configuration.
+Consequences: plugins are replaceable modules bundled with Duff, not arbitrary scripts loaded from repository configuration. No dynamic loader, separate plugin runtime, or distribution-version negotiation is needed for the first interface. In-process plugins are trusted code, not sandboxed code.
 Revisit when: the owner requires independently installed plugins or third-party distribution.
 
 ## D006: Feature-owned core and editor packages
