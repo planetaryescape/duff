@@ -8,7 +8,10 @@ Status: review and local identity inspection implemented; provider architecture 
 | --- | --- | --- |
 | Review capability | [BranchReview.ts](../../packages/core/src/review/BranchReview.ts) | Schemas, typed errors, service and Git Layer; read-only CLI operations, immutable revisions, NUL-delimited path parsing |
 | Native view | [ReviewView.ts](../../packages/extension/src/review/ReviewView.ts) | File rows and historical document URIs |
-| VS Code integration | [extension.ts](../../packages/extension/src/extension.ts) | Commands, quick picks, content provider, one managed runtime and disposal |
+| Review integration | [ReviewCommands.ts](../../packages/extension/src/review/ReviewCommands.ts) | Branch picker, comparison state, list/tree persistence, immutable content provider, diff and current-file commands |
+| Git-context integration | [GitContextCommands.ts](../../packages/extension/src/git-context/GitContextCommands.ts) | Inspection, failure state, request generation, stale-result invalidation |
+| Shared editor boundaries | [Operations.ts](../../packages/extension/src/Operations.ts), [Repository.ts](../../packages/extension/src/Repository.ts) | Operation tracing and error notifications; workspace-folder selection |
+| Composition root | [extension.ts](../../packages/extension/src/extension.ts) | Layers, feature registration and coordination, one managed runtime and disposal |
 | Verification | [BranchReview.test.ts](../../packages/core/src/review/BranchReview.test.ts) | Real temporary repositories, divergence, dirty files, renames, detached HEAD, failures |
 | Git context | [GitContext.ts](../../packages/core/src/git-context/GitContext.ts), [test](../../packages/core/src/git-context/GitContext.test.ts), [view](../../packages/extension/src/git-context/GitContextView.ts) | Safe local identity, config provenance, sanitized remotes, helper declarations |
 
@@ -26,6 +29,7 @@ Git owns branches, commits, and contents. Duff keeps a calculated review snapsho
 Only the extension boundary publishes a snapshot into the view.
 Comparison errors do not create successful empty reviews; the previous successful review remains visible.
 Snapshots pin both sides of the diff to commit IDs. Workspace files are separate, mutable documents.
+Review registration exposes only the current repository root to Git-context registration. Publishing a comparison calls Git-context invalidation through the composition root, clearing both previous rows and pending inspection generations. Feature modules do not create runtimes or import each other's internals.
 
 ```text
 Branch quick pick → BranchReview.compare → Git adapter → immutable Review
@@ -97,7 +101,7 @@ Use Cache if repeated immutable blob reads justify it. Use scoped fibers, cancel
 ## Fence and limits
 
 [TypeScript](../../tsconfig.json) enforces strict checking and indexed-access checks.
-[ESLint](../../eslint.config.mjs) checks Promise ownership and unsafe types, prohibits assertions, and restricts core imports and runtime construction.
+[ESLint](../../eslint.config.mjs) checks Promise ownership and unsafe types, prohibits assertions, restricts core imports and runtime construction, and blocks extension imports of relative core source paths.
 The [pre-commit gate](../../.githooks/pre-commit) runs check, test, and build. Enable it explicitly in each clone.
 
 This is a partial rat-stack fence, not its full toolchain.

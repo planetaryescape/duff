@@ -109,3 +109,14 @@ The VSIX contains the manifest, bundled CommonJS, and icon, with no workspace sy
 The installed artifact compared gbfm's current branch against origin/prod, showed the same two changed paths as Git, opened the render.ts committed diff, and opened its current file through the toolbar. gbfm's branch and existing untracked files were unchanged.
 Inspected screenshot: `.amp/in/artifacts/workspace-installed-diff.png`. This packaging check used normal extension mode, so no telemetry exporter ran. Full F5 automation and authenticated Hetzner delivery were not rechecked in this structural slice.
 Delivery: prepared as a local workspace commit. Feature command extraction is the next behavior-preserving slice. No push, publication, or deployment.
+
+## 2026-10-09: Feature-owned extension registration
+
+Result: review and Git-context command registration live beside their respective views. The 24-line extension entrypoint assembles Layers, coordinates the two features, and owns runtime disposal. Shared operation failure/telemetry handling and workspace-folder selection have separate editor-boundary modules, used by both features.
+The workspace slice above was committed locally as `refactor: group features in a Bun workspace`. This second slice preserves command IDs, messages, saved layout, pinned diffs, cancellation handling, subscriptions, and Git-context invalidation on successful comparison or refresh.
+The fence additionally rejects relative imports of core source from extension code; a negative stdin probe confirmed the restriction. Existing runtime-construction restrictions remain in place.
+
+Verification: both typechecks, ESLint, all 8 existing tests, build, and VSIX packaging passed. A clean VSCodium development host on gbfm exercised branch selection against origin/prod, the two expected files, immutable diff rendering, current-file opening, list-to-tree switching, context inspection, and comparison refresh. DOM checks confirmed successful identity inspection and that refresh cleared identity rows while retaining the two-file tree.
+Inspected screenshot: `.amp/in/artifacts/feature-owned-diff.png`. gbfm's branch and existing untracked files stayed unchanged. Obsolete test hosts were closed before replacement; one development host remains for inspection.
+Limits: the pending-inspection race and full F5 launch were not independently automated in this slice. Their existing request-generation and launch wiring were preserved. No authenticated telemetry export was attempted during this refactor.
+Delivery: prepared as a separate local refactor commit. No push, publication, deployment, provider integration, or infrastructure changes.

@@ -27,6 +27,14 @@ export default tseslint.config(
     },
   },
   {
+    files: ["packages/extension/src/**/*.ts"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        patterns: [{ group: ["**/core/src/**"], message: "Import core through its declared @duff/core exports." }],
+      }],
+    },
+  },
+  {
     files: ["packages/**/*.ts"],
     ignores: ["packages/extension/src/extension.ts"],
     rules: {
