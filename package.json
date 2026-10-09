@@ -114,8 +114,9 @@
     }
   },
   "scripts": {
-    "build": "bun build src/extension.ts --target=node --outdir dist --external vscode --format=cjs --sourcemap=external",
-    "watch": "bun build src/extension.ts --target=node --outdir dist --external vscode --format=cjs --sourcemap=external --watch",
+    "build": "bun build src/extension.ts --target=node --outdir dist --external vscode --format=cjs --sourcemap=external --define 'import.meta={}' --define 'import.meta.url=__filename'",
+    "watch": "bun build src/extension.ts --target=node --outdir dist --external vscode --format=cjs --sourcemap=external --define 'import.meta={}' --define 'import.meta.url=__filename' --watch",
+    "dev": "fish scripts/dev.fish",
     "check": "tsc --noEmit && eslint src",
     "test": "vitest run",
     "package": "bun x @vscode/vsce package"

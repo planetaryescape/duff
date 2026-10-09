@@ -12,9 +12,9 @@ const git = Effect.fn("GitReview.git")(function* (root: string, args: ReadonlyAr
       maxBuffer: 16 * 1024 * 1024,
       signal,
     }),
-    catch: (cause) => new ReviewError({
+    catch: () => new ReviewError({
       operation: args[0] ?? "git",
-      message: `${cause instanceof Error ? cause.message : String(cause)}\nCheck that Git is installed, the repository has commits, and the selected branch is available locally.`,
+      message: "Git operation failed. Check that Git is installed, the repository has commits, and the selected branch is available locally. Raw diagnostics are hidden because they may contain private data.",
     }),
   });
   return result.stdout;
@@ -32,9 +32,9 @@ const decodeFiles = Effect.fn("GitReview.decodeFiles")(function* (output: string
       status: rawStatus?.charAt(0),
       path,
       ...(renamed ? { previousPath: firstPath } : {}),
-    }).pipe(Effect.mapError((cause) => new ReviewError({
+    }).pipe(Effect.mapError(() => new ReviewError({
       operation: "decode changed files",
-      message: `Git returned an unsupported file change: ${cause.message}`,
+      message: "Git returned an unsupported file change.",
     })));
     files.push(file);
   }
@@ -75,7 +75,7 @@ export const gitReviewLayer = Layer.effect(BranchReview, Effect.gen(function* ()
 
   const read = Effect.fn("BranchReview.read")(function* (input: Snapshot) {
     const snapshot = yield* Schema.decodeUnknownEffect(Snapshot)(input).pipe(
-      Effect.mapError((cause) => new ReviewError({ operation: "read snapshot", message: cause.message })),
+      Effect.mapError(() => new ReviewError({ operation: "read snapshot", message: "Invalid snapshot." })),
     );
     if (snapshot.path === undefined) return "";
     return yield* git(snapshot.root, ["show", `${snapshot.commit}:${snapshot.path}`]);

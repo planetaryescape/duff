@@ -50,6 +50,38 @@ Repository selection
 The extension composition root will select plugins and supply their Effect Layers.
 Core contracts must not import provider SDKs or choose credentials implicitly.
 
+## Operation observability
+
+Meaningful service and Git-adapter operations use named `Effect.fn` spans by default.
+The integration adds workflow spans for context inspection, branch listing, comparison, refresh, and snapshot reads, with correlated success/failure/interruption logs.
+[observability.ts](../../src/observability.ts) owns authenticated export and privacy projection; the managed runtime owns exporter shutdown.
+
+Extension Development Host mode exports to `https://otel.planetaryescape.co.za/v1/traces` and `/v1/logs`, then Hetzner Tempo and Loki.
+Follow the owner's planetaryescape-observability skill. `bun run dev` scopes the SOPS-decrypted ingestion token to the development process, without a plaintext file or token argument.
+The exporter requires `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer TOKEN`. Without it, export is disabled; malformed headers produce a safe warning and disable export.
+View both signals in [Grafana](https://grafana.planetaryescape.co.za): Tempo query `{ resource.service.name = "duff" }`, Loki query `{service_name="duff"}`.
+Production and extension-test modes install no exporter. Backend outages must not gate local Git operations. No infrastructure changes are required.
+The current collector attaches tunnel pod metadata to external logs; those Kubernetes labels do not describe Duff's host. Use the service name and development environment to find Duff.
+
+Exported spans keep stable names, IDs, timing, parent links, and status codes. Attributes, events, links, and exception messages/stacks are stripped at serialization.
+Exported logs keep only fixed operation-summary messages, operation/outcome annotations, and trace correlation. Do not log raw results or causes.
+Git identity, email, origin paths, remotes, branch/file names, argv, and file contents stay local to their existing UI/read boundaries, not telemetry.
+OtlpTracer/OtlpLogger are marked unstable inside pinned Effect 4.0.2. Their lightweight layers fit this new runtime without the separate OpenTelemetry SDK bridges.
+The exporter uses OTLP HTTP JSON to project private data out before sending; the collector accepts it. This differs from the skill's preferred protobuf encoding.
+Build and watch define `import.meta` for CommonJS and preserve its URL use as `__filename`; Node still supplies environment configuration through `process.env`.
+
+## Reference codebases and deferred Effect tools
+
+Use [rat-stack](https://ratstack.sh/llms.txt) for typed service boundaries, explicit Layers, privacy, meaningful spans, and the fence. There is no Alchemy here.
+Also use [OpenCode v2](https://github.com/anomalyco/opencode/tree/v2) as an architectural reference, studied at [this revision](https://github.com/anomalyco/opencode/commit/216c311744b3fe8c8dce39282528ccc9027510f7).
+Relevant source areas: `packages/core/src/git.ts`, `packages/util/src/process.ts`, `packages/core/src/filesystem/watcher.ts`, and `packages/core/src/plugin/vcs/git.ts`.
+Borrow worktree/git-directory/common-directory distinctions, scoped subprocess ownership, and shared watcher lifetimes. Do not copy destructive Git operations, config writes, or the entire plugin graph.
+That reference used Effect 4.0.0-rc.112; check every borrowed API against Duff's stable pin.
+
+RcRef fits one shared scoped resource; RcMap fits per-worktree watcher/session resources with reference-counted lifetime. Neither is needed for current one-shot Git reads or immutable blob value caching.
+PersistedCache and KeyValueStore are unstable in the installed package. Defer persistent Git-context caching because identity/configuration must remain fresh.
+Use Cache if repeated immutable blob reads justify it. Use scoped fibers, cancellation, Stream, and Schedule when watcher or provider-discovery work actually requires them.
+
 ## Fence and limits
 
 [TypeScript](../../tsconfig.json) enforces strict checking and indexed-access checks.

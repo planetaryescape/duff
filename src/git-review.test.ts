@@ -86,8 +86,9 @@ it.effect("fails a missing base branch rather than returning an empty review", (
     const root = yield* repository;
     yield* command(root, "commit", "--allow-empty", "-m", "Base");
     const service = yield* BranchReview;
-    const failure = yield* service.compare(root, "refs/heads/missing").pipe(Effect.flip);
+    const failure = yield* service.compare(root, "refs/heads/canary-secret").pipe(Effect.flip);
     expect(failure._tag).toBe("ReviewError");
     expect(failure.operation).toBe("rev-parse");
+    expect(failure.message).not.toContain("canary-secret");
   }).pipe(Effect.provide(gitReviewLayer)),
 );

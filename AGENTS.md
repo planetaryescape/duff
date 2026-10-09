@@ -17,6 +17,8 @@ Use the owner's `maintaining-blueprints` skill in `~/dotfiles` when maintaining 
 - `src/extension.ts` owns VS Code callbacks, command registration, and one managed runtime. Dispose it on deactivation.
 - `src/review-view.ts` renders native VS Code file lists. Clicking opens immutable diffs; opening a workspace file is a separate action.
 - Keep expected failures typed. Do not turn failed comparisons into empty successful reviews.
+- Name meaningful service and adapter operations with `Effect.fn("Domain.operation")`. Use `fnUntraced` only deliberately for small helpers. Observe workflow outcomes at the integration boundary.
+- Follow the planetaryescape-observability skill for authenticated Hetzner export. Never export identities, config origins, URLs, file contents, argv, or raw exception text. Production extension mode has no exporter.
 - Keep UI native. Do not add cloud infrastructure, provider integrations, notes, or commit navigation without a request.
 - Do not use assertions, explicit any, non-null assertions, or unowned Promises. Do not bypass checks or hooks.
 
@@ -30,3 +32,6 @@ Exercise native UI in an Extension Development Host and inspect screenshots when
 
 Press F5 with the Run Extension configuration. Its background task watches and rebuilds with Bun.
 Run Developer: Reload Window in the development window after edits. Rebuild is automatic; extension-host hot reload is not.
+For authenticated Hetzner telemetry on the owner's machine, run `bun run watch` in one terminal and `bun run dev /absolute/path/to/repository` in another.
+The launcher requires Fish, SOPS, the owner's age key and encrypted ingestion secret, and the VS Code CLI. It uses a separate development profile.
+Close every window using that profile before relaunching so the new process inherits authentication. F5 without the scoped header still works but does not export.

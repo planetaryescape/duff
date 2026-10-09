@@ -12,6 +12,9 @@ export default tseslint.config(
       "no-restricted-syntax": ["error", {
         selector: "TSAsExpression, TSTypeAssertion",
         message: "Decode boundary input with Schema instead of asserting its type.",
+      }, {
+        selector: "CallExpression[callee.object.name='Effect'][callee.property.name='fn']:not([arguments.0.type='Literal'])",
+        message: "Name meaningful operations with Effect.fn('Domain.operation'); use fnUntraced deliberately for small helpers.",
       }],
     },
   },

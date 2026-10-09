@@ -1,16 +1,20 @@
 import * as vscode from "vscode";
 import { Effect, Layer, ManagedRuntime, Schema } from "effect";
+import { FetchHttpClient } from "effect/http";
 import { GitContext, GitContextError } from "./git-context";
 import { gitContextLayer } from "./git-context-adapter";
 import { GitContextView } from "./git-context-view";
 import { gitReviewLayer } from "./git-review";
+import { observabilityLayer, observeOperation, Operation } from "./observability";
 import { BranchReview, Review, ReviewError, Snapshot } from "./review";
 import { ReviewFile, ReviewView, snapshotUri } from "./review-view";
 
 let disposeRuntime: (() => Promise<void>) | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
-  const runtime = ManagedRuntime.make(Layer.merge(gitReviewLayer, gitContextLayer));
+  const observability = context.extensionMode === vscode.ExtensionMode.Development
+    ? observabilityLayer.pipe(Layer.provide(FetchHttpClient.layer)) : Layer.empty;
+  const runtime = ManagedRuntime.make(Layer.merge(gitReviewLayer, gitContextLayer).pipe(Layer.provideMerge(observability)));
   disposeRuntime = () => runtime.dispose();
   const savedLayout = context.workspaceState.get<unknown>("reviewLayout");
   const provider = new ReviewView(savedLayout === "tree" ? "tree" : "list");
@@ -20,9 +24,9 @@ export function activate(context: vscode.ExtensionContext) {
   let review: Review | undefined;
   let contextRequest = 0;
 
-  const run = async <A>(work: Effect.Effect<A, ReviewError | GitContextError, BranchReview | GitContext>, onFailure?: () => void) => {
+  const run = async <A>(operation: Operation, work: Effect.Effect<A, ReviewError | GitContextError, BranchReview | GitContext>, onFailure?: () => void) => {
     try {
-      return await runtime.runPromise(work.pipe(
+      return await runtime.runPromise(observeOperation(operation, work).pipe(
         Effect.catchTag(["ReviewError", "GitContextError"], (error) => Effect.promise(async () => {
           onFailure?.();
           await vscode.window.showErrorMessage(`Duff: ${error.message}`);
@@ -69,7 +73,7 @@ export function activate(context: vscode.ExtensionContext) {
     const request = ++contextRequest;
     contextProvider.clear();
     contextView.message = "Reading local Git configuration…";
-    const snapshot = await run(GitContext.use((service) => service.inspect(directory)), () => {
+    const snapshot = await run("Duff.inspectContext", GitContext.use((service) => service.inspect(directory)), () => {
       if (request === contextRequest) {
         contextView.message = "Inspection failed. No previous configuration is shown. Try Inspect / Refresh Git Context again.";
       }
@@ -87,7 +91,7 @@ export function activate(context: vscode.ExtensionContext) {
   const compare = async () => {
     const directory = await chooseDirectory();
     if (!directory) return;
-    const repository = await run(BranchReview.use((service) => service.branches(directory)));
+    const repository = await run("Duff.listBranches", BranchReview.use((service) => service.branches(directory)));
     if (!repository) return;
     if (repository.branches.length === 0) {
       await vscode.window.showInformationMessage("Duff: No other local or remote-tracking branches are available. Fetch or create a branch, then try again.");
@@ -102,7 +106,7 @@ export function activate(context: vscode.ExtensionContext) {
       { title: `Compare ${repository.current} Against Branch`, placeHolder: "Choose the base branch (changes since the common ancestor)" },
     );
     if (!selected) return;
-    const next = await run(BranchReview.use((service) => service.compare(repository.root, selected.ref)));
+    const next = await run("Duff.compare", BranchReview.use((service) => service.compare(repository.root, selected.ref)));
     if (!next) return;
     showReview(next);
     await vscode.commands.executeCommand("duff.files.focus");
@@ -117,7 +121,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("duff.refresh", async () => {
       if (!review) return compare();
       const current = review;
-      const next = await run(BranchReview.use((service) => service.compare(current.root, current.baseBranch)));
+      const next = await run("Duff.refresh", BranchReview.use((service) => service.compare(current.root, current.baseBranch)));
       if (next) showReview(next);
     }),
     vscode.commands.registerCommand("duff.openDiff", async (item: unknown) => {
@@ -150,10 +154,10 @@ export function activate(context: vscode.ExtensionContext) {
             catch: () => new ReviewError({ operation: "read snapshot", message: "Invalid snapshot URI." }),
           }).pipe(
             Effect.flatMap(Schema.decodeUnknownEffect(Snapshot)),
-            Effect.mapError((cause) => new ReviewError({ operation: "read snapshot", message: cause.message })),
+            Effect.mapError(() => new ReviewError({ operation: "read snapshot", message: "Invalid snapshot URI." })),
             Effect.flatMap((snapshot) => BranchReview.use((service) => service.read(snapshot))),
           );
-          return await runtime.runPromise(input, { signal: abort.signal });
+          return await runtime.runPromise(observeOperation("Duff.readSnapshot", input), { signal: abort.signal });
         } finally {
           listener.dispose();
         }

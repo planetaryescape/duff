@@ -69,3 +69,18 @@ The failure panel updates before awaiting notification dismissal and clears prev
 Verification: check, 7 real-Git tests, and build passed. Native inspection succeeded with the host's inherited osxkeychain helper. Injecting invalid config into the disposable UI fixture produced an explicit failure state; the fixture was restored afterward.
 Inspected screenshots: `.amp/in/artifacts/git-context.png` and `.amp/in/artifacts/git-context-failure.png`.
 Delivery: local feature commit; no push, publication, or provider discovery.
+
+## 2026-10-09: Authenticated Hetzner operation telemetry
+
+Result: named operation spans and correlated outcome logs export through the existing authenticated Planetaryescape collector to Tempo and Loki in development mode.
+The launcher scopes the decrypted SOPS token to VS Code's separate development profile. Missing or invalid authentication disables export. Normal extension mode does not export.
+Serialization removes private attributes and exception details; Git errors no longer expose raw command diagnostics. Exporter lifetimes belong to the managed runtime.
+
+Verification: check, all 8 tests, build, and Fish syntax checks passed. The telemetry test verifies nested parent spans, failure status, outcome correlation, authentication headers, and removal of private payloads.
+An isolated, authenticated native host exercised Git-context inspection, branch selection, comparison, and immutable diff reads. Read-only queries against Hetzner Tempo and Loki confirmed real Duff data, not just a connectivity smoke trace.
+Example comparison trace: `53c79e081f07317dc7494d1066c9497f`. Branch-listing trace `e5e7e55700ecb15e6ed4f9b51d2926f2` has the same trace ID in its Loki outcome log.
+
+Two integration issues were fixed during validation: Bun's CommonJS output needed explicit import.meta definitions for Node activation, and the composition root needed provideMerge to retain the tracer for runtime operations.
+Limits: the skill prefers protobuf; this exporter uses accepted OTLP HTTP JSON for privacy projection. The collector adds tunnel pod metadata to external logs. No shared infrastructure was changed.
+The exact launcher has a syntax check; native authentication was exercised with an equivalent scoped launch using an isolated profile. Automatic extension-host hot reload remains unimplemented: Bun rebuilds, then Developer: Reload Window activates the changes.
+Delivery: one local observability slice, with no push, publication, or deployment.
