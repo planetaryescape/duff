@@ -97,3 +97,15 @@ VSCodium also exercised the deleted-file information state. A real-repository ch
 Inspected real-repository screenshots: `.amp/in/artifacts/gbfm-current-diff.png` and `.amp/in/artifacts/gbfm-current-file.png`.
 Renamed-file selection follows the modified-side path by construction but was not independently exercised in this native check.
 Delivery: local feature slice; no push, publication, or deployment.
+
+## 2026-10-09: Feature-owned Bun workspace
+
+Related: D006. Result: two private workspace packages, headless core and VS Code extension, with explicit exports and one lockfile. Review and Git-context modules now keep schemas, errors, service contracts, Git Layers, and tests together. The proposed third Git package was discarded before committing.
+The root coordinates check, test, build, watch, and packaging. F5 and the Fish launcher now use `packages/extension`. The extension supplies GitContext's environment at activation instead of core capturing it on import.
+This intentionally follows OpenCode v2's runtime-capable core rather than rat-stack's strict adapter-package separation. The fence rejects core imports of VS Code and extension code; it does not prove every alias or re-export boundary.
+
+Verification: frozen Bun install, both package typechecks, ESLint, all 8 existing tests, build, VSIX packaging, and Fish syntax passed. A negative ESLint probe rejected VS Code and relative extension imports from core.
+The VSIX contains the manifest, bundled CommonJS, and icon, with no workspace symlinks, source, node_modules, or source maps. It installed successfully into the isolated VSCodium profile.
+The installed artifact compared gbfm's current branch against origin/prod, showed the same two changed paths as Git, opened the render.ts committed diff, and opened its current file through the toolbar. gbfm's branch and existing untracked files were unchanged.
+Inspected screenshot: `.amp/in/artifacts/workspace-installed-diff.png`. This packaging check used normal extension mode, so no telemetry exporter ran. Full F5 automation and authenticated Hetzner delivery were not rechecked in this structural slice.
+Delivery: prepared as a local workspace commit. Feature command extraction is the next behavior-preserving slice. No push, publication, or deployment.

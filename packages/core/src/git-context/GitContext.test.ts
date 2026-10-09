@@ -6,8 +6,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { expect, it } from "@effect/vitest";
 import { Effect } from "effect";
-import { GitContext } from "./git-context";
-import { makeGitContextLayer } from "./git-context-adapter";
+import { GitContext, makeGitContextLayer } from "./GitContext";
 
 const execute = promisify(execFile);
 const fixture = Effect.acquireRelease(

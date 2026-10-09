@@ -5,8 +5,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { expect, it } from "@effect/vitest";
 import { Effect } from "effect";
-import { gitReviewLayer } from "./git-review";
-import { BranchReview } from "./review";
+import { BranchReview, gitReviewLayer } from "./BranchReview";
 
 const execute = promisify(execFile);
 

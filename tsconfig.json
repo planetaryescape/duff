@@ -4,17 +4,15 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ES2021"],
-    "types": ["node"],
-    "outDir": "dist",
-    "rootDir": "src",
+    "types": [],
+    "noEmit": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "declaration": true
+    "resolveJsonModule": true
   },
-  "include": ["src"],
+  "include": [],
   "exclude": ["node_modules", "dist"]
 }

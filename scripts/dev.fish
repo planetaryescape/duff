@@ -13,5 +13,5 @@ begin
         exit 1
     end
     set -lx OTEL_EXPORTER_OTLP_HEADERS "Authorization=Bearer $token"
-    codium --new-window --user-data-dir "$HOME/.cache/duff-codium-dev" --extensions-dir "$HOME/.cache/duff-codium-extensions" --extensionDevelopmentPath=(pwd) --disable-extensions "$workspace"
+    codium --new-window --user-data-dir "$HOME/.cache/duff-codium-dev" --extensions-dir "$HOME/.cache/duff-codium-extensions" --extensionDevelopmentPath=(pwd)/packages/extension --disable-extensions "$workspace"
 end

@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { ConfigValue, GitContextSnapshot } from "./git-context";
+import { ConfigValue, GitContextSnapshot } from "@duff/core/git-context";
 
 function row(label: string, value: string, detail?: string): vscode.TreeItem {
   const item = new vscode.TreeItem(label);

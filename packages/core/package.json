@@ -1,0 +1,11 @@
+{
+  "name": "@duff/core",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./review": "./src/review/BranchReview.ts",
+    "./git-context": "./src/git-context/GitContext.ts"
+  },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": { "effect": "4.0.2" }
+}

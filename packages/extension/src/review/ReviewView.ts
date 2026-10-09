@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { FileChange, Review, Snapshot } from "./review";
+import { FileChange, Review, Snapshot } from "@duff/core/review";
 
 export function snapshotUri(snapshot: Snapshot): vscode.Uri {
   return vscode.Uri.from({

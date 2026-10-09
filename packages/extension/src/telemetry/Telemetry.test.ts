@@ -1,7 +1,7 @@
 import { expect, it } from "@effect/vitest";
 import { ConfigProvider, Effect, Layer, Ref, Schema } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
-import { observabilityLayer, observeOperation } from "./observability";
+import { observabilityLayer, observeOperation } from "./Telemetry";
 
 const TracePayload = Schema.Struct({
   resourceSpans: Schema.Array(Schema.Struct({

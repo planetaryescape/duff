@@ -1,0 +1,134 @@
+{
+  "name": "duff",
+  "private": true,
+  "displayName": "Duff",
+  "description": "Review local branch changes with native diffs and workspace files",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onView:duff.files"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "duff.compare",
+        "title": "Compare Current Branch Against...",
+        "icon": "$(git-compare)",
+        "category": "Duff"
+      },
+      {
+        "command": "duff.refresh",
+        "title": "Refresh Comparison",
+        "icon": "$(refresh)",
+        "category": "Duff"
+      },
+      {
+        "command": "duff.toggleLayout",
+        "title": "Toggle File List / Tree",
+        "icon": "$(list-tree)",
+        "category": "Duff"
+      },
+      {
+        "command": "duff.inspectContext",
+        "title": "Inspect / Refresh Git Context",
+        "icon": "$(refresh)",
+        "category": "Duff"
+      },
+      {
+        "command": "duff.openDiff",
+        "title": "Open Diff",
+        "category": "Duff"
+      },
+      {
+        "command": "duff.openFile",
+        "title": "Open Workspace File",
+        "icon": "$(go-to-file)",
+        "category": "Duff"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [{ "id": "duff", "title": "Duff Review", "icon": "resources/review.svg" }]
+    },
+    "views": {
+      "duff": [{
+        "id": "duff.files",
+        "name": "Changed Files"
+      }, {
+        "id": "duff.context",
+        "name": "Git Context"
+      }]
+    },
+    "viewsWelcome": [{
+      "view": "duff.files",
+      "contents": "Review committed changes on your current branch.\n[Compare Against Branch](command:duff.compare)\nClick a changed file to open its diff. Use Open Workspace File to edit and navigate."
+    }, {
+      "view": "duff.context",
+      "contents": "Inspect local identity and credential configuration without authenticating.\n[Inspect Git Context](command:duff.inspectContext)"
+    }],
+    "menus": {
+      "view/title": [
+        {
+          "command": "duff.compare",
+          "when": "view == duff.files",
+          "group": "navigation@1"
+        },
+        {
+          "command": "duff.refresh",
+          "when": "view == duff.files",
+          "group": "navigation@2"
+        },
+        {
+          "command": "duff.toggleLayout",
+          "when": "view == duff.files",
+          "group": "navigation@3"
+        },
+        {
+          "command": "duff.inspectContext",
+          "when": "view == duff.context",
+          "group": "navigation@1"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "duff.openFile",
+          "when": "view == duff.files && viewItem == reviewFile",
+          "group": "inline"
+        },
+        {
+          "command": "duff.openFile",
+          "when": "view == duff.files && viewItem == reviewFile",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "duff.openDiff",
+          "when": "false"
+        },
+        {
+          "command": "duff.openFile",
+          "when": "resourceScheme == duff-snapshot"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "duff.openFile",
+          "when": "resourceScheme == duff-snapshot",
+          "group": "navigation@1"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "bun build src/extension.ts --target=node --outdir dist --external vscode --format=cjs --sourcemap=external --define 'import.meta={}' --define 'import.meta.url=__filename'",
+    "watch": "bun build src/extension.ts --target=node --outdir dist --external vscode --format=cjs --sourcemap=external --define 'import.meta={}' --define 'import.meta.url=__filename' --watch",
+    "typecheck": "tsc --noEmit",
+    "package": "bun x @vscode/vsce@4.0.0 package --no-dependencies --allow-missing-repository --skip-license"
+  },
+  "dependencies": {
+    "@duff/core": "workspace:*",
+    "effect": "4.0.2"
+  }
+}

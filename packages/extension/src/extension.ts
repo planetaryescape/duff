@@ -1,20 +1,18 @@
 import * as vscode from "vscode";
 import { Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { FetchHttpClient } from "effect/http";
-import { GitContext, GitContextError } from "./git-context";
-import { gitContextLayer } from "./git-context-adapter";
-import { GitContextView } from "./git-context-view";
-import { gitReviewLayer } from "./git-review";
-import { observabilityLayer, observeOperation, Operation } from "./observability";
-import { BranchReview, Review, ReviewError, Snapshot } from "./review";
-import { ReviewFile, ReviewView, snapshotUri } from "./review-view";
+import { GitContext, GitContextError, makeGitContextLayer } from "@duff/core/git-context";
+import { GitContextView } from "./git-context/GitContextView";
+import { observabilityLayer, observeOperation, Operation } from "./telemetry/Telemetry";
+import { BranchReview, gitReviewLayer, Review, ReviewError, Snapshot } from "@duff/core/review";
+import { ReviewFile, ReviewView, snapshotUri } from "./review/ReviewView";
 
 let disposeRuntime: (() => Promise<void>) | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
   const observability = context.extensionMode === vscode.ExtensionMode.Development
     ? observabilityLayer.pipe(Layer.provide(FetchHttpClient.layer)) : Layer.empty;
-  const runtime = ManagedRuntime.make(Layer.merge(gitReviewLayer, gitContextLayer).pipe(Layer.provideMerge(observability)));
+  const runtime = ManagedRuntime.make(Layer.merge(gitReviewLayer, makeGitContextLayer(process.env)).pipe(Layer.provideMerge(observability)));
   disposeRuntime = () => runtime.dispose();
   const savedLayout = context.workspaceState.get<unknown>("reviewLayout");
   const provider = new ReviewView(savedLayout === "tree" ? "tree" : "list");

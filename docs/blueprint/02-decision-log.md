@@ -49,3 +49,13 @@ Reason: it establishes plugin boundaries without immediately designing packaging
 Alternatives: separately installed VS Code extensions provide stronger distribution independence but need API-version and lifetime contracts.
 Consequences: plugins would be replaceable modules, not arbitrary scripts loaded from repository configuration.
 Revisit when: the owner requires independently installed plugins or third-party distribution.
+
+## D006: Feature-owned core and editor packages
+
+Status: accepted. Date: 2026-10-09.
+
+Chosen: two Bun workspace packages, headless core and VS Code extension. Core feature modules own their schemas, errors, service contracts, Git implementation Layers, and nearby tests. Extension feature folders own native views and command registration. The entrypoint selects Layers and owns one runtime.
+Reason: the owner rejected a contracts/core, Git-adapter, extension split because it scattered each small feature across technical packages. OpenCode v2 provides a reference for cohesive feature modules and a runtime-capable core.
+Alternatives: a separate Git package would add navigation and manifests without an independently useful responsibility. Separate schema/error files for each small service would add more names without hiding complexity.
+Consequences: core permits Node-based local Git adapters but prohibits VS Code and extension imports. Package exports remain explicit. Provider plugins are not implemented by this reorganization.
+Revisit when: an adapter needs independent distribution, a second host requires a platform-neutral package, or a feature grows enough to justify private internal modules.

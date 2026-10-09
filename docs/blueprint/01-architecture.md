@@ -6,12 +6,21 @@ Status: review and local identity inspection implemented; provider architecture 
 
 | Owner | File | Contract |
 | --- | --- | --- |
-| Review values and service | [review.ts](../../src/review.ts) | Schema-backed snapshots, file changes, typed errors, BranchReview service |
-| Git adapter | [git-review.ts](../../src/git-review.ts) | Read-only CLI operations, immutable revisions, NUL-delimited path parsing |
-| Native view | [review-view.ts](../../src/review-view.ts) | File rows and historical document URIs |
-| VS Code integration | [extension.ts](../../src/extension.ts) | Commands, quick picks, content provider, one managed runtime and disposal |
-| Verification | [git-review.test.ts](../../src/git-review.test.ts) | Real temporary repositories, divergence, dirty files, renames, detached HEAD, failures |
-| Git context | [git-context.ts](../../src/git-context.ts), [adapter](../../src/git-context-adapter.ts), [view](../../src/git-context-view.ts) | Safe local identity, config provenance, sanitized remotes, helper declarations |
+| Review capability | [BranchReview.ts](../../packages/core/src/review/BranchReview.ts) | Schemas, typed errors, service and Git Layer; read-only CLI operations, immutable revisions, NUL-delimited path parsing |
+| Native view | [ReviewView.ts](../../packages/extension/src/review/ReviewView.ts) | File rows and historical document URIs |
+| VS Code integration | [extension.ts](../../packages/extension/src/extension.ts) | Commands, quick picks, content provider, one managed runtime and disposal |
+| Verification | [BranchReview.test.ts](../../packages/core/src/review/BranchReview.test.ts) | Real temporary repositories, divergence, dirty files, renames, detached HEAD, failures |
+| Git context | [GitContext.ts](../../packages/core/src/git-context/GitContext.ts), [test](../../packages/core/src/git-context/GitContext.test.ts), [view](../../packages/extension/src/git-context/GitContextView.ts) | Safe local identity, config provenance, sanitized remotes, helper declarations |
+
+## Bun workspace boundaries
+
+`packages/core` owns headless capabilities by feature. Each service keeps its schemas, errors, implementation Layer, and tests nearby. `packages/extension` owns the editor integration and telemetry.
+Dependencies point extension → core. Cross-package imports use explicit exports and `workspace:*` dependencies. Core can use Node for local Git adapters, but cannot depend on VS Code or the extension.
+The extension supplies the environment to the GitContext Layer during activation. Importing core does not inspect Git configuration or select the process environment.
+The private root owns the pinned Bun version, shared tooling, aggregate scripts, and one lockfile. Each package has its own typecheck; only the extension enables VS Code ambient types.
+Bun bundles all runtime workspace dependencies into `packages/extension/dist/extension.js`; only VS Code and Node runtime modules remain external. The extension manifest stays inside `packages/extension`.
+The VSIX excludes source, maps, workspace links, and node_modules. Packaging uses pinned vsce without dependency traversal. Missing repository and license metadata are tolerated for local smoke packaging, not a claim of publishing readiness.
+See [D006](02-decision-log.md#d006-feature-owned-core-and-editor-packages) for the accepted structure.
 
 Git owns branches, commits, and contents. Duff keeps a calculated review snapshot in memory.
 Only the extension boundary publishes a snapshot into the view.
@@ -54,7 +63,7 @@ Core contracts must not import provider SDKs or choose credentials implicitly.
 
 Meaningful service and Git-adapter operations use named `Effect.fn` spans by default.
 The integration adds workflow spans for context inspection, branch listing, comparison, refresh, and snapshot reads, with correlated success/failure/interruption logs.
-[observability.ts](../../src/observability.ts) owns authenticated export and privacy projection; the managed runtime owns exporter shutdown.
+[Telemetry.ts](../../packages/extension/src/telemetry/Telemetry.ts) owns authenticated export and privacy projection; the managed runtime owns exporter shutdown.
 
 Extension Development Host mode exports to `https://otel.planetaryescape.co.za/v1/traces` and `/v1/logs`, then Hetzner Tempo and Loki.
 Follow the owner's planetaryescape-observability skill. `bun run dev` scopes the SOPS-decrypted ingestion token to the development process, without a plaintext file or token argument.
@@ -77,6 +86,9 @@ Also use [OpenCode v2](https://github.com/anomalyco/opencode/tree/v2) as an arch
 Relevant source areas: `packages/core/src/git.ts`, `packages/util/src/process.ts`, `packages/core/src/filesystem/watcher.ts`, and `packages/core/src/plugin/vcs/git.ts`.
 Borrow worktree/git-directory/common-directory distinctions, scoped subprocess ownership, and shared watcher lifetimes. Do not copy destructive Git operations, config writes, or the entire plugin graph.
 That reference used Effect 4.0.0-rc.112; check every borrowed API against Duff's stable pin.
+The file-layout study inspected [v2 at this later revision](https://github.com/anomalyco/opencode/commit/5cfe3b42712a2384fc5136fca6df8e65903c85ee).
+Borrow its feature entrypoints with nearby internals (`worktree.ts` and `worktree/`), colocated services/errors/Layers (`git.ts`), and host-owned runtime composition. Do not copy its entire package graph or split each schema and error into separate files.
+This adopts OpenCode's headless runtime core rather than rat-stack's stricter contracts-only core. Node adapters stay inside their owning features; provider SDK and network boundaries remain subject to the provider contract.
 
 RcRef fits one shared scoped resource; RcMap fits per-worktree watcher/session resources with reference-counted lifetime. Neither is needed for current one-shot Git reads or immutable blob value caching.
 PersistedCache and KeyValueStore are unstable in the installed package. Defer persistent Git-context caching because identity/configuration must remain fresh.
