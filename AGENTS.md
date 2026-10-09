@@ -6,6 +6,9 @@ Search its rules and skills before non-trivial work. Read the installed Effect A
 Report code that violates these patterns. Local product choices take precedence over template-specific rules.
 There is no Alchemy in this repository.
 
+Read [docs/README.md](docs/README.md) for current behavior, accepted decisions, future slices, and delivery evidence.
+Use the owner's `maintaining-blueprints` skill in `~/dotfiles` when maintaining these records.
+
 ## Boundaries
 
 - Git is the source of truth. Review snapshots contain immutable commit IDs and changed paths, not copied file contents.

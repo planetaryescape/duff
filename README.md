@@ -42,3 +42,8 @@ git config --local core.hooksPath .githooks
 ```
 
 Effect and its test integration are pinned to stable 4.0.2. There is no Alchemy in this repository.
+
+## Design and next slices
+
+See the [documentation map](docs/README.md) for the blueprint, provider-plugin strategy, ordered plan, and delivery evidence.
+Effective Git configuration comes first. GitHub and Azure DevOps PR discovery are planned provider plugins, not shipped features.
