@@ -26,12 +26,16 @@ Use the owner's `maintaining-blueprints` skill in `~/dotfiles` when maintaining 
 
 Run `bun run check`, `bun run test`, and `bun run build`.
 Use Effect-aware tests with real temporary Git repositories for Git behavior.
-Exercise native UI in an Extension Development Host and inspect screenshots when available.
+Exercise native UI in a clean VSCodium Extension Development Host and inspect screenshots when available.
+Use separate user-data and extension directories, with third-party extensions disabled. Agent-browser through Electron CDP is for native UI checks, not a substitute for real-Git tests.
+Use `~/source/oss/gbfm` for native testing. Keep its branch, files, and Git configuration unchanged.
+Reuse one test host; close obsolete hosts before replacing them. Preserve the owner's working windows. Leave the current test window only when it is useful for the owner to inspect.
 
 ## Development
 
 Press F5 with the Run Extension configuration. Its background task watches and rebuilds with Bun.
 Run Developer: Reload Window in the development window after edits. Rebuild is automatic; extension-host hot reload is not.
 For authenticated Hetzner telemetry on the owner's machine, run `bun run watch` in one terminal and `bun run dev /absolute/path/to/repository` in another.
-The launcher requires Fish, SOPS, the owner's age key and encrypted ingestion secret, and the VS Code CLI. It uses a separate development profile.
+The launcher requires Fish, SOPS, the owner's age key and encrypted ingestion secret, and the VSCodium CLI (`codium`). It uses a separate development profile and extension directory.
+Install VSCodium on macOS with `brew install --cask vscodium`. F5 uses the editor where it is invoked; open this repository in VSCodium for VSCodium-hosted F5 sessions.
 Close every window using that profile before relaunching so the new process inherits authentication. F5 without the scoped header still works but does not export.
