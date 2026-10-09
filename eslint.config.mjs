@@ -1,0 +1,36 @@
+import tseslint from "typescript-eslint";
+
+export default tseslint.config(
+  { ignores: ["dist/**", "node_modules/**", ".amp/**"] },
+  tseslint.configs.recommendedTypeChecked,
+  {
+    files: ["src/**/*.ts"],
+    languageOptions: { parserOptions: { projectService: true } },
+    rules: {
+      "@typescript-eslint/no-empty-object-type": "off",
+      "@typescript-eslint/no-non-null-assertion": "error",
+      "no-restricted-syntax": ["error", {
+        selector: "TSAsExpression, TSTypeAssertion",
+        message: "Decode boundary input with Schema instead of asserting its type.",
+      }],
+    },
+  },
+  {
+    files: ["src/review.ts"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        patterns: ["vscode", "node:*", "./git-review", "./extension", "./review-view"],
+      }],
+    },
+  },
+  {
+    files: ["src/review-view.ts", "src/review.ts"],
+    rules: {
+      "no-restricted-syntax": ["error",
+        { selector: "TSAsExpression, TSTypeAssertion", message: "Decode input instead of casting." },
+        { selector: "CallExpression[callee.object.name='Effect'][callee.property.name=/^run/]", message: "Run Effect only at the VS Code integration boundary." },
+        { selector: "CallExpression[callee.object.name='ManagedRuntime']", message: "The extension owns the runtime." },
+      ],
+    },
+  },
+);
