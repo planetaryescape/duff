@@ -46,3 +46,13 @@ The owner reported `Cannot find name 'AbortController'` in the editor. The curre
 Verification: check, all 3 tests, and build passed. Installed Node declarations include AbortController.
 Remaining uncertainty: the original editor's language-server state was not inspected. The owner may need to select Workspace Version and restart TS Server.
 Delivery: separate local commit titled `fix(types): declare Node globals for the editor`. No runtime cancellation code was changed.
+
+## 2026-10-09: List and tree layouts
+
+Result: Changed Files now switches between a flat list and expandable directory tree using its toolbar or the command palette.
+The workspace remembers the layout across development-window reloads. Both layouts retain immutable diffs and workspace-file actions.
+List descriptions distinguish matching filenames in different directories. Tree mode includes only changed paths, not the whole workspace.
+
+Verification: check, 3 existing Git tests, and build passed. An isolated native VS Code host exercised list/tree switching, nested folders, duplicate filenames, diff opening, workspace-file opening, and saved tree layout after reload and a new comparison.
+Inspected screenshots: `.amp/in/artifacts/file-list.png` and `.amp/in/artifacts/file-tree.png`.
+Delivery: prepared as one local feature commit, with no push or publication. Git-context inspection remains the next slice.

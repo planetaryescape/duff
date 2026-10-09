@@ -21,6 +21,7 @@ Alternatively, run `bun run watch` and launch the development host yourself.
 - The changed-file list uses the common ancestor of the base and current committed HEAD, like `git diff base...HEAD`.
 - Click a file for an immutable, side-by-side diff. Additions, deletions, and renames are supported.
 - Use the inline **Open Workspace File** action, or its context-menu entry, for editing and full workspace navigation.
+- Click **Toggle File List / Tree** in the view toolbar to switch layouts. The workspace remembers your choice; list mode shows directories to distinguish matching filenames.
 - Click **Refresh Comparison** after commits or branch changes.
 
 Uncommitted edits are excluded from the review. A workspace file can therefore differ from its committed diff.

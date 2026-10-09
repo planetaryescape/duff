@@ -9,7 +9,8 @@ let disposeRuntime: (() => Promise<void>) | undefined;
 export function activate(context: vscode.ExtensionContext) {
   const runtime = ManagedRuntime.make(gitReviewLayer);
   disposeRuntime = () => runtime.dispose();
-  const provider = new ReviewView();
+  const savedLayout = context.workspaceState.get<unknown>("reviewLayout");
+  const provider = new ReviewView(savedLayout === "tree" ? "tree" : "list");
   const view = vscode.window.createTreeView("duff.files", { treeDataProvider: provider });
   let review: Review | undefined;
 
@@ -72,6 +73,9 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(provider, view,
     vscode.commands.registerCommand("duff.compare", compare),
+    vscode.commands.registerCommand("duff.toggleLayout", async () => {
+      await context.workspaceState.update("reviewLayout", provider.toggleLayout());
+    }),
     vscode.commands.registerCommand("duff.refresh", async () => {
       if (!review) return compare();
       const current = review;
