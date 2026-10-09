@@ -1,6 +1,11 @@
 # Identity and provider strategies
 
-Status: accepted product direction, not implemented. Detailed contracts and defaults below are proposed.
+Status: local identity inspection implemented in part; provider plugins accepted, not implemented. Detailed target contracts below remain proposed where noted.
+
+Current inspection shows effective name/email with scope and origin, separate commit author/committer, sanitized fetch remotes, ordered helper declarations, and whether a custom SSH command is configured.
+Apple Git can report built-in configuration with scope `unknown`; Duff preserves that scope instead of guessing its precedence.
+Helper declarations are not the effective per-remote chain. URL matching, configured credential username, and `useHttpPath` remain gaps in S03.
+Refresh is explicit. Changing the review clears the context snapshot. No helper is executed and no authentication is attempted.
 
 ## 1. Inspect the effective Git context
 

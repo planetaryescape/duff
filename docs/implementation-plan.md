@@ -16,10 +16,11 @@ Evidence: watcher initial/rebuild output and separate development-host UI exerci
 
 ## S03: Effective Git context
 
-Status: planned. Depends on D003.
+Status: local inspection implemented; per-remote credential selection remains incomplete. Depends on D003.
 Scope: local inspection service, safe schemas, identity/configuration view, explicit refresh. No provider network work.
 Acceptance: conditional includes and worktree/local/global precedence produce the effective name/email; helper chains and per-remote transport are shown safely.
 Unset identity, environment overrides, SSH, custom helpers, multiple remotes, and invalid configuration have distinct truthful outputs.
+Current slice shows ordered helper declarations, not an effective per-remote chain. Configured credential username and `useHttpPath` remain unimplemented.
 Checks: real temporary Git/config fixtures, secret-canary redaction checks, native UI inspection, and the standard gate.
 Docs: update the [strategy contract](blueprint/03-identity-and-provider-strategies.md) and implementation log.
 

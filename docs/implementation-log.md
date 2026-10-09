@@ -56,3 +56,16 @@ List descriptions distinguish matching filenames in different directories. Tree 
 Verification: check, 3 existing Git tests, and build passed. An isolated native VS Code host exercised list/tree switching, nested folders, duplicate filenames, diff opening, workspace-file opening, and saved tree layout after reload and a new comparison.
 Inspected screenshots: `.amp/in/artifacts/file-list.png` and `.amp/in/artifacts/file-tree.png`.
 Delivery: prepared as one local feature commit, with no push or publication. Git-context inspection remains the next slice.
+
+## 2026-10-09: Local Git-context inspection
+
+Related: S03, D003. Result: native Git Context view with explicit inspection/refresh, effective configured identity and provenance, separate author/committer, sanitized fetch remotes, safe helper declarations, and SSH-command metadata.
+No credential helper is executed, no key is read, and no network authentication is attempted.
+Per-remote helper selection, credential username, and `useHttpPath` remain incomplete; the UI states that helper selection is unresolved.
+
+The first isolated tests missed Apple Git's built-in `unknown` scope. The actual development host reproduced the failure. Duff now preserves that valid scope, with a platform-config regression check alongside isolated fixtures.
+The failure panel updates before awaiting notification dismissal and clears previous identity rows.
+
+Verification: check, 7 real-Git tests, and build passed. Native inspection succeeded with the host's inherited osxkeychain helper. Injecting invalid config into the disposable UI fixture produced an explicit failure state; the fixture was restored afterward.
+Inspected screenshots: `.amp/in/artifacts/git-context.png` and `.amp/in/artifacts/git-context-failure.png`.
+Delivery: local feature commit; no push, publication, or provider discovery.

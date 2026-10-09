@@ -1,6 +1,6 @@
 # Architecture
 
-Status: current review architecture implemented; identity and provider architecture accepted but not implemented.
+Status: review and local identity inspection implemented; provider architecture accepted but not implemented.
 
 ## Current ownership
 
@@ -11,6 +11,7 @@ Status: current review architecture implemented; identity and provider architect
 | Native view | [review-view.ts](../../src/review-view.ts) | File rows and historical document URIs |
 | VS Code integration | [extension.ts](../../src/extension.ts) | Commands, quick picks, content provider, one managed runtime and disposal |
 | Verification | [git-review.test.ts](../../src/git-review.test.ts) | Real temporary repositories, divergence, dirty files, renames, detached HEAD, failures |
+| Git context | [git-context.ts](../../src/git-context.ts), [adapter](../../src/git-context-adapter.ts), [view](../../src/git-context-view.ts) | Safe local identity, config provenance, sanitized remotes, helper declarations |
 
 Git owns branches, commits, and contents. Duff keeps a calculated review snapshot in memory.
 Only the extension boundary publishes a snapshot into the view.
@@ -45,7 +46,7 @@ Repository selection
                          user selects a review
 ```
 
-`GitContext` and the plugin registry are proposed names, not existing APIs or files.
+`GitContext` exists; the plugin registry remains proposed.
 The extension composition root will select plugins and supply their Effect Layers.
 Core contracts must not import provider SDKs or choose credentials implicitly.
 
@@ -65,4 +66,4 @@ Report gaps honestly; do not claim these checks prove runtime correctness.
 The native UI was exercised in an isolated Extension Development Host.
 Historical-document language intelligence is limited; full LSP behavior across languages was not verified.
 Binary rendering, large-repository behavior, and automatic branch-change refresh were not verified.
-Identity inspection and PR discovery have no implementation or runtime evidence yet.
+Identity inspection is partial; see the [strategy contract](03-identity-and-provider-strategies.md) for remaining gaps. PR discovery is not implemented.

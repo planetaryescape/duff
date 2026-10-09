@@ -30,6 +30,12 @@
         "category": "Duff"
       },
       {
+        "command": "duff.inspectContext",
+        "title": "Inspect / Refresh Git Context",
+        "icon": "$(refresh)",
+        "category": "Duff"
+      },
+      {
         "command": "duff.openDiff",
         "title": "Open Diff",
         "category": "Duff"
@@ -48,11 +54,17 @@
       "duff": [{
         "id": "duff.files",
         "name": "Changed Files"
+      }, {
+        "id": "duff.context",
+        "name": "Git Context"
       }]
     },
     "viewsWelcome": [{
       "view": "duff.files",
       "contents": "Review committed changes on your current branch.\n[Compare Against Branch](command:duff.compare)\nClick a changed file to open its diff. Use Open Workspace File to edit and navigate."
+    }, {
+      "view": "duff.context",
+      "contents": "Inspect local identity and credential configuration without authenticating.\n[Inspect Git Context](command:duff.inspectContext)"
     }],
     "menus": {
       "view/title": [
@@ -70,6 +82,11 @@
           "command": "duff.toggleLayout",
           "when": "view == duff.files",
           "group": "navigation@3"
+        },
+        {
+          "command": "duff.inspectContext",
+          "when": "view == duff.context",
+          "group": "navigation@1"
         }
       ],
       "view/item/context": [

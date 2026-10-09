@@ -1,5 +1,8 @@
 import * as vscode from "vscode";
-import { Effect, ManagedRuntime, Schema } from "effect";
+import { Effect, Layer, ManagedRuntime, Schema } from "effect";
+import { GitContext, GitContextError } from "./git-context";
+import { gitContextLayer } from "./git-context-adapter";
+import { GitContextView } from "./git-context-view";
 import { gitReviewLayer } from "./git-review";
 import { BranchReview, Review, ReviewError, Snapshot } from "./review";
 import { ReviewFile, ReviewView, snapshotUri } from "./review-view";
@@ -7,28 +10,36 @@ import { ReviewFile, ReviewView, snapshotUri } from "./review-view";
 let disposeRuntime: (() => Promise<void>) | undefined;
 
 export function activate(context: vscode.ExtensionContext) {
-  const runtime = ManagedRuntime.make(gitReviewLayer);
+  const runtime = ManagedRuntime.make(Layer.merge(gitReviewLayer, gitContextLayer));
   disposeRuntime = () => runtime.dispose();
   const savedLayout = context.workspaceState.get<unknown>("reviewLayout");
   const provider = new ReviewView(savedLayout === "tree" ? "tree" : "list");
   const view = vscode.window.createTreeView("duff.files", { treeDataProvider: provider });
+  const contextProvider = new GitContextView();
+  const contextView = vscode.window.createTreeView("duff.context", { treeDataProvider: contextProvider });
   let review: Review | undefined;
+  let contextRequest = 0;
 
-  const run = async <A>(work: Effect.Effect<A, ReviewError, BranchReview>) => {
+  const run = async <A>(work: Effect.Effect<A, ReviewError | GitContextError, BranchReview | GitContext>, onFailure?: () => void) => {
     try {
       return await runtime.runPromise(work.pipe(
-        Effect.catchTag("ReviewError", (error) => Effect.promise(async () => {
+        Effect.catchTag(["ReviewError", "GitContextError"], (error) => Effect.promise(async () => {
+          onFailure?.();
           await vscode.window.showErrorMessage(`Duff: ${error.message}`);
           return undefined;
         })),
       ));
-    } catch (cause) {
-      await vscode.window.showErrorMessage(`Duff encountered an unexpected error: ${String(cause)}`);
+    } catch {
+      onFailure?.();
+      await vscode.window.showErrorMessage("Duff encountered an unexpected error. Reload the extension and try again.");
       return undefined;
     }
   };
 
   const showReview = (next: Review) => {
+    contextRequest++;
+    contextProvider.clear();
+    contextView.message = undefined;
     review = next;
     provider.setReview(next);
     const base = next.baseBranch.replace(/^refs\/(heads|remotes)\//, "");
@@ -39,7 +50,7 @@ export function activate(context: vscode.ExtensionContext) {
     view.title = "Changed Files";
   };
 
-  const compare = async () => {
+  const chooseDirectory = async () => {
     const folders = vscode.workspace.workspaceFolders;
     if (!folders?.length) {
       await vscode.window.showInformationMessage("Duff: Open a Git repository folder first.");
@@ -49,8 +60,34 @@ export function activate(context: vscode.ExtensionContext) {
       folders.map((item) => ({ label: item.name, folder: item })),
       { title: "Duff: Choose Repository" },
     ).then((item) => item?.folder);
-    if (!folder) return;
-    const repository = await run(BranchReview.use((service) => service.branches(folder.uri.fsPath)));
+    return folder?.uri.fsPath;
+  };
+
+  const inspectContext = async () => {
+    const directory = review?.root ?? await chooseDirectory();
+    if (!directory) return;
+    const request = ++contextRequest;
+    contextProvider.clear();
+    contextView.message = "Reading local Git configuration…";
+    const snapshot = await run(GitContext.use((service) => service.inspect(directory)), () => {
+      if (request === contextRequest) {
+        contextView.message = "Inspection failed. No previous configuration is shown. Try Inspect / Refresh Git Context again.";
+      }
+    });
+    if (request !== contextRequest) return;
+    if (snapshot) {
+      contextProvider.setSnapshot(snapshot);
+      contextView.message = "Local snapshot · authentication not verified. Hover rows for sources and scope.";
+    } else {
+      contextView.message = "Inspection failed. No previous configuration is shown. Try Inspect / Refresh Git Context again.";
+    }
+    await vscode.commands.executeCommand("duff.context.focus");
+  };
+
+  const compare = async () => {
+    const directory = await chooseDirectory();
+    if (!directory) return;
+    const repository = await run(BranchReview.use((service) => service.branches(directory)));
     if (!repository) return;
     if (repository.branches.length === 0) {
       await vscode.window.showInformationMessage("Duff: No other local or remote-tracking branches are available. Fetch or create a branch, then try again.");
@@ -71,8 +108,9 @@ export function activate(context: vscode.ExtensionContext) {
     await vscode.commands.executeCommand("duff.files.focus");
   };
 
-  context.subscriptions.push(provider, view,
+  context.subscriptions.push(provider, view, contextProvider, contextView,
     vscode.commands.registerCommand("duff.compare", compare),
+    vscode.commands.registerCommand("duff.inspectContext", inspectContext),
     vscode.commands.registerCommand("duff.toggleLayout", async () => {
       await context.workspaceState.update("reviewLayout", provider.toggleLayout());
     }),
