@@ -84,3 +84,16 @@ Two integration issues were fixed during validation: Bun's CommonJS output neede
 Limits: the skill prefers protobuf; this exporter uses accepted OTLP HTTP JSON for privacy projection. The collector adds tunnel pod metadata to external logs. No shared infrastructure was changed.
 The exact launcher has a syntax check; native authentication was exercised with an equivalent scoped launch using an isolated profile. Automatic extension-host hot reload remains unimplemented: Bun rebuilds, then Developer: Reload Window activates the changes.
 Delivery: one local observability slice, with no push, publication, or deployment.
+
+## 2026-10-09: Open the current file from a diff
+
+Result: the existing Open Workspace File action is available in the Duff snapshot editor toolbar and command palette, not only on changed-file rows.
+The active diff's modified-side snapshot supplies the repository and path independently of the latest comparison. The real file opens in a non-preview tab; committed diff contents remain unchanged.
+Snapshot inputs are decoded with the existing Schema before opening a file. Missing working-tree files retain the existing safe error handling.
+
+Verification: check, all 8 existing tests, and build passed. An isolated native host exercised the toolbar and command palette. The committed diff showed value 2; the action opened the same file's uncommitted value 99 in a normal editor tab.
+Inspected screenshots: `.amp/in/artifacts/open-current-diff.png` and `.amp/in/artifacts/open-current-file.png`.
+VSCodium also exercised the deleted-file information state. A real-repository check in `~/source/oss/gbfm` matched Git's two changed files against origin/prod and opened the real render.ts from its diff toolbar. The branch and pre-existing untracked files remained unchanged.
+Inspected real-repository screenshots: `.amp/in/artifacts/gbfm-current-diff.png` and `.amp/in/artifacts/gbfm-current-file.png`.
+Renamed-file selection follows the modified-side path by construction but was not independently exercised in this native check.
+Delivery: local feature slice; no push, publication, or deployment.

@@ -24,6 +24,7 @@ Choose a branch, browse changed files, open a native diff, and navigate the real
 - List changes since the common ancestor, excluding uncommitted work.
 - Open immutable text diffs, including added, deleted, and renamed files.
 - Open the real workspace file separately for editing and language navigation.
+- Open the current working-tree file from a Duff diff's toolbar or the Duff: Open Workspace File command, including uncommitted contents.
 - Refresh comparison explicitly; choose a repository in multi-folder workspaces.
 - Bun watch build and F5 development configuration, with manual extension reload.
 

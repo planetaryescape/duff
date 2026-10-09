@@ -136,9 +136,27 @@ export function activate(context: vscode.ExtensionContext) {
       );
     }),
     vscode.commands.registerCommand("duff.openFile", async (item: unknown) => {
-      if (!(item instanceof ReviewFile) || item.change.status === "D") return;
       try {
-        await vscode.window.showTextDocument(vscode.Uri.joinPath(vscode.Uri.file(item.review.root), item.change.path));
+        let root: string;
+        let path: string;
+        if (item instanceof ReviewFile) {
+          if (item.change.status === "D") return;
+          root = item.review.root;
+          path = item.change.path;
+        } else {
+          const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+          const uri = input instanceof vscode.TabInputTextDiff ? input.modified : vscode.window.activeTextEditor?.document.uri;
+          if (uri?.scheme !== "duff-snapshot") return;
+          const value: unknown = JSON.parse(uri.query);
+          const snapshot = Schema.decodeUnknownSync(Snapshot)(value);
+          if (snapshot.path === undefined) {
+            await vscode.window.showInformationMessage("Duff: This file was deleted in the reviewed revision and has no current-side file to open.");
+            return;
+          }
+          root = snapshot.root;
+          path = snapshot.path;
+        }
+        await vscode.window.showTextDocument(vscode.Uri.joinPath(vscode.Uri.file(root), path), { preview: false });
       } catch {
         await vscode.window.showErrorMessage("Duff: This file is not available in the current working tree. Its committed version is still available in the diff.");
       }

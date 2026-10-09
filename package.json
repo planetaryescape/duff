@@ -108,7 +108,14 @@
         },
         {
           "command": "duff.openFile",
-          "when": "false"
+          "when": "resourceScheme == duff-snapshot"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "duff.openFile",
+          "when": "resourceScheme == duff-snapshot",
+          "group": "navigation@1"
         }
       ]
     }
