@@ -6,8 +6,8 @@ import { gitReviewLayer } from "@duff/core/review";
 import { registerGitContextCommands } from "./git-context/GitContextCommands";
 import { registerReviewCommands } from "./review/ReviewCommands";
 import { observabilityLayer } from "./telemetry/Telemetry";
-import { pluginLayer } from "./plugins/PluginLayers";
-import { registerPluginCommands } from "./plugins/PluginCommands";
+import { pluginLayer } from "./pull-requests/PluginLayers";
+import { registerPluginCommands } from "./pull-requests/PluginCommands";
 
 let disposeRuntime: (() => Promise<void>) | undefined;
 
