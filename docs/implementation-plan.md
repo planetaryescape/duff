@@ -26,7 +26,8 @@ Docs: update the [strategy contract](blueprint/03-identity-and-provider-strategi
 
 ## S04: Plugin seam and GitHub discovery
 
-Status: planned. Depends on verified S03 and a decision on D005/authentication.
+Status: planned. Depends on verified S03 and a GitHub authentication decision; D005 built-ins are accepted.
+Detailed boundary, tests, and usable delivery: [plugin design](blueprint/plugins/PROGRESS.md) and [Slice 2](blueprint/plugins/07-pr-slices.md#slice-2-usable-github-discovery-through-the-shared-plugin-contract).
 Scope: shared provider contract, registry/composition, GitHub strategy, native PR list and discovery states.
 Acceptance: recognize supported GitHub remotes; show open PRs, drafts and source/target context; distinguish auth failure, empty results, and pagination.
 Automatic discovery is cancellable and does not prompt for login or block local review.
@@ -39,6 +40,7 @@ Status: planned. Depends on S04's proven shared seam and an Azure authentication
 Scope: Azure strategy and its remote/authentication adapter, with the same host UI.
 Acceptance: recognize supported HTTPS/SSH remote forms and list active PRs with provider-safe identity and errors.
 Checks: Azure-specific fixtures and API seam tests; prove the shared review engine needs no provider conditions.
+Local native testing may use the owner's approved `~/source/work/frontend` checkouts; see [Slice 3 and verified candidates](blueprint/plugins/07-pr-slices.md#slice-3-azure-devops-parity-using-the-same-service-and-ui). Preserve their branch, files, and configuration. Authenticated provider API checks still require explicit authorization.
 
 ## S06: Open a discovered PR locally
 

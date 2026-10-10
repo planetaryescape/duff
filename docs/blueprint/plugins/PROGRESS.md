@@ -12,8 +12,8 @@ Drafted layers are not accepted decisions or implemented behavior.
 - [x] Layer 3: Contracts (design confirmed; sketches not implemented)
 - [x] Layer 4: Flows (confirmed by request to continue)
 - [x] Layer 5: File map (confirmed)
-- [ ] Layer 6: Test plan (drafted, awaiting feedback)
-- [ ] Layer 7: PR delivery slices
+- [x] Layer 6: Test plan (confirmed; frontend checkouts approved for local ADO testing)
+- [ ] Layer 7: PR delivery slices (drafted, awaiting full-folder review)
 - [ ] Plannotator review (flows session closed without annotations; full-spec review pending)
 
 ## Log
@@ -29,3 +29,5 @@ Drafted layers are not accepted decisions or implemented behavior.
 - 2026-10-10: Opened flows in Plannotator at the owner's request; session closed with no returned annotations. Owner asked to continue.
 - 2026-10-10: Drafted [file map](05-file-map.md) within the existing two packages; paused before test plan.
 - 2026-10-10: Owner confirmed the file map. Drafted [test plan](06-test-plan.md) with vertical red/green cycles and separate native/API evidence; paused before delivery slices.
+- 2026-10-10: Owner confirmed the test plan and approved frontend checkouts for local ADO tests. Read-only remote-host inspection confirmed srx-app, srx-ui-lib, and srx-engine use Azure SSH.
+- 2026-10-10: Drafted [delivery slices](07-pr-slices.md): finish Git context, integrated GitHub discovery, then Azure parity. Full-folder review remains pending.

@@ -1,6 +1,6 @@
 # Test plan: shared provider behavior
 
-Status: proposed, awaiting feedback. These are future red/green cycles, not tests already written or executed. Public contracts: [03-contracts.md](03-contracts.md). Owners: [05-file-map.md](05-file-map.md).
+Status: test plan confirmed. These are future red/green cycles, not tests already written or executed. Public contracts: [03-contracts.md](03-contracts.md). Owners: [05-file-map.md](05-file-map.md).
 
 ## Approach
 
@@ -73,9 +73,9 @@ Extend Telemetry.test.ts with canaries in provider account metadata, PR title/UR
 
 ## Native and packaged verification
 
-Use clean VSCodium with gbfm unchanged. Reuse one test host, close obsolete hosts, and retain the owner's working windows.
+Use clean VSCodium with gbfm unchanged for GitHub/local review. The owner also permits ADO testing with any repository under `~/source/work/frontend`; `srx-app` is the initial verified Azure SSH candidate. Preserve its branch, files, and configuration. See [approved testing context](07-pr-slices.md#approved-real-repository-testing-context). Reuse one test host, close obsolete hosts, and retain the owner's working windows.
 
-For deterministic discovery states, use a temporary test-only extension entry under .amp/in that supplies complete fixture contributions through the same construction seam and invokes the production feature registration. It owns only its test runtime and uses real GitContext for gbfm. Do not patch imported modules, add a production fake-plugin setting, or expose credentials in fixture labels. This is proposed validation tooling, not a shipped extension entry or an existing harness.
+For deterministic discovery states, use a temporary test-only extension entry under .amp/in that supplies complete fixture contributions through the same construction seam and invokes the production feature registration. It owns only its test runtime and uses real GitContext for the selected checkout. Do not patch imported modules, add a production fake-plugin setting, or expose credentials in fixture labels. This is proposed validation tooling, not a shipped extension entry or an existing harness.
 
 Exercise these observable transitions:
 
@@ -100,4 +100,4 @@ Run check, tests, build, and package through Bun. Smoke-test the normal self-con
 
 ## Next checkpoint
 
-Confirm the priority and scope of these behaviors before defining usable delivery slices. This plan does not authorize implementation or external authentication.
+Review the proposed [delivery slices](07-pr-slices.md) and complete design folder. This plan does not authorize implementation or external authentication.
