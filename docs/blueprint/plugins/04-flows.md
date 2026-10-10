@@ -1,6 +1,6 @@
 # Flows: shared provider discovery
 
-Status: proposed, awaiting feedback. The [shared contract](03-contracts.md) defines values and operations; this layer defines sequencing and publication. No provider calls, login, or implementation are authorized by this document.
+Status: flow direction confirmed by the owner's request to continue after the Plannotator session closed without annotations. The [shared contract](03-contracts.md) defines values and operations; this layer defines sequencing and publication. No provider calls, login, or implementation are authorized by this document.
 
 ## Current versus proposed
 
@@ -110,4 +110,4 @@ The integration records safe success, expected failure, defect, and interruption
 
 ## Next checkpoint
 
-Confirm these flows before mapping them to files and test slices. Provider authentication transport, deadlines, and a user-triggered connection action remain unresolved implementation choices, not implied permissions to access an account.
+Review the proposed [file map](05-file-map.md) before the test plan. Provider authentication transport, deadlines, and a user-triggered connection action remain unresolved implementation choices, not implied permissions to access an account.
