@@ -36,7 +36,7 @@ No fetch, checkout, PR mutations, or credential storage in this slice.
 
 ## S05: Azure DevOps discovery
 
-Status: planned. Depends on S04's proven shared seam and an Azure authentication decision.
+Status: implemented through the shared seam and native Microsoft authentication; deterministic adapter tests pass. Authenticated account smoke testing has not run.
 Scope: Azure strategy and its remote/authentication adapter, with the same host UI.
 Acceptance: recognize supported HTTPS/SSH remote forms and list active PRs with provider-safe identity and errors.
 Checks: Azure-specific fixtures and API seam tests; prove the shared review engine needs no provider conditions.

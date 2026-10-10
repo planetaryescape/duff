@@ -1,6 +1,6 @@
 # File map: built-in provider plugins
 
-Status: file map confirmed; paths are not created implementation files. Follows the confirmed [contract](03-contracts.md) and [flows](04-flows.md). Keep the existing two Bun packages; add a plugins feature, not technical-layer packages.
+Status: implemented within the existing two Bun packages. Follows the confirmed [contract](03-contracts.md) and [flows](04-flows.md). The diagram records intended ownership; nearby adapter services include ProviderAuthentication, ProviderHttp, and PluginLayers.
 
 ## Proposed shape
 

@@ -1,6 +1,6 @@
 # Architecture
 
-Status: review and local identity inspection implemented; provider architecture accepted but not implemented.
+Status: review, conservative local identity inspection, and shared GitHub/Azure DevOps discovery implemented.
 
 ## Current ownership
 
@@ -39,7 +39,7 @@ Native file list → snapshot URI → content provider → Git blob → native d
 Open Workspace File → real file URI → editable workspace document
 ```
 
-## Proposed additions
+## Provider discovery
 
 Keep configuration inspection and provider discovery outside BranchReview.
 They own different facts, authentication requirements, and failure behavior.
@@ -56,12 +56,13 @@ Repository selection
                                  ↓
                        normalized open-PR results
                                  ↓
-                         user selects a review
+                         native PR list / browser link
 ```
 
-`GitContext` exists; the plugin registry remains proposed.
-The extension composition root will select plugins and supply their Effect Layers.
+`GitContext`, the shared plugin contract, and the registry-driven discovery service are implemented.
+The extension composition root supplies GitHub and Azure DevOps definitions and their authentication/HTTP Layers.
 Core contracts must not import provider SDKs or choose credentials implicitly.
+Opening a discovered PR locally remains a proposed follow-up; selecting a PR currently opens its provider page.
 
 ## Operation observability
 
@@ -114,4 +115,4 @@ Report gaps honestly; do not claim these checks prove runtime correctness.
 The native UI was exercised in an isolated Extension Development Host.
 Historical-document language intelligence is limited; full LSP behavior across languages was not verified.
 Binary rendering, large-repository behavior, and automatic branch-change refresh were not verified.
-Identity inspection is partial; see the [strategy contract](03-identity-and-provider-strategies.md) for remaining gaps. PR discovery is not implemented.
+Identity inspection is partial; see the [strategy contract](03-identity-and-provider-strategies.md) for remaining gaps. PR discovery has deterministic adapter and native fixture evidence, not an authenticated account smoke check.

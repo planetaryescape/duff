@@ -1,6 +1,6 @@
 # General plugin interface
 
-Status: problem frame confirmed; built-in plugins accepted in D005. Detailed shape and contracts remain proposed. No plugin runtime exists yet.
+Status: confirmed design, now implemented through the shared contract, supplied registry, and built-in GitHub/Azure DevOps adapters. Authenticated account smoke checks remain unverified.
 
 ## Summary
 
@@ -11,9 +11,9 @@ Define how a plugin contributes a capability to Duff without changing the local 
 - [BranchReview](../../../packages/core/src/review/BranchReview.ts) compares local Git snapshots and reads immutable content through the Git CLI.
 - [GitContext](../../../packages/core/src/git-context/GitContext.ts) inspects safe local identity and remote metadata. Per-remote credential selection remains incomplete.
 - [extension.ts](../../../packages/extension/src/extension.ts) composes Layers and owns one managed runtime. Feature modules own native commands and views.
-- There is no plugin registry, plugin loader, provider API adapter, or PR-discovery UI.
+- A supplied registry composes built-in provider adapters and native PR discovery. There is no external plugin loader.
 - [D004](../02-decision-log.md#d004-provider-behavior-belongs-in-plugins) accepts plugins, starting with GitHub and Azure DevOps.
-- [D005](../02-decision-log.md#d005-trusted-built-in-registry-for-the-first-plugins) accepts trusted built-ins bundled with Duff. Authentication remains undecided.
+- [D005](../02-decision-log.md#d005-trusted-built-in-registry-for-the-first-plugins) accepts trusted built-ins bundled with Duff. Native editor authentication is supplied through the adapter boundary.
 
 ## Problem
 

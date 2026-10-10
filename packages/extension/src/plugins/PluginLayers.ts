@@ -5,6 +5,7 @@ import { makeProviderDiscoveryLayer } from "@duff/core/provider-discovery";
 import { ProviderAuthentication } from "./ProviderAuthentication";
 import { ProviderHttp } from "./ProviderHttp";
 import { GitHubPlugin } from "./github/GitHubPlugin";
+import { AzureDevOpsPlugin } from "./azure-devops/AzureDevOpsPlugin";
 
 const Session = Schema.Struct({
   id: Schema.String, token: Schema.Redacted(Schema.NonEmptyString),
@@ -25,7 +26,7 @@ const authenticationLayer = Layer.effect(ProviderAuthentication, Effect.gen(func
   return ProviderAuthentication.of({ session });
 }));
 
-const definitions: ReadonlyArray<PluginDefinition<ProviderAuthentication | ProviderHttp>> = [GitHubPlugin];
+const definitions: ReadonlyArray<PluginDefinition<ProviderAuthentication | ProviderHttp>> = [GitHubPlugin, AzureDevOpsPlugin];
 export const pluginLayer = Layer.unwrap(Effect.gen(function* () {
   const instances = yield* Effect.forEach(definitions, (definition) => definition.make.pipe(
     Effect.map((contributions) => ({ identity: definition.identity, contributions })),

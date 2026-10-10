@@ -1,6 +1,6 @@
 # Identity and provider strategies
 
-Status: local identity inspection implemented in part; provider plugins accepted, not implemented. Detailed target contracts below remain proposed where noted.
+Status: local identity inspection implemented in part; built-in GitHub and Azure DevOps plugins implemented through one shared contract. Authenticated provider smoke checks have not run.
 
 Current inspection shows effective name/email with scope and origin, separate commit author/committer, sanitized fetch remotes, ordered helper declarations, and whether a custom SSH command is configured.
 Apple Git can report built-in configuration with scope `unknown`; Duff preserves that scope instead of guessing its precedence.
@@ -89,12 +89,12 @@ Where available, preserve immutable source/target revisions so later local revie
 HTTPS and SSH recognition need seam fixtures for both providers, including encoded names and malformed URLs.
 Custom hosts and SSH aliases need an explicit supported mapping or an unsupported result.
 Study each provider's current APIs and authentication tools before implementing either adapter.
-No choice of GitHub CLI, Azure CLI, VS Code authentication sessions, or personal tokens is settled here.
+The implemented adapters use native editor GitHub and Microsoft authentication sessions through a supplied service. No CLI login, Git helper execution, or token storage is used. GitHub can read public repositories anonymously when no session exists; Azure requires a session. Explicit Connect is the only prompting path.
 
 ## 4. Automatic discovery
 
 Accepted outcome: detect whether supported remotes have open pull requests.
-Proposed behavior: after local context inspection, recognize supported remotes and perform cancellable, read-only discovery using an available session.
+Implemented behavior: after local context inspection, recognize supported remotes and perform cancellable, read-only discovery using an available session.
 Do not open login prompts automatically. Offer a connection action when authentication is missing.
 Provide a visible refresh action and a way to disable automatic discovery.
 Background discovery must not block local branch review.

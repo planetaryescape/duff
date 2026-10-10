@@ -1,6 +1,6 @@
 # Plugin interface design: progress
 
-## Status: GitHub discovery implemented; Azure parity in progress
+## Status: GitHub and Azure DevOps discovery implemented
 
 This tech-spec-pro design lives in the blueprint at the owner's request.
 It covers the general plugin interface, with provider discovery as its first concrete contribution.
@@ -9,7 +9,7 @@ Drafted layers are not accepted decisions or implemented behavior.
 - [x] Layer 0: Problem frame (confirmed; built-ins accepted in D005)
 - [x] Layer 1: Shape (confirmed; one shared provider capability)
 - [x] Layer 2: Alternatives (skipped; no competing design requested)
-- [x] Layer 3: Contracts (design confirmed; sketches not implemented)
+- [x] Layer 3: Contracts (compiled shared contract implemented; sketches retain design context)
 - [x] Layer 4: Flows (confirmed by request to continue)
 - [x] Layer 5: File map (confirmed)
 - [x] Layer 6: Test plan (confirmed; frontend checkouts approved for local ADO testing)
@@ -33,3 +33,4 @@ Drafted layers are not accepted decisions or implemented behavior.
 - 2026-10-10: Drafted [delivery slices](07-pr-slices.md): finish Git context, integrated GitHub discovery, then Azure parity. Full-folder review remains pending.
 - 2026-10-10: Owner asked to implement and permitted subagents. Started Slice 1 with conventional HTTP(S) credential-policy resolution and grouped native presentation. Unsupported contexts remain unresolved; the shared plugin contract and provider adapters are not implemented. Full-folder Plannotator session remains open, with no returned annotations at this check.
 - 2026-10-10: Added the shared compiled plugin contract, discovery service, captured native authentication/HTTP seams, GitHub adapter, and native PR integration. Deterministic native checks exercised first/complete/partial pages with Azure fixtures under development. Provider reads, login, and Git mutation were not used by the fixture harness. The owner also requested public publication; the existing baseline is now at planetaryescape/duff.
+- 2026-10-10: Registered the Azure DevOps adapter through the same contract and native UI. Modern/legacy HTTPS and v3 SSH recognition, Microsoft-session authentication, active PR decoding, fork identity, pagination, and cooldowns have deterministic tests. Authenticated account checks remain unverified.

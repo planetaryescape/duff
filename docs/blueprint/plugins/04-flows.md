@@ -1,12 +1,12 @@
 # Flows: shared provider discovery
 
-Status: flow direction confirmed by the owner's request to continue after the Plannotator session closed without annotations. The [shared contract](03-contracts.md) defines values and operations; this layer defines sequencing and publication. No provider calls, login, or implementation are authorized by this document.
+Status: flows implemented with deterministic service, adapter, and native fixture evidence. The [shared contract](03-contracts.md) defines values and operations; this layer defines sequencing and publication. Authenticated account checks and provider writes remain outside this document's authorization.
 
 ## Current versus proposed
 
-Today, the reviewer explicitly inspects local GitContext. [GitContextCommands](../../../packages/extension/src/git-context/GitContextCommands.ts) clears old rows and rejects stale inspection results through a request generation. No provider discovery runs.
+Today, [GitContextCommands](../../../packages/extension/src/git-context/GitContextCommands.ts) clears old rows and rejects stale inspection results through a request generation. Successful inspection starts provider discovery when enabled. Plugin commands own discovery generations and cancellation.
 
-Proposed: runtime construction supplies the plugins, then repository selection starts local context inspection. With automatic discovery enabled, a successful inspection starts the shared discovery service. Refresh repeats the sequence. Local branch review remains a separate operation and does not await provider work.
+Runtime construction supplies the plugins, then repository selection starts local context inspection. With automatic discovery enabled, a successful inspection starts the shared discovery service. Refresh repeats the sequence. Local branch review remains a separate operation and does not await provider work.
 
 ```text
 Activation -> supplied Layers -> one runtime

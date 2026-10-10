@@ -1,6 +1,6 @@
 # Product overview
 
-Status: mixed. Inspected on 2026-10-09 against the local branch-review and development-workflow commits.
+Status: local review, conservative Git-context inspection, and built-in GitHub/Azure DevOps discovery implemented. Authenticated provider smoke testing remains unverified.
 
 ## Goal
 
@@ -28,23 +28,21 @@ Choose a branch, browse changed files, open a native diff, and navigate the real
 - Refresh comparison explicitly; choose a repository in multi-folder workspaces.
 - Bun watch build and F5 development configuration, with manual extension reload.
 
-## Accepted, not implemented
+## Identity and discovery
 
-1. Inspect effective Git configuration for the selected repository: name, email, and credential strategy.
-2. Make that identity/configuration slice work before adding remote PR discovery.
-3. Detect open pull requests associated with repository remotes through provider plugins.
-4. Start with GitHub and Azure DevOps.
+Local inspection shows safe identity and per-remote credential policy. Advanced credential patterns remain explicitly unresolved.
+Built-in GitHub and Azure DevOps plugins use one shared capability contract and native PR view, with explicit connection, pagination, independent failures, and cancellation.
 
 ## Non-goals for these slices
 
 No merge, push, checkout, credential mutation, approval submission, comment sync, or cloud infrastructure.
 Commit-story navigation, review notes, binary rendering, and provider write operations remain outside the current scope.
 
-## Open implementation choices
+## Settled discovery choices
 
-- Whether provider plugins ship in-process or as separately installed extensions.
-- Provider API authentication mechanism and any interaction required to establish a session.
-- Default discovery scope: all open PRs on the selected remote, with optional current-branch filtering proposed.
-- When background discovery runs and how users disable or refresh it.
+- Plugins ship in-process through a supplied registry and one runtime.
+- Editor authentication sessions remain separate from Git credential configuration; only explicit Connect prompts.
+- Discovery lists all open PRs per supported remote. Current-branch filtering is not implemented.
+- Context inspection starts cancellable discovery; the setting `duff.automaticDiscovery` disables it, and Refresh restarts it.
 
 See [provider strategies](03-identity-and-provider-strategies.md) for proposed defaults and safety constraints.
