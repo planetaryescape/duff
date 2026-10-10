@@ -1,4 +1,4 @@
-import { Clock, Context, DateTime, Effect, Layer, Option, type Redacted } from 'effect'
+import { Clock, Context, DateTime, Effect, Layer, Option, type Redacted, Schema } from 'effect'
 import { HttpClient, HttpClientRequest } from 'effect/http'
 
 import {
@@ -10,6 +10,14 @@ import {
   RepositoryUnavailable,
 } from './GitHostingProvider'
 
+/** Transport output remains undecoded until the owning provider selects its wire schema. */
+export const ProviderResponse = Schema.Struct({
+  body: Schema.Unknown,
+  headers: Schema.Record(Schema.String, Schema.String),
+})
+
+export interface ProviderResponse extends Schema.Schema.Type<typeof ProviderResponse> {}
+
 export class ProviderHttp extends Context.Service<
   ProviderHttp,
   {
@@ -17,10 +25,7 @@ export class ProviderHttp extends Context.Service<
       url: string,
       token: Option.Option<Redacted.Redacted>,
       headers?: Readonly<Record<string, string>>,
-    ) => Effect.Effect<
-      { readonly body: unknown; readonly headers: Readonly<Record<string, string>> },
-      DiscoveryError
-    >
+    ) => Effect.Effect<ProviderResponse, DiscoveryError>
   }
 >()('duff/ProviderHttp') {
   static readonly layer = Layer.effect(
@@ -87,7 +92,7 @@ export class ProviderHttp extends Context.Service<
             Effect.mapError(() => new InvalidProviderResponse()),
           )
 
-          return { body, headers: response.headers }
+          return ProviderResponse.make({ body, headers: response.headers })
         },
         Effect.timeoutOrElse({ duration: '20 seconds', orElse: () => new ProviderUnavailable() }),
       )

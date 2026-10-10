@@ -106,7 +106,17 @@ export interface ProviderRepository {
   }) => Effect.Effect<PullRequestPage, DiscoveryError>
 }
 
+/** Name a bound repository implementation without adding a context service or data codec. */
+export const ProviderRepository = {
+  of: (implementation: ProviderRepository): ProviderRepository => implementation,
+}
+
 export interface GitHostingProvider {
   readonly identity: ProviderIdentity
   readonly recognizeRemote: (remote: Remote) => Option.Option<ProviderRepository>
+}
+
+/** Name a provider implementation while preserving its structural substitution seam. */
+export const GitHostingProvider = {
+  of: (implementation: GitHostingProvider): GitHostingProvider => implementation,
 }

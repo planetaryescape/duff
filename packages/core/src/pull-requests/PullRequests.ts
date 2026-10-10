@@ -1,4 +1,15 @@
-import { Context, Effect, Layer, Option, Redacted, Ref, Schema, Stream } from 'effect'
+import {
+  Context,
+  Data,
+  Effect,
+  Layer,
+  Option,
+  Redacted,
+  Ref,
+  Schema,
+  Semaphore,
+  Stream,
+} from 'effect'
 
 import { type GitContextSnapshot } from '../git-context/GitContext'
 import {
@@ -8,23 +19,27 @@ import {
   type GitHostingProvider,
   InvalidContinuation,
   type OpenPullRequest,
-  type ProviderIdentity,
+  ProviderIdentity,
+  type PullRequestPage,
   type ProviderRepository,
   type Remote,
-  type RepositoryIdentity,
+  RepositoryIdentity,
 } from './GitHostingProvider'
 
 export const GroupId = Schema.NonEmptyString.pipe(Schema.brand('RepositoryGroupId'))
 
 export type GroupId = Schema.Schema.Type<typeof GroupId>
 
-export interface RepositoryGroup {
-  readonly id: GroupId
-  readonly key: string
-  readonly provider: ProviderIdentity
-  readonly repository: RepositoryIdentity
-  readonly remoteNames: ReadonlyArray<string>
-}
+/** A repository discovered through one or more local remotes. */
+export const RepositoryGroup = Schema.Struct({
+  id: GroupId,
+  key: Schema.String,
+  provider: ProviderIdentity,
+  repository: RepositoryIdentity,
+  remoteNames: Schema.Array(Schema.String),
+})
+
+export interface RepositoryGroup extends Schema.Schema.Type<typeof RepositoryGroup> {}
 
 export type DiscoveryNotice =
   | { readonly _tag: 'Unsupported'; readonly remote: Remote }
@@ -33,6 +48,9 @@ export type DiscoveryNotice =
       readonly remote: Remote
       readonly candidates: ReadonlyArray<ProviderIdentity>
     }
+
+/** Named constructors for internal discovery notices. */
+export const DiscoveryNotice = Data.taggedEnum<DiscoveryNotice>()
 
 export type GroupResult =
   | {
@@ -44,6 +62,9 @@ export type GroupResult =
     }
   | { readonly _tag: 'Failed'; readonly group: RepositoryGroup; readonly error: DiscoveryError }
 
+/** Named constructors for page outcomes; these are not transport schemas. */
+export const GroupResult = Data.taggedEnum<GroupResult>()
+
 export type DiscoveryEvent =
   | {
       readonly _tag: 'Started'
@@ -52,8 +73,69 @@ export type DiscoveryEvent =
     }
   | { readonly _tag: 'Updated'; readonly result: GroupResult }
 
+/** Named constructors for the discovery stream. */
+export const DiscoveryEvent = Data.taggedEnum<DiscoveryEvent>()
+
+class ProviderMatch {
+  constructor(
+    readonly provider: GitHostingProvider,
+    readonly repository: ProviderRepository,
+  ) {}
+}
+
+class Entry {
+  #group: RepositoryGroup
+  #cursor: Option.Option<Redacted.Redacted> = Option.none()
+  readonly #seen = new Set<string>()
+
+  constructor(
+    group: RepositoryGroup,
+    readonly repository: ProviderRepository,
+    readonly gate: Semaphore.Semaphore,
+  ) {
+    this.#group = group
+  }
+
+  get group() {
+    return this.#group
+  }
+
+  get cursor() {
+    return this.#cursor
+  }
+
+  addRemote(name: string) {
+    this.#group = RepositoryGroup.make({
+      id: this.#group.id,
+      key: this.#group.key,
+      provider: this.#group.provider,
+      repository: this.#group.repository,
+      remoteNames: [...this.#group.remoteNames, name],
+    })
+  }
+
+  invalidateContinuation() {
+    this.#cursor = Option.none()
+  }
+
+  /** Reject a repeated cursor without changing the accepted continuation. */
+  acceptPage(page: PullRequestPage): boolean {
+    if (Option.isSome(page.next) && this.#seen.has(Redacted.value(page.next.value))) return false
+
+    this.#cursor = page.next
+
+    if (Option.isSome(page.next)) this.#seen.add(Redacted.value(page.next.value))
+
+    return true
+  }
+}
+
 export class GroupNotFound extends Schema.TaggedError<GroupNotFound>()('GroupNotFound', {}) {}
 
+/**
+ * Owns continuation safety: same-group reads and connections queue, while different groups run
+ * independently. ReviewSession owns action suppression and discovery-job cancellation.
+ */
 export class PullRequests extends Context.Service<
   PullRequests,
   {
@@ -74,14 +156,6 @@ export const makePullRequestsLayer = (providers: ReadonlyArray<GitHostingProvide
       }
 
       const generation = yield* Ref.make(0)
-
-      interface Entry {
-        group: RepositoryGroup
-        repository: ProviderRepository
-        cursor: Option.Option<Redacted.Redacted>
-        seen: Set<string>
-      }
-
       let entries = new Map<GroupId, Entry>()
 
       const read = Effect.fn('PullRequests.read')(function* (
@@ -91,42 +165,32 @@ export const makePullRequestsLayer = (providers: ReadonlyArray<GitHostingProvide
         const cursor = more ? entry.cursor : Option.none<Redacted.Redacted>()
 
         if (more && Option.isNone(cursor))
-          return { _tag: 'Failed', group: entry.group, error: new InvalidContinuation() }
+          return GroupResult.Failed({ group: entry.group, error: new InvalidContinuation() })
 
-        const result = yield* Effect.result(
-          Effect.gen(function* () {
-            const authentication = yield* entry.repository.inspectAuthentication()
+        return yield* Effect.gen(function* () {
+          const authentication = yield* entry.repository.inspectAuthentication()
 
-            const page = yield* entry.repository.listOpenPullRequests({
-              scope: 'repository',
-              cursor,
-            })
+          const page = yield* entry.repository.listOpenPullRequests({
+            scope: 'repository',
+            cursor,
+          })
 
-            if (Option.isSome(page.next) && entry.seen.has(Redacted.value(page.next.value)))
-              return yield* new InvalidContinuation()
+          if (!entry.acceptPage(page)) return yield* new InvalidContinuation()
 
-            return { authentication, page }
+          return GroupResult.Ready({
+            group: entry.group,
+            authentication,
+            items: page.items,
+            hasMore: Option.isSome(entry.cursor),
+          })
+        }).pipe(
+          Effect.catch((error) => {
+            if (['AuthenticationRequired', 'InvalidContinuation'].includes(error._tag))
+              entry.invalidateContinuation()
+
+            return Effect.succeed(GroupResult.Failed({ group: entry.group, error }))
           }),
         )
-
-        if (result._tag === 'Failure') {
-          if (['AuthenticationRequired', 'InvalidContinuation'].includes(result.failure._tag))
-            entry.cursor = Option.none()
-
-          return { _tag: 'Failed', group: entry.group, error: result.failure }
-        }
-
-        entry.cursor = result.success.page.next
-
-        if (Option.isSome(entry.cursor)) entry.seen.add(Redacted.value(entry.cursor.value))
-
-        return {
-          _tag: 'Ready',
-          group: entry.group,
-          authentication: result.success.authentication,
-          items: result.success.page.items,
-          hasMore: Option.isSome(entry.cursor),
-        }
       })
 
       const discover = (snapshot: GitContextSnapshot): Stream.Stream<DiscoveryEvent> =>
@@ -140,22 +204,25 @@ export const makePullRequestsLayer = (providers: ReadonlyArray<GitHostingProvide
               const matches = providers.flatMap((provider) => {
                 const repository = provider.recognizeRemote(remote)
 
-                return Option.isSome(repository) ? [{ provider, repository: repository.value }] : []
+                return Option.isSome(repository)
+                  ? [new ProviderMatch(provider, repository.value)]
+                  : []
               })
 
               const match = matches[0]
 
               if (!match) {
-                notices.push({ _tag: 'Unsupported', remote })
+                notices.push(DiscoveryNotice.Unsupported({ remote }))
                 continue
               }
 
               if (matches.length > 1) {
-                notices.push({
-                  _tag: 'Ambiguous',
-                  remote,
-                  candidates: matches.map((match) => match.provider.identity),
-                })
+                notices.push(
+                  DiscoveryNotice.Ambiguous({
+                    remote,
+                    candidates: matches.map((match) => match.provider.identity),
+                  }),
+                )
                 continue
               }
 
@@ -167,33 +234,30 @@ export const makePullRequestsLayer = (providers: ReadonlyArray<GitHostingProvide
 
               const existing = grouped.get(key)
 
-              if (existing)
-                existing.group = {
-                  ...existing.group,
-                  remoteNames: [...existing.group.remoteNames, remote.name],
-                }
+              if (existing) existing.addRemote(remote.name)
               else
-                grouped.set(key, {
-                  group: {
-                    id: GroupId.make(`${currentGeneration}:${key}`),
-                    key,
-                    provider: match.provider.identity,
-                    repository: match.repository.identity,
-                    remoteNames: [remote.name],
-                  },
-                  repository: match.repository,
-                  cursor: Option.none(),
-                  seen: new Set(),
-                })
+                grouped.set(
+                  key,
+                  new Entry(
+                    RepositoryGroup.make({
+                      id: GroupId.make(`${currentGeneration}:${key}`),
+                      key,
+                      provider: match.provider.identity,
+                      repository: match.repository.identity,
+                      remoteNames: [remote.name],
+                    }),
+                    match.repository,
+                    yield* Semaphore.make(1),
+                  ),
+                )
             }
 
             entries = new Map([...grouped.values()].map((entry) => [entry.group.id, entry]))
 
-            const started: DiscoveryEvent = {
-              _tag: 'Started',
+            const started = DiscoveryEvent.Started({
               groups: [...grouped.values()].map((entry) => entry.group),
               notices,
-            }
+            })
 
             return Stream.make(started).pipe(
               Stream.concat(
@@ -201,7 +265,8 @@ export const makePullRequestsLayer = (providers: ReadonlyArray<GitHostingProvide
                   Stream.mapEffect(
                     (entry) =>
                       read(entry, false).pipe(
-                        Effect.map((result): DiscoveryEvent => ({ _tag: 'Updated', result })),
+                        entry.gate.withPermits(1),
+                        Effect.map((result) => DiscoveryEvent.Updated({ result })),
                       ),
                     { concurrency: 4, unordered: true },
                   ),
@@ -216,16 +281,24 @@ export const makePullRequestsLayer = (providers: ReadonlyArray<GitHostingProvide
 
         if (!entry) return yield* new GroupNotFound()
 
-        return yield* read(entry, true)
+        return yield* Effect.gen(function* () {
+          if (entries.get(id) !== entry) return yield* new GroupNotFound()
+
+          return yield* read(entry, true)
+        }).pipe(entry.gate.withPermits(1))
       })
 
       const connect = Effect.fn('PullRequests.connect')(function* (id: GroupId) {
         const entry = entries.get(id)
 
         if (!entry) return yield* new GroupNotFound()
-        entry.cursor = Option.none()
 
-        return yield* entry.repository.connectAuthentication()
+        return yield* Effect.gen(function* () {
+          if (entries.get(id) !== entry) return yield* new GroupNotFound()
+          entry.invalidateContinuation()
+
+          return yield* entry.repository.connectAuthentication()
+        }).pipe(entry.gate.withPermits(1))
       })
 
       return PullRequests.of({ discover, loadMore, connect })

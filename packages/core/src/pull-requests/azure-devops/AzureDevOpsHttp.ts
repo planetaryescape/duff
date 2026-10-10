@@ -5,14 +5,14 @@ import { Clock, DateTime, Effect, Option, Redacted, Schema } from 'effect'
 import {
   Authentication,
   AuthenticationRequired,
+  GitHostingProvider,
   InvalidContinuation,
   InvalidProviderResponse,
   OpenPullRequest,
-  RateLimited,
-} from '../GitHostingProvider'
-import type {
-  GitHostingProvider,
+  ProviderIdentity,
   ProviderRepository,
+  PullRequestPage,
+  RateLimited,
   RepositoryIdentity,
 } from '../GitHostingProvider'
 import { ProviderAuthentication } from '../ProviderAuthentication'
@@ -87,13 +87,13 @@ function parseRemote(destination: string): Option.Option<Address> {
 }
 
 function identity(address: Address): RepositoryIdentity {
-  return {
+  return RepositoryIdentity.make({
     authority: 'dev.azure.com',
     key: [address.org, address.project, address.repo]
       .map((part) => encodeURIComponent(part.toLowerCase()))
       .join('/'),
     displayName: `${address.org}/${address.project}/${address.repo}`,
-  }
+  })
 }
 
 function repositoryUrl(address: Address): string {
@@ -265,16 +265,19 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
           next = Option.some(Redacted.make(key))
         }
 
-        return { items, next }
+        return PullRequestPage.make({ items, next })
       })
 
-      return {
+      return ProviderRepository.of({
         identity: boundIdentity,
         inspectAuthentication: () => inspect('silent'),
         connectAuthentication: () => inspect('connect'),
         listOpenPullRequests,
-      }
+      })
     })
 
-  return { identity: { id: 'azure-devops', displayName: 'Azure DevOps' }, recognizeRemote }
+  return GitHostingProvider.of({
+    identity: ProviderIdentity.make({ id: 'azure-devops', displayName: 'Azure DevOps' }),
+    recognizeRemote,
+  })
 })

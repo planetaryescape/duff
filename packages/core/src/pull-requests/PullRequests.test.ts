@@ -163,6 +163,173 @@ it.effect('owns continuation retries, rejects cycles and retires group identitie
   }),
 )
 
+it.effect('serializes pages within a group without blocking another group', () =>
+  Effect.gen(function* () {
+    const started = yield* Deferred.make<void>()
+    const release = yield* Deferred.make<void>()
+    const secondStarted = yield* Deferred.make<void>()
+
+    const instance = provider('fixture', (remote) =>
+      Option.some(
+        repository(remote.name, (input) =>
+          Effect.gen(function* () {
+            if (Option.isNone(input.cursor))
+              return { items: [], next: Option.some(Redacted.make('page-2')) }
+
+            if (Redacted.value(input.cursor.value) === 'page-2') {
+              if (remote.name === 'slow') {
+                yield* Deferred.succeed(started, undefined)
+                yield* Deferred.await(release)
+              }
+
+              return { items: [], next: Option.some(Redacted.make('page-3')) }
+            }
+
+            return { items: [], next: Option.none() }
+          }),
+        ),
+      ),
+    )
+
+    yield* Effect.gen(function* () {
+      const service = yield* PullRequests
+      const events = yield* Stream.runCollect(service.discover(snapshot(['slow', 'fast'])))
+      const start = events[0]
+
+      if (start?._tag !== 'Started' || !start.groups[0] || !start.groups[1])
+        return yield* Effect.die('Missing groups')
+
+      const slow = start.groups[0].id
+      const fast = start.groups[1].id
+      const first = yield* service.loadMore(slow).pipe(Effect.forkScoped)
+      yield* Deferred.await(started)
+
+      const second = yield* Deferred.succeed(secondStarted, undefined).pipe(
+        Effect.andThen(service.loadMore(slow)),
+        Effect.forkScoped,
+      )
+
+      yield* Deferred.await(secondStarted)
+      yield* Effect.yieldNow
+
+      const independent = yield* service.loadMore(fast)
+      expect(independent._tag).toBe('Ready')
+      expect(yield* Deferred.isDone(release)).toBe(false)
+      yield* Deferred.succeed(release, undefined)
+
+      const pages = [yield* Fiber.join(first), yield* Fiber.join(second)]
+      expect(pages.map((page) => page._tag)).toEqual(['Ready', 'Ready'])
+      expect(pages.map((page) => page._tag === 'Ready' && page.hasMore)).toEqual([true, false])
+    }).pipe(Effect.provide(makePullRequestsLayer([instance])))
+  }),
+)
+
+it.effect('keeps connection invalidation after an in-flight page finishes', () =>
+  Effect.gen(function* () {
+    const started = yield* Deferred.make<void>()
+    const release = yield* Deferred.make<void>()
+    const connecting = yield* Deferred.make<void>()
+
+    const instance = provider('fixture', (remote) =>
+      Option.some(
+        repository(remote.name, (input) =>
+          Effect.gen(function* () {
+            if (Option.isNone(input.cursor))
+              return { items: [], next: Option.some(Redacted.make('page-2')) }
+
+            if (Redacted.value(input.cursor.value) === 'page-2') {
+              yield* Deferred.succeed(started, undefined)
+              yield* Deferred.await(release)
+
+              return { items: [], next: Option.some(Redacted.make('page-3')) }
+            }
+
+            return { items: [], next: Option.none() }
+          }),
+        ),
+      ),
+    )
+
+    yield* Effect.gen(function* () {
+      const service = yield* PullRequests
+      const events = yield* Stream.runCollect(service.discover(snapshot(['origin'])))
+      const start = events[0]
+
+      if (start?._tag !== 'Started' || !start.groups[0]) return yield* Effect.die('Missing group')
+
+      const id = start.groups[0].id
+      const page = yield* service.loadMore(id).pipe(Effect.forkScoped)
+      yield* Deferred.await(started)
+
+      const connection = yield* Deferred.succeed(connecting, undefined).pipe(
+        Effect.andThen(service.connect(id)),
+        Effect.forkScoped,
+      )
+
+      yield* Deferred.await(connecting)
+      yield* Effect.yieldNow
+      yield* Deferred.succeed(release, undefined)
+      expect((yield* Fiber.join(page))._tag).toBe('Ready')
+      expect((yield* Fiber.join(connection))._tag).toBe('Authenticated')
+
+      const after = yield* service.loadMore(id)
+      expect(after._tag).toBe('Failed')
+
+      if (after._tag === 'Failed') expect(after.error._tag).toBe('InvalidContinuation')
+    }).pipe(Effect.provide(makePullRequestsLayer([instance])))
+  }),
+)
+
+it.effect('retires queued group actions and releases their wait on interruption', () =>
+  Effect.gen(function* () {
+    const started = yield* Deferred.make<void>()
+    const queued = yield* Deferred.make<void>()
+
+    const instance = provider('fixture', (remote) =>
+      Option.some(
+        repository(remote.name, (input) =>
+          Option.isNone(input.cursor)
+            ? Effect.succeed({ items: [], next: Option.some(Redacted.make('page-2')) })
+            : Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
+        ),
+      ),
+    )
+
+    yield* Effect.gen(function* () {
+      const service = yield* PullRequests
+      const events = yield* Stream.runCollect(service.discover(snapshot(['origin'])))
+      const start = events[0]
+
+      if (start?._tag !== 'Started' || !start.groups[0]) return yield* Effect.die('Missing group')
+
+      const id = start.groups[0].id
+      const page = yield* service.loadMore(id).pipe(Effect.forkScoped)
+      yield* Deferred.await(started)
+
+      const waiting = yield* Deferred.succeed(queued, undefined).pipe(
+        Effect.andThen(
+          Effect.all([Effect.result(service.loadMore(id)), Effect.result(service.connect(id))], {
+            concurrency: 2,
+          }),
+        ),
+        Effect.forkScoped,
+      )
+
+      yield* Deferred.await(queued)
+      yield* Effect.yieldNow
+      yield* Stream.runDrain(service.discover(snapshot([])))
+      yield* Fiber.interrupt(page)
+
+      const results = yield* Fiber.join(waiting)
+      expect(results.map((result) => result._tag)).toEqual(['Failure', 'Failure'])
+      expect(results.map((result) => result._tag === 'Failure' && result.failure._tag)).toEqual([
+        'GroupNotFound',
+        'GroupNotFound',
+      ])
+    }).pipe(Effect.provide(makePullRequestsLayer([instance])))
+  }),
+)
+
 it.effect('interrupts provider work without converting cancellation into a failed result', () =>
   Effect.gen(function* () {
     const started = yield* Deferred.make<void>()

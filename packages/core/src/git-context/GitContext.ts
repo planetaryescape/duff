@@ -85,7 +85,14 @@ function helperStrategy(value: string): string {
   return 'Custom helper (command and arguments hidden)'
 }
 
-type RemoteDestination = Pick<GitContextSnapshot['remotes'][number], 'destination' | 'transport'>
+const Remote = GitContextSnapshot.fields.remotes.value
+
+const RemoteDestination = Schema.Struct({
+  destination: Remote.fields.destination,
+  transport: Remote.fields.transport,
+})
+
+type RemoteDestination = Schema.Schema.Type<typeof RemoteDestination>
 
 function remoteDestination(raw: Redacted.Redacted): RemoteDestination {
   const value = Redacted.value(raw)
@@ -100,21 +107,34 @@ function remoteDestination(raw: Redacted.Redacted): RemoteDestination {
         Match.orElse((): RemoteDestination['transport'] => 'ssh'),
       )
 
-      return { destination: `${url.protocol}//${url.host}${url.pathname}`, transport }
+      return RemoteDestination.make({
+        destination: `${url.protocol}//${url.host}${url.pathname}`,
+        transport,
+      })
     }
 
     if (url.protocol === 'file:')
-      return { destination: 'Local repository (path hidden)', transport: 'local' }
+      return RemoteDestination.make({
+        destination: 'Local repository (path hidden)',
+        transport: 'local',
+      })
   } catch {
     const scp = /^(?:[^@/:]+@)?([a-zA-Z0-9.-]+):([^?#]+)(?:[?#].*)?$/.exec(value)
 
-    if (scp?.[1] && scp[2]) return { destination: `${scp[1]}:${scp[2]}`, transport: 'ssh' }
+    if (scp?.[1] && scp[2])
+      return RemoteDestination.make({ destination: `${scp[1]}:${scp[2]}`, transport: 'ssh' })
 
     if (/^(?:\/|\.\.?\/)/.test(value))
-      return { destination: 'Local repository (path hidden)', transport: 'local' }
+      return RemoteDestination.make({
+        destination: 'Local repository (path hidden)',
+        transport: 'local',
+      })
   }
 
-  return { destination: 'Unsupported remote (URL hidden)', transport: 'other' }
+  return RemoteDestination.make({
+    destination: 'Unsupported remote (URL hidden)',
+    transport: 'other',
+  })
 }
 
 export const makeGitContextLayer = (environment: NodeJS.ProcessEnv) =>
@@ -373,7 +393,11 @@ export const makeGitContextLayer = (environment: NodeJS.ProcessEnv) =>
 
             const remote = remoteDestination(raw)
 
-            return { name, ...remote, credentials: yield* credentials(raw, remote.transport) }
+            return Remote.make({
+              name,
+              ...remote,
+              credentials: yield* credentials(raw, remote.transport),
+            })
           }),
         )
 

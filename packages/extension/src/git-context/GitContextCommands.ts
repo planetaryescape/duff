@@ -6,6 +6,16 @@ import { type CommandRuntime, runOperation } from '../Operations'
 import { chooseDirectory } from '../Repository'
 import { GitContextView } from './GitContextView'
 
+class GitContextCommands {
+  constructor(
+    readonly inspect: (
+      root?: string,
+      focus?: boolean,
+      mode?: 'automatic' | 'manual',
+    ) => Promise<void>,
+  ) {}
+}
+
 export function registerGitContextCommands(
   context: vscode.ExtensionContext,
   runtime: CommandRuntime,
@@ -76,5 +86,5 @@ export function registerGitContextCommands(
     ),
   )
 
-  return { inspect }
+  return new GitContextCommands(inspect)
 }
