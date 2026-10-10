@@ -1,6 +1,6 @@
 # File map: built-in provider plugins
 
-Status: proposed paths and responsibilities, not created implementation files. Follows the confirmed [contract](03-contracts.md) and [flows](04-flows.md). Keep the existing two Bun packages; add a plugins feature, not technical-layer packages.
+Status: file map confirmed; paths are not created implementation files. Follows the confirmed [contract](03-contracts.md) and [flows](04-flows.md). Keep the existing two Bun packages; add a plugins feature, not technical-layer packages.
 
 ## Proposed shape
 
@@ -94,4 +94,4 @@ None. This is an additive feature plan, not another organization pass.
 
 ## Next checkpoint
 
-Confirm the file map before writing the test plan. The plugin API and native integration have concrete owners; authentication internals and the deterministic native-test harness remain honest open choices.
+Review the proposed [test plan](06-test-plan.md) before delivery slices. The plugin API and native integration have concrete owners; authentication internals remain open, and the test plan proposes a temporary native-validation harness rather than a production fixture mode.
