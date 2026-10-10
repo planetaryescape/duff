@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Option, Redacted, Ref, Schema, Stream } from 'effect'
+import { Context, Effect, Layer, Option, Redacted, Ref, Schema, Semaphore, Stream } from 'effect'
 
 import { type GitContextSnapshot } from '../git-context/GitContext'
 import {
@@ -54,6 +54,10 @@ export type DiscoveryEvent =
 
 export class GroupNotFound extends Schema.TaggedError<GroupNotFound>()('GroupNotFound', {}) {}
 
+/**
+ * Owns continuation safety: same-group reads and connections queue, while different groups run
+ * independently. ReviewSession owns action suppression and discovery-job cancellation.
+ */
 export class PullRequests extends Context.Service<
   PullRequests,
   {
@@ -77,9 +81,10 @@ export const makePullRequestsLayer = (providers: ReadonlyArray<GitHostingProvide
 
       interface Entry {
         group: RepositoryGroup
-        repository: ProviderRepository
+        readonly repository: ProviderRepository
+        readonly gate: Semaphore.Semaphore
         cursor: Option.Option<Redacted.Redacted>
-        seen: Set<string>
+        readonly seen: Set<string>
       }
 
       let entries = new Map<GroupId, Entry>()
@@ -182,6 +187,7 @@ export const makePullRequestsLayer = (providers: ReadonlyArray<GitHostingProvide
                     remoteNames: [remote.name],
                   },
                   repository: match.repository,
+                  gate: yield* Semaphore.make(1),
                   cursor: Option.none(),
                   seen: new Set(),
                 })
@@ -201,6 +207,7 @@ export const makePullRequestsLayer = (providers: ReadonlyArray<GitHostingProvide
                   Stream.mapEffect(
                     (entry) =>
                       read(entry, false).pipe(
+                        entry.gate.withPermits(1),
                         Effect.map((result): DiscoveryEvent => ({ _tag: 'Updated', result })),
                       ),
                     { concurrency: 4, unordered: true },
@@ -216,16 +223,24 @@ export const makePullRequestsLayer = (providers: ReadonlyArray<GitHostingProvide
 
         if (!entry) return yield* new GroupNotFound()
 
-        return yield* read(entry, true)
+        return yield* Effect.gen(function* () {
+          if (entries.get(id) !== entry) return yield* new GroupNotFound()
+
+          return yield* read(entry, true)
+        }).pipe(entry.gate.withPermits(1))
       })
 
       const connect = Effect.fn('PullRequests.connect')(function* (id: GroupId) {
         const entry = entries.get(id)
 
         if (!entry) return yield* new GroupNotFound()
-        entry.cursor = Option.none()
 
-        return yield* entry.repository.connectAuthentication()
+        return yield* Effect.gen(function* () {
+          if (entries.get(id) !== entry) return yield* new GroupNotFound()
+          entry.cursor = Option.none()
+
+          return yield* entry.repository.connectAuthentication()
+        }).pipe(entry.gate.withPermits(1))
       })
 
       return PullRequests.of({ discover, loadMore, connect })
