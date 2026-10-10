@@ -1,6 +1,6 @@
 # Test plan: shared provider behavior
 
-Status: test plan confirmed. These are future red/green cycles, not tests already written or executed. Public contracts: [03-contracts.md](03-contracts.md). Owners: [05-file-map.md](05-file-map.md).
+Status: superseded historical staged test plan. Use [capabilities and review session](../04-capabilities-and-review-session.md) and the [current implementation plan](../../implementation-plan.md). These earlier red/green cycles are not evidence for the current cutover.
 
 ## Approach
 

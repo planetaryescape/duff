@@ -1,6 +1,8 @@
 # Plugin interface design: progress
 
-## Status: GitHub and Azure DevOps discovery implemented
+## Status: superseded historical staged design
+
+The owner-approved [capability/session chapter](../04-capabilities-and-review-session.md) and [D007](../02-decision-log.md#d007-job-shaped-capabilities-and-one-review-session) replace this design. Chapter paths and the earlier progress below remain for historical reference. The new cutover passes check, 40 tests, packaging and native supplied-service UI verification. Core owns provider implementations and tests. Real provider requests and native sign-in remain unverified. See the [delivery log](../../implementation-log.md#2026-10-10-core-owned-pull-requests-and-review-session).
 
 This tech-spec-pro design lives in the blueprint at the owner's request.
 It covers the general plugin interface, with provider discovery as its first concrete contribution.

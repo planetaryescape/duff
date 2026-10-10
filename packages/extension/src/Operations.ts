@@ -2,15 +2,15 @@ import * as vscode from "vscode";
 import { Cause, Effect, ManagedRuntime, Option } from "effect";
 import { BranchReview, ReviewError } from "@duff/core/review";
 import { GitContext, GitContextError } from "@duff/core/git-context";
-import { ProviderDiscovery } from "@duff/core/provider-discovery";
+import { ReviewSession } from "@duff/core/review-session";
 import { observeOperation, Operation } from "./telemetry/Telemetry";
 
-export type CommandRuntime = ManagedRuntime.ManagedRuntime<BranchReview | GitContext | ProviderDiscovery, never>;
+export type CommandRuntime = ManagedRuntime.ManagedRuntime<BranchReview | GitContext | ReviewSession, never>;
 
 export async function runOperation<A, E>(
   runtime: CommandRuntime,
   operation: Operation,
-  work: Effect.Effect<A, E, BranchReview | GitContext | ProviderDiscovery>,
+  work: Effect.Effect<A, E, BranchReview | GitContext | ReviewSession>,
   onFailure?: () => void,
   signal?: AbortSignal,
   summarize?: (value: A) => "success" | "partial",

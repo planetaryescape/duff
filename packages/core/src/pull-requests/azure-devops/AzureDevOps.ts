@@ -3,9 +3,8 @@ import { Clock, DateTime, Effect, Option, Redacted, Schema } from "effect";
 import {
   Authentication, AuthenticationRequired, InvalidContinuation, InvalidProviderResponse,
   OpenPullRequest, RateLimited,
-} from "@duff/core/git-hosting-provider";
-import type { ProviderContribution, ProviderRepository, RepositoryIdentity } from "@duff/core/git-hosting-provider";
-import type { PluginDefinition } from "@duff/core/plugins";
+} from "../GitHostingProvider";
+import type { GitHostingProvider, ProviderRepository, RepositoryIdentity } from "../GitHostingProvider";
 import { ProviderAuthentication } from "../ProviderAuthentication";
 import { ProviderHttp } from "../ProviderHttp";
 
@@ -62,15 +61,13 @@ function repositoryUrl(address: Address): string {
   return `https://dev.azure.com/${encodeURIComponent(address.org)}/${encodeURIComponent(address.project)}/_git/${encodeURIComponent(address.repo)}`;
 }
 
-export const AzureDevOpsPlugin: PluginDefinition<ProviderAuthentication | ProviderHttp> = {
-  identity: { id: "azure-devops", displayName: "Azure DevOps" },
-  make: Effect.gen(function* () {
+export const makeAzureDevOps = Effect.gen(function* (): Effect.gen.Return<GitHostingProvider, never, ProviderAuthentication | ProviderHttp> {
     const authentication = yield* ProviderAuthentication;
     const http = yield* ProviderHttp;
     const continuations = new Map<string, { readonly key: string; readonly session: string; readonly skip: number }>();
     const cooldowns = new Map<string, number>();
 
-    const recognizeRemote: ProviderContribution["recognizeRemote"] = (remote) => Option.map(parseRemote(remote.destination), (address) => {
+    const recognizeRemote: GitHostingProvider["recognizeRemote"] = (remote) => Option.map(parseRemote(remote.destination), (address) => {
       const boundIdentity = identity(address);
       const continuationOwner = JSON.stringify([remote.name, boundIdentity.key]);
       const inspect = Effect.fn("AzureDevOps.inspectAuthentication")(function* (mode: "silent" | "connect") {
@@ -145,6 +142,5 @@ export const AzureDevOpsPlugin: PluginDefinition<ProviderAuthentication | Provid
         listOpenPullRequests,
       };
     });
-    return [{ _tag: "Provider", recognizeRemote }];
-  }),
-};
+    return { identity: { id: "azure-devops", displayName: "Azure DevOps" }, recognizeRemote };
+});

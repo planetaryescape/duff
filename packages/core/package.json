@@ -5,9 +5,11 @@
   "exports": {
     "./review": "./src/review/BranchReview.ts",
     "./git-context": "./src/git-context/GitContext.ts",
-    "./plugins": "./src/pull-requests/Plugin.ts",
     "./git-hosting-provider": "./src/pull-requests/GitHostingProvider.ts",
-    "./provider-discovery": "./src/pull-requests/ProviderDiscovery.ts"
+    "./pull-requests": "./src/pull-requests/PullRequests.ts",
+    "./pull-request-providers": "./src/pull-requests/Providers.ts",
+    "./provider-authentication": "./src/pull-requests/ProviderAuthentication.ts",
+    "./review-session": "./src/review-session/ReviewSession.ts"
   },
   "scripts": { "typecheck": "tsc --noEmit" },
   "dependencies": { "effect": "4.0.2" }

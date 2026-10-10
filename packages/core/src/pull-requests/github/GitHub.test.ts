@@ -1,13 +1,13 @@
 import { expect, it } from "@effect/vitest";
 import { Cause, Deferred, Effect, Exit, Fiber, Option, Redacted } from "effect";
 import { TestClock } from "effect/testing";
-import { AuthenticationRequired, ProviderUnavailable, RateLimited, RepositoryUnavailable, type Remote } from "@duff/core/git-hosting-provider";
+import { AuthenticationRequired, ProviderUnavailable, RateLimited, RepositoryUnavailable, type Remote } from "../GitHostingProvider";
 import { ProviderAuthentication, type ProviderSession } from "../ProviderAuthentication";
 import { ProviderHttp } from "../ProviderHttp";
-import { GitHubPlugin } from "./GitHubPlugin";
+import { makeGitHub } from "./GitHub";
 
 const remote = (destination: string): Remote => ({ name: "origin", destination, transport: "ssh", credentials: { _tag: "NotApplicable" } });
-const request = { scope: "repository", cursor: Option.none<Redacted.Redacted<string>>() } satisfies Parameters<import("@duff/core/git-hosting-provider").ProviderRepository["listOpenPullRequests"]>[0];
+const request = { scope: "repository", cursor: Option.none<Redacted.Redacted<string>>() } satisfies Parameters<import("../GitHostingProvider").ProviderRepository["listOpenPullRequests"]>[0];
 const session = (token = "test-token", id = "session"): ProviderSession => ({
   id, token: Redacted.make(token), account: { id: "account", displayName: "Test account" },
 });
@@ -21,12 +21,10 @@ const make = Effect.fn("GitHubTest.make")(function* (
   auth: ProviderAuthentication["Service"] = { session: () => Effect.succeed(Option.none()) },
   http: ProviderHttp["Service"] = { get: () => Effect.succeed({ body: [], headers: {} }) },
 ) {
-  const contributions = yield* GitHubPlugin.make.pipe(
+  const provider = yield* makeGitHub.pipe(
     Effect.provideService(ProviderAuthentication, ProviderAuthentication.of(auth)),
     Effect.provideService(ProviderHttp, ProviderHttp.of(http)),
   );
-  const provider = contributions[0];
-  if (!provider) return yield* Effect.die("Missing provider");
   const repository = provider.recognizeRemote(remote("https://github.com/owner/repo.git"));
   if (Option.isNone(repository)) return yield* Effect.die("Missing repository");
   return { provider, repository: repository.value };
@@ -34,7 +32,7 @@ const make = Effect.fn("GitHubTest.make")(function* (
 
 it.effect("construction and remote recognition do not authenticate or call HTTP", () => Effect.gen(function* () {
   const { provider } = yield* make({ session: () => Effect.die("Unexpected authentication") }, { get: () => Effect.die("Unexpected HTTP") });
-  expect(GitHubPlugin.identity).toEqual({ id: "github", displayName: "GitHub" });
+  expect(provider.identity).toEqual({ id: "github", displayName: "GitHub" });
   for (const destination of ["https://github.com/owner/repo", "https://github.com/owner/repo.git/", "ssh://github.com/owner/repo.git", "ssh://git@github.com/owner/repo", "git@github.com:owner/repo.git", "github.com:owner/repo", "https://GITHUB.COM/owner/repo"]) {
     const recognized = provider.recognizeRemote(remote(destination));
     expect(Option.isSome(recognized)).toBe(true);

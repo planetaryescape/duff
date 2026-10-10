@@ -30,7 +30,7 @@ export default tseslint.config(
     files: ["packages/extension/src/**/*.ts"],
     rules: {
       "no-restricted-imports": ["error", {
-        patterns: [{ group: ["**/core/src/**"], message: "Import core through its declared @duff/core exports." }],
+        patterns: [{ group: ["**/core/src/**", "@duff/core/pull-requests/github/*", "@duff/core/pull-requests/azure-devops/*"], message: "Import core through its declared service exports, not provider implementations." }],
       }],
     },
   },
@@ -39,7 +39,7 @@ export default tseslint.config(
     rules: {
       "no-restricted-imports": ["error", {
         patterns: [
-          "**/core/src/**", "**/github/**", "**/azure-devops/**", "**/ProviderHttp", "**/ProviderAuthentication", "effect/http", "effect/http/*",
+          "**/core/src/**", "**/github/**", "**/azure-devops/**", "**/ProviderHttp", "**/ProviderAuthentication", "@duff/core/pull-request-providers", "@duff/core/provider-authentication", "effect/http", "effect/http/*",
         ],
       }],
     },

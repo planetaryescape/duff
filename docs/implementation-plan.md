@@ -24,19 +24,19 @@ Current slice shows applicable configured helpers after resets, credential usern
 Checks: real temporary Git/config fixtures, secret-canary redaction checks, native UI inspection, and the standard gate.
 Docs: update the [strategy contract](blueprint/03-identity-and-provider-strategies.md) and implementation log.
 
-## S04: Plugin seam and GitHub discovery
+## S04: Pull-request capability and GitHub discovery
 
-Status: implemented with deterministic adapter/service verification; authenticated account smoke testing has not run. Local Git context remains conservative for advanced credential patterns.
-Detailed boundary, tests, and usable delivery: [plugin design](blueprint/plugins/PROGRESS.md) and [Slice 2](blueprint/plugins/07-pr-slices.md#slice-2-usable-github-discovery-through-the-shared-plugin-contract).
-Scope: shared provider contract, registry/composition, GitHub strategy, native PR list and discovery states.
+Status: adapters and owner-approved capability/session cutover implemented and verified locally. Check, 40 tests, packaging and native supplied-service UI verification pass. Real provider requests and native sign-in remain unverified. Local Git context remains conservative for advanced credential patterns.
+Depends on: D007. Current boundary: [capabilities and review session](blueprint/04-capabilities-and-review-session.md). [Plugin progress](blueprint/plugins/PROGRESS.md) is historical.
+Scope: one job-shaped adapter contract, grouped progressive PullRequests discovery, ReviewSession job/state ownership, GitHub adapter and native PR list.
 Acceptance: recognize supported GitHub remotes; show open PRs, drafts and source/target context; distinguish auth failure, empty results, and pagination.
 Automatic discovery is cancellable and does not prompt for login or block local review.
-Checks: remote-recognition fixtures, supplied Effect services, provider API seam tests, and native fixture states. An authenticated account/repository smoke check remains separately authorized work.
+Checks: remote-recognition fixtures, supplied Effect services, provider API seams, progressive grouping and session cancellation/refresh tests. Native verification exercised group-based loadMore, retained Refreshing/Stale rows and repository replacement. Connection interruption/failure is covered through the core service; native sign-in remains unverified. See the [delivery log](implementation-log.md#2026-10-10-core-owned-pull-requests-and-review-session). An authenticated account/repository smoke check remains separately authorized work.
 No fetch, checkout, PR mutations, or credential storage in this slice.
 
 ## S05: Azure DevOps discovery
 
-Status: implemented through the shared seam and native Microsoft authentication; deterministic adapter tests pass. Authenticated account smoke testing has not run.
+Status: implemented through the shared job-shaped seam and native Microsoft authentication; deterministic adapter tests pass. Session integration has native supplied-service verification under S04. Real provider requests and native sign-in remain unverified.
 Scope: Azure strategy and its remote/authentication adapter, with the same host UI.
 Acceptance: recognize supported HTTPS/SSH remote forms and list active PRs with provider-safe identity and errors.
 Checks: Azure-specific fixtures and API seam tests; prove the shared review engine needs no provider conditions.

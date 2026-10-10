@@ -1,8 +1,10 @@
 import { Effect, Option, Redacted, Schema } from "effect";
 import { GitContextSnapshot } from "../git-context/GitContext";
-import type { PluginIdentity } from "./Plugin";
 
 export type Remote = GitContextSnapshot["remotes"][number];
+
+export const ProviderIdentity = Schema.Struct({ id: Schema.NonEmptyString, displayName: Schema.NonEmptyString });
+export interface ProviderIdentity extends Schema.Schema.Type<typeof ProviderIdentity> {}
 
 export const RepositoryIdentity = Schema.Struct({
   authority: Schema.NonEmptyString, key: Schema.NonEmptyString, displayName: Schema.NonEmptyString,
@@ -43,7 +45,6 @@ export class RateLimited extends Schema.TaggedError<RateLimited>()("RateLimited"
 export class ProviderUnavailable extends Schema.TaggedError<ProviderUnavailable>()("ProviderUnavailable", {}) {}
 export class InvalidProviderResponse extends Schema.TaggedError<InvalidProviderResponse>()("InvalidProviderResponse", {}) {}
 export class InvalidContinuation extends Schema.TaggedError<InvalidContinuation>()("InvalidContinuation", {}) {}
-export class RemoteNotFound extends Schema.TaggedError<RemoteNotFound>()("RemoteNotFound", {}) {}
 export type AuthenticationError = RateLimited | ProviderUnavailable | InvalidProviderResponse;
 export type DiscoveryError = AuthenticationRequired | RepositoryUnavailable | AuthenticationError | InvalidContinuation;
 
@@ -56,18 +57,7 @@ export interface ProviderRepository {
     readonly cursor: Option.Option<Redacted.Redacted<string>>;
   }) => Effect.Effect<PullRequestPage, DiscoveryError>;
 }
-export interface ProviderContribution {
-  readonly _tag: "Provider";
+export interface GitHostingProvider {
+  readonly identity: ProviderIdentity;
   readonly recognizeRemote: (remote: Remote) => Option.Option<ProviderRepository>;
 }
-export type RemoteDiscovery =
-  | { readonly _tag: "Unsupported"; readonly remote: Remote }
-  | { readonly _tag: "Ambiguous"; readonly remote: Remote; readonly candidates: ReadonlyArray<PluginIdentity> }
-  | {
-    readonly _tag: "Discovered"; readonly remote: Remote; readonly plugin: PluginIdentity;
-    readonly repository: RepositoryIdentity; readonly authentication: Authentication; readonly page: PullRequestPage;
-  }
-  | {
-    readonly _tag: "Failed"; readonly remote: Remote; readonly plugin: PluginIdentity;
-    readonly repository: RepositoryIdentity; readonly error: DiscoveryError;
-  };

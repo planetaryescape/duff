@@ -1,6 +1,6 @@
 # General plugin interface
 
-Status: confirmed design, now implemented through the shared contract, supplied registry, and built-in GitHub/Azure DevOps adapters. Authenticated account smoke checks remain unverified.
+Status: superseded historical staged design. Use [capabilities and review session](../04-capabilities-and-review-session.md) and D007 for the current contract. The remaining text preserves the earlier design, not current implementation claims.
 
 ## Summary
 

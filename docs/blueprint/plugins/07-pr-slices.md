@@ -1,6 +1,6 @@
 # Delivery slices: built-in provider discovery
 
-Status: conventional credential-policy inspection and both provider discovery slices implemented. Advanced credential contexts remain unresolved. The owner authorized public repository publication; authenticated account checks still require separate authorization. Full-folder Plannotator feedback remains pending.
+Status: superseded historical staged slices. Use [capabilities and review session](../04-capabilities-and-review-session.md), D007 and the [current implementation plan](../../implementation-plan.md). Earlier delivery status below does not establish completion of the current native cutover.
 
 Each slice leaves local review usable. Tests are developed vertically according to [06-test-plan.md](06-test-plan.md), not as a separate all-types or all-tests delivery. The [file map](05-file-map.md) names ownership; these slices name observable outcomes.
 

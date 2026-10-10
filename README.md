@@ -49,15 +49,16 @@ Effect and its test integration are pinned to stable 4.0.2. There is no Alchemy 
 
 Duff inspects local Git identity and safe credential configuration before discovering open PRs. Git helpers are never executed. Configured Git identity and provider API authentication are separate.
 
-The built-in GitHub and Azure DevOps plugins share one contract and read open PRs, including drafts and forks, in the native **Pull Requests** view. Use **Load More** for incomplete results and **Refresh Pull Request Discovery** to restart. Failed pages preserve previously loaded PRs. Clicking a PR opens its provider page, not a local checkout.
+The built-in GitHub and Azure DevOps adapters share one job-shaped contract and read open PRs, including drafts and forks, in the native **Pull Requests** view. Equivalent recognized remotes share a repository group. Groups update progressively as their reads finish. Use each group's **Connect Provider** and **Load More** actions, or **Check Pull Requests** to restart. Same-repository refresh retains previous PRs as Refreshing; failed refreshes and pages mark retained results Stale. Hover a status row for its full message. Clicking a PR opens its provider page, not a local checkout.
 
 Background discovery never prompts for sign-in. **Connect Provider** is an explicit action and warns about broad repository permissions; Duff only performs reads. It uses the editor's GitHub authentication provider with the `repo` scope. Editors without that provider report authentication unavailable. A missing session can read public GitHub repositories; a rejected session is not retried anonymously.
 
 Azure DevOps supports modern and legacy HTTPS remotes and Azure v3 SSH remotes. It uses the editor's Microsoft authentication provider with Azure DevOps `user_impersonation` permission. Without a session it reports authentication required, not an empty PR list. Custom provider hosts and SSH aliases are unsupported.
 
-Set `duff.automaticDiscovery` to `false` to disable background provider reads. The **Check Pull Requests** button and toolbar action still perform a manual read without changing that setting. Repository selection, explicit refresh, and editor-session changes invalidate old results. Advanced Git credential patterns remain explicitly unresolved rather than guessed. Full credential retrieval, fetching, branch switching, PR mutations, polling, and persistent caches are not implemented.
+Set `duff.automaticDiscovery` to `false` to disable background provider reads. The **Check Pull Requests** button and toolbar action still perform a manual read without changing that setting. One ReviewSession owns inspection and provider jobs for the selected local repository. Repository selection and editor-session changes cancel old work; refresh retires old pagination while retaining same-repository PR content. Advanced Git credential patterns remain explicitly unresolved rather than guessed. Full credential retrieval, fetching, branch switching, PR mutations, polling, and persistent caches are not implemented.
 
 ## Design and next slices
 
-See the [documentation map](docs/README.md) for the blueprint, provider-plugin strategy, ordered plan, and delivery evidence.
-Opening a discovered PR as a local review is the next proposed slice. Authenticated API smoke testing is separate from deterministic local adapter tests.
+See the [documentation map](docs/README.md) and [current capability/session contract](docs/blueprint/04-capabilities-and-review-session.md). There is no generic plugin lifecycle. Bitbucket is deferred; opening a discovered PR as a local review remains proposed.
+Core owns provider contracts, implementations and tests. The extension supplies native authentication and transport, then consumes ReviewSession state and actions.
+The capability/session cutover passes check, 40 tests and packaging. Native supplied-service verification covers progressive groups, paging, retained Refreshing/Stale results and repository replacement. Real provider requests and native sign-in remain unverified.

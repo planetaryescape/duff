@@ -1,6 +1,6 @@
 # Flows: shared provider discovery
 
-Status: flows implemented with deterministic service, adapter, and native fixture evidence. The [shared contract](03-contracts.md) defines values and operations; this layer defines sequencing and publication. Authenticated account checks and provider writes remain outside this document's authorization.
+Status: superseded historical staged design. Use [capabilities and review session](../04-capabilities-and-review-session.md) and D007 for progressive grouped discovery and retained session state. Earlier fixture evidence does not verify the current native cutover.
 
 ## Current versus proposed
 

@@ -1,6 +1,6 @@
 # Contracts: one provider capability, two implementations
 
-Status: both provider implementations share [GitHostingProvider.ts](../../../packages/core/src/plugins/GitHostingProvider.ts). [Plugin.ts](../../../packages/core/src/plugins/Plugin.ts) owns generic lifecycle; [ProviderDiscovery.ts](../../../packages/core/src/plugins/ProviderDiscovery.ts) owns execution policy. Sketches summarize the compiled boundary. Both providers implement the same capability, including explicit connection. See [flows](04-flows.md) and [delivery evidence](../../implementation-log.md).
+Status: superseded historical staged design. Use [capabilities and review session](../04-capabilities-and-review-session.md) and D007. Historical file names and sketches below are not the compiled boundary; generic lifecycle has been removed.
 
 ## Ownership
 

@@ -2,9 +2,8 @@ import { createHash } from "node:crypto";
 import { Clock, DateTime, Effect, Option, Redacted, Schema } from "effect";
 import {
   Authentication, InvalidContinuation, InvalidProviderResponse, OpenPullRequest, PullRequestPage, RateLimited,
-  type ProviderRepository, type RepositoryIdentity,
-} from "@duff/core/git-hosting-provider";
-import type { PluginDefinition } from "@duff/core/plugins";
+  type GitHostingProvider, type ProviderRepository, type RepositoryIdentity,
+} from "../GitHostingProvider";
 import { ProviderAuthentication } from "../ProviderAuthentication";
 import { ProviderHttp } from "../ProviderHttp";
 
@@ -60,9 +59,7 @@ const nextPage = Effect.fn("GitHub.nextPage")(function* (link: string | undefine
   return next;
 });
 
-export const GitHubPlugin: PluginDefinition<ProviderAuthentication | ProviderHttp> = {
-  identity: { id: "github", displayName: "GitHub" },
-  make: Effect.gen(function* () {
+export const makeGitHub = Effect.gen(function* (): Effect.gen.Return<GitHostingProvider, never, ProviderAuthentication | ProviderHttp> {
     const auth = yield* ProviderAuthentication;
     const http = yield* ProviderHttp;
     let cooldown = 0;
@@ -126,6 +123,5 @@ export const GitHubPlugin: PluginDefinition<ProviderAuthentication | ProviderHtt
         }) }).pipe(Effect.mapError(() => new InvalidProviderResponse()));
       }),
     });
-    return [{ _tag: "Provider", recognizeRemote: (remote) => Option.map(recognize(remote.destination), bind) }];
-  }),
-};
+    return { identity: { id: "github", displayName: "GitHub" }, recognizeRemote: (remote) => Option.map(recognize(remote.destination), bind) };
+});

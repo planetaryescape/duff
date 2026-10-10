@@ -9,7 +9,9 @@ Status: review, conservative local identity inspection, and shared GitHub/Azure 
 | Review capability | [BranchReview.ts](../../packages/core/src/review/BranchReview.ts) | Schemas, typed errors, service and Git Layer; read-only CLI operations, immutable revisions, NUL-delimited path parsing |
 | Native view | [ReviewView.ts](../../packages/extension/src/review/ReviewView.ts) | File rows and historical document URIs |
 | Review integration | [ReviewCommands.ts](../../packages/extension/src/review/ReviewCommands.ts) | Branch picker, comparison state, list/tree persistence, immutable content provider, diff and current-file commands |
-| Git-context integration | [GitContextCommands.ts](../../packages/extension/src/git-context/GitContextCommands.ts) | Inspection, failure state, request generation, stale-result invalidation |
+| Git-context integration | [GitContextCommands.ts](../../packages/extension/src/git-context/GitContextCommands.ts) | Select repository through ReviewSession and render its inspection state |
+| Session | [ReviewSession.ts](../../packages/core/src/review-session/ReviewSession.ts) | One selected local repository, FiberMap jobs and SubscriptionRef changes |
+| Pull requests | [PullRequests.ts](../../packages/core/src/pull-requests/PullRequests.ts) | Group equivalent remotes, private continuation state and progressive results |
 | Shared editor boundaries | [Operations.ts](../../packages/extension/src/Operations.ts), [Repository.ts](../../packages/extension/src/Repository.ts) | Operation tracing and error notifications; workspace-folder selection |
 | Composition root | [extension.ts](../../packages/extension/src/extension.ts) | Layers, feature registration and coordination, one managed runtime and disposal |
 | Verification | [BranchReview.test.ts](../../packages/core/src/review/BranchReview.test.ts) | Real temporary repositories, divergence, dirty files, renames, detached HEAD, failures |
@@ -29,7 +31,7 @@ Git owns branches, commits, and contents. Duff keeps a calculated review snapsho
 Only the extension boundary publishes a snapshot into the view.
 Comparison errors do not create successful empty reviews; the previous successful review remains visible.
 Snapshots pin both sides of the diff to commit IDs. Workspace files are separate, mutable documents.
-Review registration exposes only the current repository root to Git-context registration. Publishing a comparison calls Git-context invalidation through the composition root, clearing both previous rows and pending inspection generations. Feature modules do not create runtimes or import each other's internals.
+Review registration exposes only the current repository root to Git-context registration. Publishing a comparison starts session inspection through the composition root. The session cancels old jobs and clears the context snapshot; same-repository discovery retains PR content as Refreshing. Feature modules do not create runtimes or import each other's internals.
 
 ```text
 Branch quick pick → BranchReview.compare → Git adapter → immutable Review
@@ -50,17 +52,20 @@ Repository selection
     ├── local BranchReview → native file list and diff
     └── GitContext inspection → safe identity and remote metadata
                                  ↓
-                        Provider plugin registry
-                         ├── GitHub strategy
-                         └── Azure DevOps strategy
+                        PullRequests groups remotes
+                         ├── GitHub adapter
+                         └── Azure DevOps adapter
                                  ↓
-                       normalized open-PR results
+                       Started / Updated Stream
+                                 ↓
+                       ReviewSession retained state
                                  ↓
                          native PR list / browser link
 ```
 
-`GitContext`, the shared plugin contract, and the registry-driven discovery service are implemented.
-The extension composition root supplies GitHub and Azure DevOps definitions and their authentication/HTTP Layers.
+`GitContext`, the job-shaped GitHostingProvider contract, PullRequests and ReviewSession are implemented.
+Core owns GitHub and Azure DevOps implementations and tests beside their shared contract. Its Providers.ts constructs the built-ins. The extension composition root supplies native authentication and HTTP transport through public Layer exports, not individual adapters. ReviewSession owns FiberMap jobs and exposes SubscriptionRef changes to both native views. Discovery reads at most four groups concurrently and emits results unordered. Connect and loadMore take group IDs, never UI-owned cursors.
+See the [focused contract](04-capabilities-and-review-session.md) for refresh, Stale results, pagination and failure transitions. The [staged plugin design](plugins/00-problem.md) is historical, superseded by D007. No generic lifecycle or Bitbucket implementation is included.
 Core contracts must not import provider SDKs or choose credentials implicitly.
 Opening a discovered PR locally remains a proposed follow-up; selecting a PR currently opens its provider page.
 
@@ -103,6 +108,7 @@ Use Cache if repeated immutable blob reads justify it. Use scoped fibers, cancel
 
 [TypeScript](../../tsconfig.json) enforces strict checking and indexed-access checks.
 [ESLint](../../eslint.config.mjs) checks Promise ownership and unsafe types, prohibits assertions, restricts core imports and runtime construction, and blocks extension imports of relative core source paths.
+Editor commands and views cannot import provider implementations, authentication, HTTP or built-in construction. Core cannot import VS Code or extension code.
 The [pre-commit gate](../../.githooks/pre-commit) runs check, test, and build. Enable it explicitly in each clone.
 
 This is a partial rat-stack fence, not its full toolchain.
@@ -115,4 +121,4 @@ Report gaps honestly; do not claim these checks prove runtime correctness.
 The native UI was exercised in an isolated Extension Development Host.
 Historical-document language intelligence is limited; full LSP behavior across languages was not verified.
 Binary rendering, large-repository behavior, and automatic branch-change refresh were not verified.
-Identity inspection is partial; see the [strategy contract](03-identity-and-provider-strategies.md) for remaining gaps. PR discovery has deterministic adapter and native fixture evidence, not an authenticated account smoke check.
+Identity inspection is partial; see the [strategy contract](03-identity-and-provider-strategies.md) for remaining gaps. The current capability/session cutover passes check, 40 tests, packaging and native supplied-service UI verification. Real provider requests and native sign-in remain unverified. See the [delivery log](../implementation-log.md#2026-10-10-core-owned-pull-requests-and-review-session).

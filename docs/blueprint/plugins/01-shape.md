@@ -1,6 +1,6 @@
 # Shape: built-in plugin interface
 
-Status: confirmed shape implemented. Built-in distribution is accepted in [D005](../02-decision-log.md#d005-trusted-built-in-registry-for-the-first-plugins). GitHub and Azure DevOps implement one shared capability; see [contracts](03-contracts.md) and [flows](04-flows.md).
+Status: superseded historical staged design. Use [capabilities and review session](../04-capabilities-and-review-session.md) and D007. The remaining text preserves the earlier shape, not the current contract.
 Scope and invariants: [problem frame](00-problem.md).
 
 ## Key domain concepts

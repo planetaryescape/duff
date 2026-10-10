@@ -1,12 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Exit, Option, Redacted } from "effect";
 import { TestClock } from "effect/testing";
-import { AuthenticationRequired, ProviderUnavailable, RateLimited, RepositoryUnavailable } from "@duff/core/git-hosting-provider";
-import type { Remote } from "@duff/core/git-hosting-provider";
+import { AuthenticationRequired, ProviderUnavailable, RateLimited, RepositoryUnavailable } from "../GitHostingProvider";
+import type { Remote } from "../GitHostingProvider";
 import { ProviderAuthentication } from "../ProviderAuthentication";
 import type { ProviderSession } from "../ProviderAuthentication";
 import { ProviderHttp } from "../ProviderHttp";
-import { AzureDevOpsPlugin } from "./AzureDevOpsPlugin";
+import { makeAzureDevOps } from "./AzureDevOps";
 
 const destination = "https://dev.azure.com/acme/Target%20Project/_git/TargetRepo";
 const remote = (url: string): Remote => ({ name: "origin", destination: url, transport: "https", credentials: { _tag: "NotApplicable" } });
@@ -18,28 +18,25 @@ const pullRequest = (id = 1) => ({
   sourceRefName: "refs/heads/feature", targetRefName: "refs/heads/main",
 });
 const fullPage = { count: 50, value: Array.from({ length: 50 }, (_, index) => pullRequest(index + 1)) };
-const first = { scope: "repository", cursor: Option.none<Redacted.Redacted<string>>() } satisfies Parameters<import("@duff/core/git-hosting-provider").ProviderRepository["listOpenPullRequests"]>[0];
+const first = { scope: "repository", cursor: Option.none<Redacted.Redacted<string>>() } satisfies Parameters<import("../GitHostingProvider").ProviderRepository["listOpenPullRequests"]>[0];
 
 const make = Effect.fn("AzureDevOps.Test.make")(function* (
   auth: ProviderAuthentication["Service"] = { session: () => Effect.succeed(Option.some(session())) },
   http: ProviderHttp["Service"] = { get: () => Effect.succeed({ body: { count: 0, value: [] }, headers: {} }) },
 ) {
-  const contributions = yield* AzureDevOpsPlugin.make.pipe(
+  return yield* makeAzureDevOps.pipe(
     Effect.provideService(ProviderAuthentication, auth), Effect.provideService(ProviderHttp, http),
   );
-  const contribution = contributions[0];
-  if (!contribution) return yield* Effect.die("Missing contribution");
-  return contribution;
 });
 
-describe("AzureDevOpsPlugin", () => {
+describe("AzureDevOps", () => {
   it.effect("recognizes equivalent sanitized forms without authentication or HTTP", () => Effect.gen(function* () {
     let calls = 0;
     const contribution = yield* make(
       { session: () => Effect.sync(() => { calls++; return Option.none(); }) },
       { get: () => Effect.sync(() => { calls++; return { body: {}, headers: {} }; }) },
     );
-    expect(AzureDevOpsPlugin.identity).toEqual({ id: "azure-devops", displayName: "Azure DevOps" });
+    expect(contribution.identity).toEqual({ id: "azure-devops", displayName: "Azure DevOps" });
     for (const url of [destination, "https://acme.visualstudio.com/Target%20Project/_git/TargetRepo", "ssh.dev.azure.com:v3/acme/Target%20Project/TargetRepo", "ssh://ssh.dev.azure.com/v3/acme/Target%20Project/TargetRepo"]) {
       expect(Option.getOrThrow(contribution.recognizeRemote(remote(url))).identity).toEqual({
         authority: "dev.azure.com", key: "acme/target%20project/targetrepo", displayName: "acme/Target Project/TargetRepo",

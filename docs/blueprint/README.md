@@ -6,8 +6,9 @@ It separates intended behavior from inspected implementation and verification ev
 1. [Overview](00-overview.md): product scope and current behavior.
 2. [Architecture](01-architecture.md): owners and runtime flow.
 3. [Decision log](02-decision-log.md): accepted choices and proposed implementation details.
-4. [Identity and provider strategies](03-identity-and-provider-strategies.md): configuration inspection and provider-plugin contracts.
-5. [Plugin interface design](plugins/00-problem.md): staged tech-spec-pro design for the general plugin boundary. See [progress](plugins/PROGRESS.md) for drafted and confirmed layers.
+4. [Identity and provider strategies](03-identity-and-provider-strategies.md): configuration inspection and authentication safety.
+5. [Capabilities and review session](04-capabilities-and-review-session.md): current owner-approved adapter, progressive discovery and session ownership.
+6. [Historical plugin interface design](plugins/00-problem.md): superseded staged design, retained at its original paths. See [progress](plugins/PROGRESS.md).
 
 An accepted requirement is not an implemented feature.
 Proposals need a decision before they become settled policy.
