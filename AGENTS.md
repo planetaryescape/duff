@@ -26,6 +26,7 @@ Use the owner's `maintaining-blueprints` skill in `~/dotfiles` when maintaining 
 ## Verification
 
 Run `bun run check`, `bun run test`, and `bun run build`.
+The fence is type-aware Oxlint with patched `@effect/tsgo` correctness diagnostics and vendored anti-slop rules, not ESLint. Bun install patches the pinned tools. Oxfmt owns formatting; use `bun run format` and `bun run lint:fix`. Keep policy exceptions explicit in `.oxlintrc.json`. Rule tests require Node 22.18+.
 Run `bun run package` for a self-contained VSIX under `packages/extension`; smoke-test the installed artifact after packaging changes.
 Use Effect-aware tests with real temporary Git repositories for Git behavior.
 Exercise native UI in a clean VSCodium Extension Development Host and inspect screenshots when available.

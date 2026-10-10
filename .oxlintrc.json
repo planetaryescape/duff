@@ -1,0 +1,138 @@
+{
+  "$schema": "./node_modules/@effect/tsgo/oxlint-schema.json",
+  "extends": ["./node_modules/@effect/tsgo/oxlint-presets/correctness.json"],
+  "plugins": ["typescript", "import", "unicorn", "oxc", "eslint"],
+  "jsPlugins": [
+    { "name": "anti-slop", "specifier": "./packages/anti-slop/src/index.ts" },
+    { "name": "anti-slop-effect", "specifier": "./packages/anti-slop/src/effect/index.ts" },
+    { "name": "duff", "specifier": "./packages/anti-slop/src/duff.ts" }
+  ],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error",
+    "style": "off",
+    "pedantic": "off",
+    "restriction": "off"
+  },
+  "rules": {
+    "oxc/no-accumulating-spread": "error",
+    "anti-slop/no-array-filter-map": "error",
+    "anti-slop/no-reduce-accumulator-copy": "error",
+    "anti-slop/no-chained-type-assertions": "error",
+    "anti-slop/no-conditional-empty-object-spread": "error",
+    "anti-slop/no-known-value-widening": "error",
+    "anti-slop/no-module-mocking": "error",
+    "anti-slop/no-object-parameters": "error",
+    "anti-slop/no-reflect-apply": "error",
+    "anti-slop/no-reflect-get": "error",
+    "anti-slop/no-runtime-typeof": "error",
+    "anti-slop/no-shape-in-symbol-names": "error",
+    "anti-slop/no-unknown-parameters": "error",
+    "anti-slop/no-unknown-returns": "error",
+    "anti-slop/no-unknown-type-aliases": "error",
+    "anti-slop/no-unsafe-dictionary-type": "error",
+    "anti-slop/no-widen-then-assert": "error",
+    "anti-slop/require-readable-spacing": "error",
+    "anti-slop/require-safety-comment-for-type-assertion": "error",
+    "anti-slop-effect/no-manual-effect-error-tag": "error",
+    "anti-slop-effect/prefer-effect-match": "error",
+    "duff/runtime-boundary": "error",
+    "effecttsgo/lazy-effect": "off",
+    "effecttsgo/unstable-api-usage": "off",
+    "typescript/consistent-return": "off",
+    "typescript/require-array-sort-compare": "off",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/no-unsafe-call": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "typescript/no-unsafe-return": "error",
+    "typescript/consistent-type-imports": ["error", { "fixStyle": "inline-type-imports" }],
+    "typescript/no-non-null-assertion": "error",
+    "typescript/consistent-type-assertions": ["error", { "assertionStyle": "never" }],
+    "typescript/no-explicit-any": "error",
+    "import/no-duplicates": "error",
+    "import/no-self-import": "error",
+    "import/no-empty-named-blocks": "error",
+    "no-underscore-dangle": ["error", { "allow": ["_tag"] }],
+    "no-shadow": "off",
+    "require-yield": "off",
+    "unicorn/consistent-function-scoping": "off",
+    "unicorn/no-array-sort": "off",
+    "unicorn/no-array-reverse": "off",
+    "unicorn/no-new-array": "off",
+    "oxc/no-map-spread": "off"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.test.ts"],
+      "rules": { "effecttsgo/strict-effect-provide": "off" }
+    },
+    {
+      "files": [
+        "packages/core/src/git-context/GitContext.ts",
+        "packages/core/src/review-session/ReviewSession.test.ts"
+      ],
+      "rules": { "typescript/no-misused-spread": "off" }
+    },
+    {
+      "files": ["packages/core/src/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          { "patterns": ["vscode", "duff", "duff/*", "**/extension/**"] }
+        ]
+      }
+    },
+    {
+      "files": ["packages/extension/src/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              "**/core/src/**",
+              "@duff/core/pull-requests/github/*",
+              "@duff/core/pull-requests/azure-devops/*"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/extension/src/**/*Commands.ts", "packages/extension/src/**/*View.ts"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              "**/core/src/**",
+              "**/github/**",
+              "**/azure-devops/**",
+              "**/ProviderHttp",
+              "**/ProviderAuthentication",
+              "@duff/core/pull-request-providers",
+              "@duff/core/provider-authentication",
+              "effect/http",
+              "effect/http/*"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["packages/extension/src/**/*Commands.ts"],
+      "rules": { "anti-slop/no-unknown-parameters": "off" }
+    },
+    {
+      "files": [
+        "packages/core/src/review/BranchReview.ts",
+        "packages/core/src/pull-requests/azure-devops/AzureDevOpsHttp.ts"
+      ],
+      "rules": { "no-control-regex": "off" }
+    }
+  ],
+  "ignorePatterns": ["**/node_modules/**", "**/dist/**", "packages/anti-slop/**", ".amp/**"]
+}

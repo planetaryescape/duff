@@ -31,11 +31,15 @@ This first slice targets text-file review, not binary-file rendering.
 
 ## Checks
 
+Install with Bun. The prepare script patches the pinned TypeScript and Oxlint binaries with `@effect/tsgo`; reinstall after changing tool versions. Anti-slop rule tests require Node 22.18+ because Oxlint RuleTester does not support Bun.
+
 ```sh
 bun run check
 bun run test
 bun run build
 ```
+
+`check` runs Oxfmt, strict typechecking, and type-aware Oxlint with Effect correctness diagnostics. ESLint is not required. Run `bun run format` for formatting or `bun run lint:fix` for safe lint fixes. The recommended Oxc editor extension uses the local tools for linting and format-on-save.
 
 The local pre-commit gate runs all three commands. To enable it in a fresh clone:
 

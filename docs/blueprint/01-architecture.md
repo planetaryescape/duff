@@ -107,12 +107,14 @@ Use Cache if repeated immutable blob reads justify it. Use scoped fibers, cancel
 ## Fence and limits
 
 [TypeScript](../../tsconfig.json) enforces strict checking and indexed-access checks.
-[ESLint](../../eslint.config.mjs) checks Promise ownership and unsafe types, prohibits assertions, restricts core imports and runtime construction, and blocks extension imports of relative core source paths.
+[Type-aware Oxlint](../../.oxlintrc.json) replaces ESLint. The pinned `@effect/tsgo` patches TypeScript and Oxlint during Bun install. Its correctness preset adds Effect diagnostics, including floating Effects. Native typed rules check Promise ownership and unsafe values. Vendored [anti-slop](../../packages/anti-slop/UPSTREAM.md) rules follow the foldkit-mde setup. Oxfmt owns formatting.
 Editor commands and views cannot import provider implementations, authentication, HTTP or built-in construction. Core cannot import VS Code or extension code.
 The [pre-commit gate](../../.githooks/pre-commit) runs check, test, and build. Enable it explicitly in each clone.
 
+Policy exceptions are explicit in the lint config: function-valued service operations remain allowed (`lazy-effect` off); existing pinned unstable APIs remain allowed; tests are composition roots (`strict-effect-provide` off there). VS Code command arguments can be unknown before validation. Two control-character rejection regexes and two plain Schema-derived object spreads have file-scoped exceptions. Generic anti-slop rules are enabled; Effect rules currently enforce tagged errors and Match preference, not a wholesale tag-construction or service-import rewrite.
+
 This is a partial rat-stack fence, not its full toolchain.
-Effect compiler diagnostics, comment bans, comprehensive provider-import rules, and hook-bypass interception are not enforced yet.
+Comment bans, comprehensive provider-import rules, and hook-bypass interception are not enforced yet.
 The syntax-based boundary rules also do not prove alias or re-export behavior.
 Report gaps honestly; do not claim these checks prove runtime correctness.
 

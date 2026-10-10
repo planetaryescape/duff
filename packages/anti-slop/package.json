@@ -1,0 +1,21 @@
+{
+  "name": "@duff/anti-slop",
+  "version": "0.1.2",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./effect": "./src/effect/index.ts"
+  },
+  "scripts": {
+    "test": "for file in src/rules/*.test.ts src/effect/rules/*.test.ts src/duff.test.ts; do node \"$file\" || exit $?; done",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@oxlint/plugins": "1.87.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.4"
+  }
+}
