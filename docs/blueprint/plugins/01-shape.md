@@ -1,6 +1,6 @@
 # Shape: built-in plugin interface
 
-Status: shape confirmed, not implemented. Built-in distribution is accepted in [D005](../02-decision-log.md#d005-trusted-built-in-registry-for-the-first-plugins). The owner confirmed one shared capability contract for GitHub and Azure DevOps; detailed [contracts](03-contracts.md) remain proposed.
+Status: shape confirmed, not implemented. Built-in distribution is accepted in [D005](../02-decision-log.md#d005-trusted-built-in-registry-for-the-first-plugins). The owner confirmed one shared capability contract for GitHub and Azure DevOps; see [contracts](03-contracts.md) and the proposed [flows](04-flows.md).
 Scope and invariants: [problem frame](00-problem.md).
 
 ## Key domain concepts

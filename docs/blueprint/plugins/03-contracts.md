@@ -1,6 +1,6 @@
 # Contracts: one provider capability, two implementations
 
-Status: proposed TypeScript contract sketches, not compiled interfaces or implemented behavior. Shape: [01-shape.md](01-shape.md). Both GitHub and Azure DevOps must implement the same provider contribution; neither gets a weaker optional method set.
+Status: contract design confirmed; TypeScript sketches are not compiled interfaces or implemented behavior. Shape: [01-shape.md](01-shape.md). Both GitHub and Azure DevOps must implement the same provider contribution; neither gets a weaker optional method set. Sequencing and presentation are proposed in [flows](04-flows.md).
 
 ## Ownership
 
@@ -225,7 +225,7 @@ Git credential-strategy inspection does not execute helpers or expose tokens. Pr
 ## Remaining decisions
 
 - Authentication transport for each implementation, including an explicit connection action.
-- Whether public repository reads may proceed without an authenticated session. The contract permits this; workflow policy must not automatically equate Unauthenticated with an empty result.
+- Public-read workflow policy: [flows](04-flows.md#authentication-and-authorization) propose attempting listing after successful Unauthenticated/Unknown inspection without falling back after a rejected session.
 - Shared service operations for the future capabilities the owner wants to define after discovery.
 
 No persistence DTO, external plugin protocol, or public VS Code extension API is added. All plugins compile and ship together. See [progress](PROGRESS.md) before treating any sketch as accepted policy.
