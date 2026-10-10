@@ -7,6 +7,20 @@ import { chooseDirectory } from '../Repository'
 import { observeOperation } from '../telemetry/Telemetry'
 import { ReviewFile, ReviewView, snapshotUri } from './ReviewView'
 
+class BranchChoice implements vscode.QuickPickItem {
+  readonly label: string
+  readonly description: string
+
+  constructor(readonly ref: string) {
+    this.label = ref.replace(/^refs\/(heads|remotes)\//, '')
+    this.description = ref.startsWith('refs/remotes/') ? 'remote-tracking' : 'local'
+  }
+}
+
+class ReviewCommands {
+  constructor(readonly currentRoot: () => string | undefined) {}
+}
+
 export function registerReviewCommands(
   context: vscode.ExtensionContext,
   runtime: CommandRuntime,
@@ -52,11 +66,7 @@ export function registerReviewCommands(
     }
 
     const selected = await vscode.window.showQuickPick(
-      repository.branches.map((ref) => ({
-        label: ref.replace(/^refs\/(heads|remotes)\//, ''),
-        description: ref.startsWith('refs/remotes/') ? 'remote-tracking' : 'local',
-        ref,
-      })),
+      repository.branches.map((ref) => new BranchChoice(ref)),
       {
         title: `Compare ${repository.current} Against Branch`,
         placeHolder: 'Choose the base branch (changes since the common ancestor)',
@@ -177,5 +187,5 @@ export function registerReviewCommands(
     }),
   )
 
-  return { currentRoot: () => review?.root }
+  return new ReviewCommands(() => review?.root)
 }

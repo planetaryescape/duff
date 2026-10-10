@@ -9,9 +9,10 @@ import {
   OpenPullRequest,
   PullRequestPage,
   RateLimited,
-  type GitHostingProvider,
-  type ProviderRepository,
-  type RepositoryIdentity,
+  GitHostingProvider,
+  ProviderIdentity,
+  ProviderRepository,
+  RepositoryIdentity,
 } from '../GitHostingProvider'
 import { ProviderAuthentication } from '../ProviderAuthentication'
 import { ProviderHttp } from '../ProviderHttp'
@@ -57,11 +58,11 @@ const PullRequests = Schema.Array(
 )
 
 function identity(owner: string, repo: string): RepositoryIdentity {
-  return {
+  return RepositoryIdentity.make({
     authority: 'github.com',
     key: `${owner}/${repo}`.toLowerCase(),
     displayName: `${owner}/${repo}`,
-  }
+  })
 }
 
 function recognize(destination: string): Option.Option<RepositoryIdentity> {
@@ -142,130 +143,131 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
     ).pipe(Effect.mapError(() => new InvalidProviderResponse()))
   })
 
-  const bind = (repository: RepositoryIdentity): ProviderRepository => ({
-    identity: repository,
-    inspectAuthentication: Effect.fn('GitHub.inspectAuthentication')(function* () {
-      return yield* authentication('silent')
-    }),
-    connectAuthentication: Effect.fn('GitHub.connectAuthentication')(function* () {
-      return yield* authentication('connect')
-    }),
-    listOpenPullRequests: Effect.fn('GitHub.listOpenPullRequests')(function* (input) {
-      const current = yield* session('silent')
-      const token = Option.map(current, (value) => value.token)
+  const bind = (repository: RepositoryIdentity): ProviderRepository =>
+    ProviderRepository.of({
+      identity: repository,
+      inspectAuthentication: Effect.fn('GitHub.inspectAuthentication')(function* () {
+        return yield* authentication('silent')
+      }),
+      connectAuthentication: Effect.fn('GitHub.connectAuthentication')(function* () {
+        return yield* authentication('connect')
+      }),
+      listOpenPullRequests: Effect.fn('GitHub.listOpenPullRequests')(function* (input) {
+        const current = yield* session('silent')
+        const token = Option.map(current, (value) => value.token)
 
-      const binding = Option.isSome(current)
-        ? JSON.stringify([
-            current.value.id,
-            createHash('sha256').update(Redacted.value(current.value.token)).digest('hex'),
-          ])
-        : 'anonymous'
+        const binding = Option.isSome(current)
+          ? JSON.stringify([
+              current.value.id,
+              createHash('sha256').update(Redacted.value(current.value.token)).digest('hex'),
+            ])
+          : 'anonymous'
 
-      let page = 1
+        let page = 1
 
-      if (Option.isSome(input.cursor)) {
-        const cursor = yield* Schema.decodeUnknownEffect(Cursor)(
-          Redacted.value(input.cursor.value),
-        ).pipe(Effect.mapError(() => new InvalidContinuation()))
+        if (Option.isSome(input.cursor)) {
+          const cursor = yield* Schema.decodeUnknownEffect(Cursor)(
+            Redacted.value(input.cursor.value),
+          ).pipe(Effect.mapError(() => new InvalidContinuation()))
 
-        if (cursor.repository !== repository.key || cursor.binding !== binding)
-          return yield* new InvalidContinuation()
-        page = cursor.page
-      }
+          if (cursor.repository !== repository.key || cursor.binding !== binding)
+            return yield* new InvalidContinuation()
+          page = cursor.page
+        }
 
-      const now = yield* Clock.currentTimeMillis
+        const now = yield* Clock.currentTimeMillis
 
-      if (now < cooldown)
-        return yield* new RateLimited({ retryAfterSeconds: Option.some((cooldown - now) / 1000) })
+        if (now < cooldown)
+          return yield* new RateLimited({ retryAfterSeconds: Option.some((cooldown - now) / 1000) })
 
-      const response = yield* http
-        .get(requestUrl(repository, page), token, {
-          Accept: 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2026-03-10',
-          'User-Agent': 'Duff',
-        })
-        .pipe(
-          Effect.catchTag(
-            'RateLimited',
-            Effect.fn('GitHub.rateLimited')(function* (error) {
-              if (Option.isSome(error.retryAfterSeconds))
-                cooldown = (yield* Clock.currentTimeMillis) + error.retryAfterSeconds.value * 1000
+        const response = yield* http
+          .get(requestUrl(repository, page), token, {
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2026-03-10',
+            'User-Agent': 'Duff',
+          })
+          .pipe(
+            Effect.catchTag(
+              'RateLimited',
+              Effect.fn('GitHub.rateLimited')(function* (error) {
+                if (Option.isSome(error.retryAfterSeconds))
+                  cooldown = (yield* Clock.currentTimeMillis) + error.retryAfterSeconds.value * 1000
 
-              return yield* error
-            }),
-          ),
+                return yield* error
+              }),
+            ),
+          )
+
+        const delay = response.headers['retry-after']
+
+        if (delay !== undefined) {
+          const time = yield* Clock.currentTimeMillis
+
+          const until = /^\d+$/.test(delay)
+            ? time + Number(delay) * 1000
+            : Option.getOrElse(Option.map(DateTime.make(delay), DateTime.toEpochMillis), () => NaN)
+
+          if (Number.isFinite(until)) cooldown = Math.max(cooldown, until)
+        }
+
+        const decoded = yield* Schema.decodeUnknownEffect(PullRequests)(response.body).pipe(
+          Effect.mapError(() => new InvalidProviderResponse()),
         )
 
-      const delay = response.headers['retry-after']
+        const items = yield* Effect.forEach(
+          decoded,
+          Effect.fn('GitHub.pullRequest')(function* (pull) {
+            if (
+              !pull.base.repo ||
+              `${pull.base.repo.owner.login}/${pull.base.repo.name}`.toLowerCase() !==
+                repository.key.toLowerCase()
+            ) {
+              return yield* new InvalidProviderResponse()
+            }
 
-      if (delay !== undefined) {
-        const time = yield* Clock.currentTimeMillis
+            return yield* Schema.decodeUnknownEffect(OpenPullRequest)({
+              id: String(pull.number),
+              title: pull.title,
+              draft: pull.draft,
+              url: `https://github.com/${repository.key}/pull/${pull.number}`,
+              source: pull.head.repo
+                ? {
+                    _tag: 'Available',
+                    repository: identity(pull.head.repo.owner.login, pull.head.repo.name),
+                    ref: {
+                      name: `refs/heads/${pull.head.ref}`,
+                      revision: Option.some(pull.head.sha),
+                    },
+                  }
+                : { _tag: 'Unavailable' },
+              target: {
+                repository,
+                ref: { name: `refs/heads/${pull.base.ref}`, revision: Option.some(pull.base.sha) },
+              },
+            }).pipe(Effect.mapError(() => new InvalidProviderResponse()))
+          }),
+        )
 
-        const until = /^\d+$/.test(delay)
-          ? time + Number(delay) * 1000
-          : Option.getOrElse(Option.map(DateTime.make(delay), DateTime.toEpochMillis), () => NaN)
+        const next = yield* nextPage(response.headers.link, repository, page)
 
-        if (Number.isFinite(until)) cooldown = Math.max(cooldown, until)
-      }
+        return yield* Schema.decodeUnknownEffect(PullRequestPage)({
+          items,
+          next: Option.map(next, (value) => {
+            const cursor = JSON.stringify({
+              repository: repository.key,
+              query: 'open/created/desc/30',
+              binding,
+              page: value,
+            })
 
-      const decoded = yield* Schema.decodeUnknownEffect(PullRequests)(response.body).pipe(
-        Effect.mapError(() => new InvalidProviderResponse()),
-      )
+            return Redacted.make(cursor)
+          }),
+        }).pipe(Effect.mapError(() => new InvalidProviderResponse()))
+      }),
+    })
 
-      const items = yield* Effect.forEach(
-        decoded,
-        Effect.fn('GitHub.pullRequest')(function* (pull) {
-          if (
-            !pull.base.repo ||
-            `${pull.base.repo.owner.login}/${pull.base.repo.name}`.toLowerCase() !==
-              repository.key.toLowerCase()
-          ) {
-            return yield* new InvalidProviderResponse()
-          }
-
-          return yield* Schema.decodeUnknownEffect(OpenPullRequest)({
-            id: String(pull.number),
-            title: pull.title,
-            draft: pull.draft,
-            url: `https://github.com/${repository.key}/pull/${pull.number}`,
-            source: pull.head.repo
-              ? {
-                  _tag: 'Available',
-                  repository: identity(pull.head.repo.owner.login, pull.head.repo.name),
-                  ref: {
-                    name: `refs/heads/${pull.head.ref}`,
-                    revision: Option.some(pull.head.sha),
-                  },
-                }
-              : { _tag: 'Unavailable' },
-            target: {
-              repository,
-              ref: { name: `refs/heads/${pull.base.ref}`, revision: Option.some(pull.base.sha) },
-            },
-          }).pipe(Effect.mapError(() => new InvalidProviderResponse()))
-        }),
-      )
-
-      const next = yield* nextPage(response.headers.link, repository, page)
-
-      return yield* Schema.decodeUnknownEffect(PullRequestPage)({
-        items,
-        next: Option.map(next, (value) => {
-          const cursor = JSON.stringify({
-            repository: repository.key,
-            query: 'open/created/desc/30',
-            binding,
-            page: value,
-          })
-
-          return Redacted.make(cursor)
-        }),
-      }).pipe(Effect.mapError(() => new InvalidProviderResponse()))
-    }),
-  })
-
-  return {
-    identity: { id: 'github', displayName: 'GitHub' },
+  return GitHostingProvider.of({
+    identity: ProviderIdentity.make({ id: 'github', displayName: 'GitHub' }),
     recognizeRemote: (remote) => Option.map(recognize(remote.destination), bind),
-  }
+  })
 })

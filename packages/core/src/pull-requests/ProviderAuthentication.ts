@@ -1,12 +1,15 @@
-import { Context, type Effect, type Option, type Redacted } from 'effect'
+import { Context, type Effect, type Option, Schema } from 'effect'
 
 import { type AuthenticationError } from './GitHostingProvider'
 
-export interface ProviderSession {
-  readonly id: string
-  readonly token: Redacted.Redacted
-  readonly account: { readonly id: string; readonly displayName: string }
-}
+/** Parsed authentication data; the token stays redacted inside core. */
+export const ProviderSession = Schema.Struct({
+  id: Schema.String,
+  token: Schema.Redacted(Schema.NonEmptyString),
+  account: Schema.Struct({ id: Schema.String, displayName: Schema.String }),
+})
+
+export interface ProviderSession extends Schema.Schema.Type<typeof ProviderSession> {}
 
 export class ProviderAuthentication extends Context.Service<
   ProviderAuthentication,

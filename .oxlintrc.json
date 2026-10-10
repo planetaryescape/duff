@@ -67,8 +67,12 @@
   },
   "overrides": [
     {
+      "files": ["packages/core/src/**/*.ts", "packages/extension/src/**/*.ts"],
+      "rules": { "duff/named-returns": "error" }
+    },
+    {
       "files": ["**/*.test.ts"],
-      "rules": { "effecttsgo/strict-effect-provide": "off" }
+      "rules": { "effecttsgo/strict-effect-provide": "off", "duff/named-returns": "off" }
     },
     {
       "files": [

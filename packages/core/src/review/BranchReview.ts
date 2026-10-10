@@ -36,6 +36,15 @@ export const Snapshot = Schema.Struct({
 
 export interface Snapshot extends Schema.Schema.Type<typeof Snapshot> {}
 
+/** Available comparison bases and the currently checked-out branch. */
+export const Branches = Schema.Struct({
+  root: Schema.String,
+  current: Schema.String,
+  branches: Schema.Array(Schema.String),
+})
+
+export interface Branches extends Schema.Schema.Type<typeof Branches> {}
+
 export class ReviewError extends Schema.TaggedError<ReviewError>()('ReviewError', {
   operation: Schema.String,
   message: Schema.String,
@@ -44,14 +53,7 @@ export class ReviewError extends Schema.TaggedError<ReviewError>()('ReviewError'
 export class BranchReview extends Context.Service<
   BranchReview,
   {
-    readonly branches: (directory: string) => Effect.Effect<
-      {
-        readonly root: string
-        readonly current: string
-        readonly branches: ReadonlyArray<string>
-      },
-      ReviewError
-    >
+    readonly branches: (directory: string) => Effect.Effect<Branches, ReviewError>
     readonly compare: (root: string, branch: string) => Effect.Effect<Review, ReviewError>
     readonly read: (snapshot: Snapshot) => Effect.Effect<string, ReviewError>
   }
@@ -135,14 +137,14 @@ export const gitReviewLayer = Layer.effect(
         'refs/remotes',
       ])
 
-      return {
+      return Branches.make({
         root,
         current,
         branches: output
           .trim()
           .split('\n')
           .filter((ref) => ref && !ref.endsWith('/HEAD') && ref !== `refs/heads/${current}`),
-      }
+      })
     })
 
     const compare = Effect.fn('BranchReview.compare')(function* (root: string, baseBranch: string) {

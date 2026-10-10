@@ -1,5 +1,13 @@
 import * as vscode from 'vscode'
 
+class RepositoryChoice implements vscode.QuickPickItem {
+  readonly label: string
+
+  constructor(readonly folder: vscode.WorkspaceFolder) {
+    this.label = folder.name
+  }
+}
+
 export async function chooseDirectory() {
   const folders = vscode.workspace.workspaceFolders
 
@@ -14,7 +22,7 @@ export async function chooseDirectory() {
       ? folders[0]
       : await vscode.window
           .showQuickPick(
-            folders.map((item) => ({ label: item.name, folder: item })),
+            folders.map((folder) => new RepositoryChoice(folder)),
             { title: 'Duff: Choose Repository' },
           )
           .then((item) => item?.folder)

@@ -1,6 +1,7 @@
 import {
   Cause,
   Context,
+  Data,
   Effect,
   FiberMap,
   Layer,
@@ -19,7 +20,7 @@ import { type DiscoveryError } from '../pull-requests/GitHostingProvider'
 import {
   type DiscoveryNotice,
   type GroupId,
-  type GroupResult,
+  GroupResult,
   PullRequests,
   type RepositoryGroup,
 } from '../pull-requests/PullRequests'
@@ -28,7 +29,8 @@ type Ready = Extract<GroupResult, { readonly _tag: 'Ready' }>
 
 export type SessionProblem = DiscoveryError | 'InspectionFailed' | 'UnexpectedFailure'
 
-export interface GroupRow {
+/** Immutable presentation state for a repository group. */
+export class GroupRow extends Data.Class<{
   readonly group: RepositoryGroup
   readonly activity: 'Idle' | 'LoadingMore' | 'Connecting' | 'Cooldown'
   readonly content:
@@ -37,7 +39,14 @@ export interface GroupRow {
     | { readonly _tag: 'Refreshing'; readonly data: Ready }
     | { readonly _tag: 'Stale'; readonly data: Ready; readonly error: SessionProblem }
     | { readonly _tag: 'Failed'; readonly error: SessionProblem }
+}> {
+  /** Change activity without mutating the row or discarding its content. */
+  withActivity(activity: GroupRow['activity']): GroupRow {
+    return new GroupRow({ group: this.group, content: this.content, activity })
+  }
 }
+
+const RowContent = Data.taggedEnum<GroupRow['content']>()
 
 export type ReviewState =
   | { readonly _tag: 'Idle' }
@@ -52,6 +61,9 @@ export type ReviewState =
       readonly rows: ReadonlyArray<GroupRow>
       readonly notices: ReadonlyArray<DiscoveryNotice>
     }
+
+/** Named constructors for session state; no wire codec is needed for this internal state. */
+export const ReviewState = Data.taggedEnum<ReviewState>()
 
 export class ReviewSession extends Context.Service<
   ReviewSession,
@@ -72,14 +84,17 @@ export class ReviewSession extends Context.Service<
     Effect.gen(function* () {
       const git = yield* GitContext
       const prs = yield* PullRequests
-      const state = yield* SubscriptionRef.make<ReviewState>({ _tag: 'Idle' })
+      const state = yield* SubscriptionRef.make<ReviewState>(ReviewState.Idle())
       const work = yield* FiberMap.make<string, void>()
       const gate = yield* Semaphore.make(1)
 
       const updateRow = (id: GroupId, update: (row: GroupRow) => GroupRow) =>
         SubscriptionRef.update(state, (state) =>
           state._tag === 'Active'
-            ? { ...state, rows: state.rows.map((row) => (row.group.id === id ? update(row) : row)) }
+            ? ReviewState.Active({
+                ...state,
+                rows: state.rows.map((row) => (row.group.id === id ? update(row) : row)),
+              })
             : state,
         )
 
@@ -89,13 +104,16 @@ export class ReviewSession extends Context.Service<
       const failed = (row: GroupRow, error: SessionProblem): GroupRow => {
         const data = dataOf(row)
 
-        return {
-          ...row,
+        return new GroupRow({
+          group: row.group,
           activity: 'Idle',
           content: Option.isSome(data)
-            ? { _tag: 'Stale', data: { ...data.value, hasMore: false }, error }
-            : { _tag: 'Failed', error },
-        }
+            ? RowContent.Stale({
+                data: GroupResult.Ready({ ...data.value, hasMore: false }),
+                error,
+              })
+            : RowContent.Failed({ error }),
+        })
       }
 
       const supervise = (operation: string, effect: Effect.Effect<void>) =>
@@ -105,12 +123,12 @@ export class ReviewSession extends Context.Service<
 
             return SubscriptionRef.update(state, (state): ReviewState =>
               state._tag === 'Active'
-                ? {
+                ? ReviewState.Active({
                     ...state,
                     discovering: false,
                     problem: Option.some('UnexpectedFailure'),
                     rows: state.rows.map((row) => failed(row, 'UnexpectedFailure')),
-                  }
+                  })
                 : state,
             ).pipe(
               Effect.andThen(
@@ -127,13 +145,12 @@ export class ReviewSession extends Context.Service<
         const old = dataOf(row)
 
         if (result._tag === 'Failed')
-          return {
-            ...row,
+          return new GroupRow({
+            group: row.group,
             activity: 'Idle',
             content: Option.isSome(old)
-              ? {
-                  _tag: 'Stale',
-                  data: {
+              ? RowContent.Stale({
+                  data: GroupResult.Ready({
                     ...old.value,
                     hasMore:
                       append &&
@@ -141,11 +158,11 @@ export class ReviewSession extends Context.Service<
                         result.error._tag,
                       ) &&
                       old.value.hasMore,
-                  },
+                  }),
                   error: result.error,
-                }
-              : { _tag: 'Failed', error: result.error },
-          }
+                })
+              : RowContent.Failed({ error: result.error }),
+          })
 
         const items =
           append && Option.isSome(old)
@@ -163,7 +180,11 @@ export class ReviewSession extends Context.Service<
               ]
             : result.items
 
-        return { ...row, activity: 'Idle', content: { _tag: 'Ready', data: { ...result, items } } }
+        return new GroupRow({
+          group: row.group,
+          activity: 'Idle',
+          content: RowContent.Ready({ data: GroupResult.Ready({ ...result, items }) }),
+        })
       }
 
       const discover = Effect.fn('ReviewSession.discover')(function* (
@@ -175,7 +196,7 @@ export class ReviewSession extends Context.Service<
               if (state._tag !== 'Active') return state
 
               if (event._tag === 'Started')
-                return {
+                return ReviewState.Active({
                   ...state,
                   discovering: true,
                   notices: event.notices,
@@ -183,34 +204,34 @@ export class ReviewSession extends Context.Service<
                     const old = state.rows.find((row) => row.group.key === group.key)
                     const data = old ? dataOf(old) : Option.none<Ready>()
 
-                    return {
+                    return new GroupRow({
                       group,
                       activity: 'Idle',
                       content: Option.isSome(data)
-                        ? { _tag: 'Refreshing', data: data.value }
-                        : { _tag: 'Loading' },
-                    }
+                        ? RowContent.Refreshing({ data: data.value })
+                        : RowContent.Loading(),
+                    })
                   }),
-                }
+                })
 
-              return {
+              return ReviewState.Active({
                 ...state,
                 rows: state.rows.map((row) =>
                   row.group.id === event.result.group.id ? accept(row, event.result, false) : row,
                 ),
-              }
+              })
             }),
           ),
         )
         yield* SubscriptionRef.update(state, (state) =>
-          state._tag === 'Active' ? { ...state, discovering: false } : state,
+          state._tag === 'Active' ? ReviewState.Active({ ...state, discovering: false }) : state,
         )
       })
 
       const clear = Effect.fn('ReviewSession.clear')(
         function* () {
           yield* FiberMap.clear(work)
-          yield* SubscriptionRef.set(state, { _tag: 'Idle' })
+          yield* SubscriptionRef.set(state, ReviewState.Idle())
         },
         gate.withPermits(1),
         Effect.uninterruptible,
@@ -221,29 +242,31 @@ export class ReviewSession extends Context.Service<
           yield* FiberMap.clear(work)
           const old = yield* SubscriptionRef.get(state)
           const retain = old._tag === 'Active' && old.directory === directory && options.discover
-          yield* SubscriptionRef.set(state, {
-            _tag: 'Active',
-            directory,
-            inspection: 'Inspecting',
-            snapshot: Option.none(),
-            inspectionError: Option.none(),
-            discovering: options.discover,
-            problem: Option.none(),
-            rows: retain
-              ? old.rows.map((row): GroupRow => {
-                  const data = dataOf(row)
+          yield* SubscriptionRef.set(
+            state,
+            ReviewState.Active({
+              directory,
+              inspection: 'Inspecting',
+              snapshot: Option.none(),
+              inspectionError: Option.none(),
+              discovering: options.discover,
+              problem: Option.none(),
+              rows: retain
+                ? old.rows.map((row): GroupRow => {
+                    const data = dataOf(row)
 
-                  return {
-                    ...row,
-                    activity: 'Idle',
-                    content: Option.isSome(data)
-                      ? { _tag: 'Refreshing', data: data.value }
-                      : { _tag: 'Loading' },
-                  }
-                })
-              : [],
-            notices: [],
-          })
+                    return new GroupRow({
+                      group: row.group,
+                      activity: 'Idle',
+                      content: Option.isSome(data)
+                        ? RowContent.Refreshing({ data: data.value })
+                        : RowContent.Loading(),
+                    })
+                  })
+                : [],
+              notices: [],
+            }),
+          )
           yield* FiberMap.run(
             work,
             'inspection',
@@ -255,13 +278,13 @@ export class ReviewSession extends Context.Service<
                 if (inspected._tag === 'Failure') {
                   yield* SubscriptionRef.update(state, (state): ReviewState =>
                     state._tag === 'Active'
-                      ? {
+                      ? ReviewState.Active({
                           ...state,
                           inspection: 'Failed',
                           inspectionError: Option.some(inspected.failure),
                           discovering: false,
                           rows: state.rows.map((row) => failed(row, 'InspectionFailed')),
-                        }
+                        })
                       : state,
                   )
 
@@ -270,7 +293,11 @@ export class ReviewSession extends Context.Service<
 
                 yield* SubscriptionRef.update(state, (state): ReviewState =>
                   state._tag === 'Active'
-                    ? { ...state, inspection: 'Ready', snapshot: Option.some(inspected.success) }
+                    ? ReviewState.Active({
+                        ...state,
+                        inspection: 'Ready',
+                        snapshot: Option.some(inspected.success),
+                      })
                     : state,
                 )
 
@@ -299,7 +326,7 @@ export class ReviewSession extends Context.Service<
           const data = dataOf(row)
 
           if (Option.isNone(data) || !data.value.hasMore) return
-          yield* updateRow(id, (row) => ({ ...row, activity: 'LoadingMore' }))
+          yield* updateRow(id, (row) => row.withActivity('LoadingMore'))
           yield* FiberMap.run(
             work,
             id,
@@ -314,13 +341,13 @@ export class ReviewSession extends Context.Service<
                   result.error._tag === 'RateLimited' &&
                   Option.isSome(result.error.retryAfterSeconds)
                 ) {
-                  yield* updateRow(id, (row) => ({ ...row, activity: 'Cooldown' }))
+                  yield* updateRow(id, (row) => row.withActivity('Cooldown'))
                   yield* Effect.sleep(result.error.retryAfterSeconds.value * 1000)
-                  yield* updateRow(id, (row) => ({ ...row, activity: 'Idle' }))
+                  yield* updateRow(id, (row) => row.withActivity('Idle'))
                 }
               }).pipe(
                 Effect.catchTag('GroupNotFound', () =>
-                  updateRow(id, (row) => ({ ...row, activity: 'Idle' })),
+                  updateRow(id, (row) => row.withActivity('Idle')),
                 ),
               ),
             ),
@@ -349,14 +376,14 @@ export class ReviewSession extends Context.Service<
           yield* FiberMap.clear(work)
           yield* SubscriptionRef.update(state, (state) =>
             state._tag === 'Active'
-              ? {
+              ? ReviewState.Active({
                   ...state,
                   discovering: false,
                   rows: state.rows.map((row) => failed(row, 'InspectionFailed')),
-                }
+                })
               : state,
           )
-          yield* updateRow(id, (row) => ({ ...row, activity: 'Connecting' }))
+          yield* updateRow(id, (row) => row.withActivity('Connecting'))
           yield* FiberMap.run(
             work,
             'connection',
@@ -370,7 +397,7 @@ export class ReviewSession extends Context.Service<
 
                   if (error._tag !== 'GroupNotFound')
                     yield* updateRow(id, (row) =>
-                      accept(row, { _tag: 'Failed', group: row.group, error }, false),
+                      accept(row, GroupResult.Failed({ group: row.group, error }), false),
                     )
 
                   return
