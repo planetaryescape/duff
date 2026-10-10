@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { Option } from "effect";
-import { DiscoveryError, RemoteDiscovery } from "@duff/core/plugins";
+import { DiscoveryError, RemoteDiscovery } from "@duff/core/git-hosting-provider";
 
 export interface ProviderRow {
   readonly result: RemoteDiscovery;

@@ -1,7 +1,8 @@
 import { expect, it } from "@effect/vitest";
 import { Cause, Deferred, Effect, Fiber, Option, Redacted } from "effect";
 import { GitContextSnapshot } from "../git-context/GitContext";
-import { PluginInstance, ProviderRepository, ProviderUnavailable, Remote } from "./Plugin";
+import { ProviderRepository, ProviderUnavailable, Remote } from "./GitHostingProvider";
+import type { PluginInstance } from "./Plugin";
 import { makeProviderDiscoveryLayer, ProviderDiscovery } from "./ProviderDiscovery";
 
 const remote = (name: string): Remote => ({ name, destination: `https://example.invalid/${name}`, transport: "https", credentials: { _tag: "Unresolved", reason: "Fixture" } });

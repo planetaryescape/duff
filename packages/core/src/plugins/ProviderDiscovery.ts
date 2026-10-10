@@ -1,6 +1,7 @@
 import { Context, Effect, Layer, Option, Redacted, Ref } from "effect";
 import { GitContextSnapshot } from "../git-context/GitContext";
-import { Authentication, AuthenticationError, InvalidContinuation, PluginInstance, Remote, RemoteDiscovery, RemoteNotFound } from "./Plugin";
+import { Authentication, AuthenticationError, InvalidContinuation, Remote, RemoteDiscovery, RemoteNotFound } from "./GitHostingProvider";
+import type { PluginInstance } from "./Plugin";
 
 export class ProviderDiscovery extends Context.Service<ProviderDiscovery, {
   readonly discover: (context: GitContextSnapshot) => Effect.Effect<ReadonlyArray<RemoteDiscovery>>;

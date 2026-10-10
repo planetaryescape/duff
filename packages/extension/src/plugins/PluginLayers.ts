@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { Effect, Layer, Option, Redacted, Schema } from "effect";
-import { InvalidProviderResponse, PluginDefinition, ProviderUnavailable } from "@duff/core/plugins";
+import { InvalidProviderResponse, ProviderUnavailable } from "@duff/core/git-hosting-provider";
+import type { PluginDefinition } from "@duff/core/plugins";
 import { makeProviderDiscoveryLayer } from "@duff/core/provider-discovery";
 import { ProviderAuthentication } from "./ProviderAuthentication";
 import { ProviderHttp } from "./ProviderHttp";

@@ -2,7 +2,7 @@ import { Clock, Context, DateTime, Effect, Layer, Option, Redacted } from "effec
 import { HttpClient, HttpClientRequest } from "effect/http";
 import {
   AuthenticationRequired, DiscoveryError, InvalidProviderResponse, ProviderUnavailable, RateLimited, RepositoryUnavailable,
-} from "@duff/core/plugins";
+} from "@duff/core/git-hosting-provider";
 
 export class ProviderHttp extends Context.Service<ProviderHttp, {
   readonly get: (url: string, token: Option.Option<Redacted.Redacted<string>>, headers?: Readonly<Record<string, string>>) =>

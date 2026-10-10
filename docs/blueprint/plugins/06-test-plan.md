@@ -21,7 +21,7 @@ The cycles below are test increments, not the eventual commit/PR boundaries. The
 
 - **Red:** Supply two complete contributions and a snapshot with an unsupported remote plus one recognized repository. Give that repository one draft PR from a fork with a different source repository and immutable source/target revisions. Through ProviderDiscovery.discover, assert remote order, Unsupported versus Discovered, account metadata, and the exact normalized PR fields.
 - **Green:** Implement the shared schemas, construction seam, pure routing, and one-page service path. Keep registry empty as a valid configuration. Expected values are fixture constants, not output from the production normalizer.
-- **Refactor:** Keep the contract in Plugin.ts and sequencing in ProviderDiscovery. Do not add provider-ID conditions to the service.
+- **Refactor:** Keep generic lifecycle in Plugin.ts, the provider contract in GitHostingProvider.ts, and sequencing in ProviderDiscovery. Do not add provider-ID conditions to the service.
 - **Mistake caught:** Treating origin as the only remote, dropping drafts, substituting the target repository for a fork source, or overwriting one implementation with another under a shared tag.
 
 Follow with a focused ambiguity cycle: two contributions recognize the same remote, producing Ambiguous with both identities and no provider transport activity. Use a supplied boundary that records actual external requests if proving no I/O is necessary, not a spy on recognition methods. Zero remotes and an empty registry produce truthful empty/unsupported outcomes, respectively.

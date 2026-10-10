@@ -164,3 +164,11 @@ Limits: real provider requests and native sign-in remain unverified. No fetch, c
 The owner requested a button inside the Pull Requests pane. Automatic discovery being off now shows a native Check Pull Requests button. The button, toolbar action, and post-connection refresh perform explicit manual discovery through fresh Git-context inspection without enabling background reads or prompting for login.
 
 Verification: check, all 35 tests, build, and packaging passed. A disposable supplied-service fixture in VSCodium on gbfm showed zero discovery reads at startup, one read after activating the button, the expected fixture PR, and no additional read after ordinary Git-context refresh. The setting remained false. Inspected screenshots: `.amp/in/artifacts/manual-pr-button.png` and `manual-pr-result.png`. No real provider requests or sign-in ran. The fixture was removed and the updated VSIX installed into the existing isolated profile.
+
+## 2026-10-10: Discoverable Git-hosting contract
+
+The shared GitHub/Azure DevOps contract now lives in core/plugins/GitHostingProvider.ts, separate from generic lifecycle in Plugin.ts and execution policy in ProviderDiscovery.ts. Errors and schemas remain beside their owning contract. Both adapters and callers import the explicit @duff/core/git-hosting-provider export; no compatibility barrel or additional abstraction was added.
+
+Reference: OpenCode v2 keeps generic plugin lifecycle in packages/plugin/src/effect/plugin.ts and domain contracts in adjacent files such as vcs.ts. Its provider.ts concerns AI models, so Duff uses the more specific GitHostingProvider name. This is a behavior-preserving file-ownership change, not a copy of its plugin machinery.
+
+Verification: both typechecks, ESLint, all 35 existing tests, build, and VSIX packaging passed. Tests changed only their import paths. No provider network requests or native sign-in ran; the existing test window was left alone.

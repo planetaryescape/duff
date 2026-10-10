@@ -2,12 +2,13 @@
 
 Status: implemented within the existing two Bun packages. Follows the confirmed [contract](03-contracts.md) and [flows](04-flows.md). The diagram records intended ownership; nearby adapter services include ProviderAuthentication, ProviderHttp, and PluginLayers.
 
-## Proposed shape
+## Current shape
 
 ```text
 packages/core/src/
   plugins/
     Plugin.ts
+    GitHostingProvider.ts
     ProviderDiscovery.ts
     ProviderDiscovery.test.ts
   git-context/
@@ -37,15 +38,16 @@ This lists affected feature fronts, not every existing extension file. Existing 
 
 | File | Responsibility |
 | --- | --- |
-| `packages/core/src/plugins/Plugin.ts` | General plugin definition/instance types and the initial closed provider contribution contract. Own shared identity, authentication, PR/page schemas, safe provider errors, and repository-bound operation interfaces together. No SDKs, I/O, registry singleton, or runtime. |
-| `packages/core/src/plugins/ProviderDiscovery.ts` | Effect service, construction and dependency-preserving Layer for discovery/load-more. Receives immutable built-in instances as construction input; owns recognition routing, ambiguity, ordered independent outcomes, and continuation dispatch. Imports the public contracts from nearby Plugin.ts. |
+| `packages/core/src/plugins/Plugin.ts` | Generic plugin identity, definition, instance, and the closed contribution set. No provider domain schemas, SDKs, I/O, registry singleton, or runtime. |
+| `packages/core/src/plugins/GitHostingProvider.ts` | Shared GitHub/Azure DevOps capability: ProviderContribution recognizes remotes; ProviderRepository exposes authentication and paginated PR reads. Own repository/authentication/PR schemas, results, and safe errors together. |
+| `packages/core/src/plugins/ProviderDiscovery.ts` | Effect service, construction and dependency-preserving Layer for discovery/load-more. Receives immutable built-in instances as construction input; owns recognition routing, ambiguity, ordered independent outcomes, and continuation dispatch. Imports generic lifecycle types from Plugin.ts and provider contracts from GitHostingProvider.ts. |
 | `packages/extension/src/plugins/PluginLayers.ts` | Explicit built-in composition. Select plugin definitions, construct immutable instances, check duplicate IDs/contribution kinds, and supply them to ProviderDiscovery. Preserve dependency requirements until extension.ts supplies HTTP/authentication implementations. No runtime construction, network reads, or command registration. |
 | `packages/extension/src/plugins/github/GitHubPlugin.ts` | GitHub definition and construction Effect, remote parser, repository-bound operations, response decoding/normalization, authentication and HTTP translation. Own provider-specific configuration and errors that do not belong in the shared contract. |
 | `packages/extension/src/plugins/azure-devops/AzureDevOpsPlugin.ts` | Same contract for Azure DevOps, including organization/project/repository parsing and provider-specific normalization. No changes to core discovery policy to support Azure. |
 | `packages/extension/src/plugins/PluginCommands.ts` | Native discovery, refresh, and load-more command registration; generation ownership, interruption, current context/row handling, page accumulation, and safe result publication. Calls core service methods, never provider APIs. |
 | `packages/extension/src/plugins/PluginView.ts` | Native tree rows for remote/plugin context, PRs, failures, partial pages, and actions. Presentation only; no plugin selection, API calls, or secret-bearing cursor in labels/command arguments. |
 
-The two core files are neighboring parts of one feature: Plugin.ts owns the shared contract; ProviderDiscovery.ts owns its execution policy. Do not add separate identity, error, registry, cursor, or schema files by default.
+These are neighboring parts of one feature: Plugin.ts owns generic lifecycle, GitHostingProvider.ts owns the domain contract, and ProviderDiscovery.ts owns execution policy. Follow OpenCode v2's separation of plugin lifecycle and domain contracts, such as packages/plugin/src/effect/plugin.ts and vcs.ts. Its provider.ts is an AI-model contract, not Git hosting. Do not add separate identity, error, registry, cursor, or schema files by default.
 
 PluginLayers is composition, not a new authority service. It earns a file by keeping the built-in assembly out of the short entrypoint; it must not become a second application bootstrap.
 
@@ -55,7 +57,7 @@ Provider recognition belongs to its adapter even though it is pure. Keep provide
 
 | Existing file | Change required by the design |
 | --- | --- |
-| `packages/core/package.json` | Add explicit `@duff/core/plugins` and `@duff/core/provider-discovery` exports for the contract and service. No provider SDK dependency. |
+| `packages/core/package.json` | Explicit `@duff/core/plugins`, `@duff/core/git-hosting-provider`, and `@duff/core/provider-discovery` exports for lifecycle, provider contract, and service. No provider SDK dependency. |
 | `packages/extension/src/extension.ts` | Supply built-in composition and selected authentication/HTTP Layers to the existing managed runtime. Register the native plugin feature and coordinate invalidation with repository/review changes through narrow callbacks. |
 | `packages/extension/src/git-context/GitContextCommands.ts` | Publish a successful local context to plugin integration through a narrow callback, and notify invalidation. Keep local inspection useful without discovery and preserve generation checks. Do not put provider workflow here. |
 | `packages/extension/src/review/ReviewCommands.ts` | Reuse its existing composition-root invalidation callback when a review/repository is published. Change only if the integration needs a repository-selection signal that is not already exposed. No provider imports. |

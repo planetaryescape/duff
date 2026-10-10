@@ -1,8 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
 import { Effect, Exit, Option, Redacted } from "effect";
 import { TestClock } from "effect/testing";
-import { AuthenticationRequired, ProviderUnavailable, RateLimited, RepositoryUnavailable } from "@duff/core/plugins";
-import type { Remote } from "@duff/core/plugins";
+import { AuthenticationRequired, ProviderUnavailable, RateLimited, RepositoryUnavailable } from "@duff/core/git-hosting-provider";
+import type { Remote } from "@duff/core/git-hosting-provider";
 import { ProviderAuthentication } from "../ProviderAuthentication";
 import type { ProviderSession } from "../ProviderAuthentication";
 import { ProviderHttp } from "../ProviderHttp";
@@ -18,7 +18,7 @@ const pullRequest = (id = 1) => ({
   sourceRefName: "refs/heads/feature", targetRefName: "refs/heads/main",
 });
 const fullPage = { count: 50, value: Array.from({ length: 50 }, (_, index) => pullRequest(index + 1)) };
-const first = { scope: "repository", cursor: Option.none<Redacted.Redacted<string>>() } satisfies Parameters<import("@duff/core/plugins").ProviderRepository["listOpenPullRequests"]>[0];
+const first = { scope: "repository", cursor: Option.none<Redacted.Redacted<string>>() } satisfies Parameters<import("@duff/core/git-hosting-provider").ProviderRepository["listOpenPullRequests"]>[0];
 
 const make = Effect.fn("AzureDevOps.Test.make")(function* (
   auth: ProviderAuthentication["Service"] = { session: () => Effect.succeed(Option.some(session())) },

@@ -1,6 +1,6 @@
 # Contracts: one provider capability, two implementations
 
-Status: shared contract and GitHub implementation exist in [Plugin.ts](../../../packages/core/src/plugins/Plugin.ts) and [ProviderDiscovery.ts](../../../packages/core/src/plugins/ProviderDiscovery.ts). Sketches summarize the compiled boundary. Azure parity is the next slice. Both providers implement the same capability, including explicit connection. See [flows](04-flows.md) and [delivery evidence](../../implementation-log.md).
+Status: both provider implementations share [GitHostingProvider.ts](../../../packages/core/src/plugins/GitHostingProvider.ts). [Plugin.ts](../../../packages/core/src/plugins/Plugin.ts) owns generic lifecycle; [ProviderDiscovery.ts](../../../packages/core/src/plugins/ProviderDiscovery.ts) owns execution policy. Sketches summarize the compiled boundary. Both providers implement the same capability, including explicit connection. See [flows](04-flows.md) and [delivery evidence](../../implementation-log.md).
 
 ## Ownership
 

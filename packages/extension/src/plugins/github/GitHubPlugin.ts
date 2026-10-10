@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import { Clock, DateTime, Effect, Option, Redacted, Schema } from "effect";
 import {
   Authentication, InvalidContinuation, InvalidProviderResponse, OpenPullRequest, PullRequestPage, RateLimited,
-  type PluginDefinition, type ProviderRepository, type RepositoryIdentity,
-} from "@duff/core/plugins";
+  type ProviderRepository, type RepositoryIdentity,
+} from "@duff/core/git-hosting-provider";
+import type { PluginDefinition } from "@duff/core/plugins";
 import { ProviderAuthentication } from "../ProviderAuthentication";
 import { ProviderHttp } from "../ProviderHttp";
 

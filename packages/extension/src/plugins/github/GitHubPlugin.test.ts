@@ -1,13 +1,13 @@
 import { expect, it } from "@effect/vitest";
 import { Cause, Deferred, Effect, Exit, Fiber, Option, Redacted } from "effect";
 import { TestClock } from "effect/testing";
-import { AuthenticationRequired, ProviderUnavailable, RateLimited, RepositoryUnavailable, type Remote } from "@duff/core/plugins";
+import { AuthenticationRequired, ProviderUnavailable, RateLimited, RepositoryUnavailable, type Remote } from "@duff/core/git-hosting-provider";
 import { ProviderAuthentication, type ProviderSession } from "../ProviderAuthentication";
 import { ProviderHttp } from "../ProviderHttp";
 import { GitHubPlugin } from "./GitHubPlugin";
 
 const remote = (destination: string): Remote => ({ name: "origin", destination, transport: "ssh", credentials: { _tag: "NotApplicable" } });
-const request = { scope: "repository", cursor: Option.none<Redacted.Redacted<string>>() } satisfies Parameters<import("@duff/core/plugins").ProviderRepository["listOpenPullRequests"]>[0];
+const request = { scope: "repository", cursor: Option.none<Redacted.Redacted<string>>() } satisfies Parameters<import("@duff/core/git-hosting-provider").ProviderRepository["listOpenPullRequests"]>[0];
 const session = (token = "test-token", id = "session"): ProviderSession => ({
   id, token: Redacted.make(token), account: { id: "account", displayName: "Test account" },
 });

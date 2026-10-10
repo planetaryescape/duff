@@ -1,5 +1,5 @@
 import { Context, Effect, Option, Redacted } from "effect";
-import { AuthenticationError } from "@duff/core/plugins";
+import { AuthenticationError } from "@duff/core/git-hosting-provider";
 
 export interface ProviderSession {
   readonly id: string;

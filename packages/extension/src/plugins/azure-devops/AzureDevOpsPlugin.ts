@@ -3,8 +3,9 @@ import { Clock, DateTime, Effect, Option, Redacted, Schema } from "effect";
 import {
   Authentication, AuthenticationRequired, InvalidContinuation, InvalidProviderResponse,
   OpenPullRequest, RateLimited,
-} from "@duff/core/plugins";
-import type { PluginDefinition, ProviderContribution, ProviderRepository, RepositoryIdentity } from "@duff/core/plugins";
+} from "@duff/core/git-hosting-provider";
+import type { ProviderContribution, ProviderRepository, RepositoryIdentity } from "@duff/core/git-hosting-provider";
+import type { PluginDefinition } from "@duff/core/plugins";
 import { ProviderAuthentication } from "../ProviderAuthentication";
 import { ProviderHttp } from "../ProviderHttp";
 

@@ -6,6 +6,7 @@
     "./review": "./src/review/BranchReview.ts",
     "./git-context": "./src/git-context/GitContext.ts",
     "./plugins": "./src/plugins/Plugin.ts",
+    "./git-hosting-provider": "./src/plugins/GitHostingProvider.ts",
     "./provider-discovery": "./src/plugins/ProviderDiscovery.ts"
   },
   "scripts": { "typecheck": "tsc --noEmit" },
