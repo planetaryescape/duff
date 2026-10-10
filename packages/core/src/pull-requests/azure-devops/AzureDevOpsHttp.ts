@@ -61,7 +61,7 @@ function repositoryUrl(address: Address): string {
   return `https://dev.azure.com/${encodeURIComponent(address.org)}/${encodeURIComponent(address.project)}/_git/${encodeURIComponent(address.repo)}`;
 }
 
-export const makeAzureDevOps = Effect.gen(function* (): Effect.gen.Return<GitHostingProvider, never, ProviderAuthentication | ProviderHttp> {
+export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<GitHostingProvider, never, ProviderAuthentication | ProviderHttp> {
     const authentication = yield* ProviderAuthentication;
     const http = yield* ProviderHttp;
     const continuations = new Map<string, { readonly key: string; readonly session: string; readonly skip: number }>();

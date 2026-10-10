@@ -6,7 +6,7 @@ import type { Remote } from "../GitHostingProvider";
 import { ProviderAuthentication } from "../ProviderAuthentication";
 import type { ProviderSession } from "../ProviderAuthentication";
 import { ProviderHttp } from "../ProviderHttp";
-import { makeAzureDevOps } from "./AzureDevOps";
+import { makeAzureDevOpsHttp } from "./AzureDevOpsHttp";
 
 const destination = "https://dev.azure.com/acme/Target%20Project/_git/TargetRepo";
 const remote = (url: string): Remote => ({ name: "origin", destination: url, transport: "https", credentials: { _tag: "NotApplicable" } });
@@ -24,7 +24,7 @@ const make = Effect.fn("AzureDevOps.Test.make")(function* (
   auth: ProviderAuthentication["Service"] = { session: () => Effect.succeed(Option.some(session())) },
   http: ProviderHttp["Service"] = { get: () => Effect.succeed({ body: { count: 0, value: [] }, headers: {} }) },
 ) {
-  return yield* makeAzureDevOps.pipe(
+  return yield* makeAzureDevOpsHttp.pipe(
     Effect.provideService(ProviderAuthentication, auth), Effect.provideService(ProviderHttp, http),
   );
 });

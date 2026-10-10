@@ -59,7 +59,7 @@ const nextPage = Effect.fn("GitHub.nextPage")(function* (link: string | undefine
   return next;
 });
 
-export const makeGitHub = Effect.gen(function* (): Effect.gen.Return<GitHostingProvider, never, ProviderAuthentication | ProviderHttp> {
+export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<GitHostingProvider, never, ProviderAuthentication | ProviderHttp> {
     const auth = yield* ProviderAuthentication;
     const http = yield* ProviderHttp;
     let cooldown = 0;

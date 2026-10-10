@@ -1,6 +1,6 @@
 # Pull-request capability and review session
 
-Status: owner-approved cutover implemented and verified locally, 2026-10-10. Check, 40 tests and packaging pass. Native supplied-service UI verification passes; real provider requests and native sign-in remain unverified.
+Status: owner-approved cutover and core-owned transport composition implemented, 2026-10-10. Check, 41 tests and packaging pass. Native supplied-service UI verification passes for the preceding session cutover; real provider requests and native sign-in remain unverified.
 
 This chapter supersedes the [staged plugin design](plugins/00-problem.md) under [D007](02-decision-log.md#d007-job-shaped-capabilities-and-one-review-session). GitHub and Azure DevOps are built in. Bitbucket is deferred. There is no generic plugin lifecycle or Alchemy.
 
@@ -11,12 +11,30 @@ This chapter supersedes the [staged plugin design](plugins/00-problem.md) under 
 | [GitHostingProvider.ts](../../packages/core/src/pull-requests/GitHostingProvider.ts) | One job-shaped adapter: pure remote recognition returns a bound repository with silent authentication inspection, explicit connection, and paginated repository-wide open-PR reads |
 | [PullRequests.ts](../../packages/core/src/pull-requests/PullRequests.ts) | Provider routing, equivalent-remote grouping, progressive discovery, private continuation state, group-based connect and loadMore |
 | [ReviewSession.ts](../../packages/core/src/review-session/ReviewSession.ts) | One selected local repository, local inspection, owned background jobs, retained PR content, observable state |
-| [Providers.ts](../../packages/core/src/pull-requests/Providers.ts) | Constructs built-in adapters and composes PullRequests with ProviderHttp; authentication and transport remain supplied dependencies |
+| [Providers.ts](../../packages/core/src/pull-requests/Providers.ts) | Constructs built-in HTTP adapters, supplies their HTTP transport and composes PullRequests; native authentication is the remaining host dependency |
 | [ProviderAuthentication.ts](../../packages/core/src/pull-requests/ProviderAuthentication.ts) | Headless session contract. The [extension implementation](../../packages/extension/src/pull-requests/ProviderAuthentication.ts) supplies native editor authentication |
 | [PullRequestCommands.ts](../../packages/extension/src/pull-requests/PullRequestCommands.ts), [PullRequestView.ts](../../packages/extension/src/pull-requests/PullRequestView.ts) | Subscribe to session changes, render native rows, dispatch explicit group actions, open provider pages |
-| [GitHub.ts](../../packages/core/src/pull-requests/github/GitHub.ts), [AzureDevOps.ts](../../packages/core/src/pull-requests/azure-devops/AzureDevOps.ts) | Provider recognition, protocol validation, draft/fork normalization, session-bound pagination and cooldowns |
+| [GitHubHttp.ts](../../packages/core/src/pull-requests/github/GitHubHttp.ts), [AzureDevOpsHttp.ts](../../packages/core/src/pull-requests/azure-devops/AzureDevOpsHttp.ts) | HTTP implementations of the shared adapter contract: recognition, protocol validation, draft/fork normalization, session-bound pagination and cooldowns |
 
-Core has no VS Code dependency. It owns provider implementations and their tests, not only contracts. The extension supplies native authentication and HTTP transport through the built-in Layer export, without importing individual adapters. Its composition root owns one managed runtime. Local branch comparison stays independent of network availability.
+Core has no VS Code dependency. It owns provider implementations and their tests, not only contracts. The extension supplies native authentication through the built-in Layer export, without selecting provider transports or importing individual adapters. Its composition root owns one managed runtime. Local branch comparison stays independent of network availability. The separate HTTP client used for extension telemetry is not provider transport.
+
+## Transport-neutral adapter contract
+
+`GitHostingProvider` describes pure remote recognition. A recognized `ProviderRepository` exposes three jobs, with captured dependencies and no transport requirements on callers:
+
+- `inspectAuthentication()` returns Authentication without prompting.
+- `connectAuthentication()` performs explicit connection and returns Authentication.
+- `listOpenPullRequests({ scope: "repository", cursor })` returns a normalized PullRequestPage or typed DiscoveryError.
+
+The consumer-facing Effect service is PullRequests. It takes group IDs for connection and pagination and exposes progressive results; it does not expose HTTP URLs, request bodies, subprocess arguments or raw provider responses.
+
+The adapter is the transport abstraction. There is no universal `Transport.request` interface: CLI execution should not pretend to be HTTP. `ProviderHttp` is an implementation dependency of the current HTTP adapters, not a requirement of GitHostingProvider. Core's Providers.ts supplies FetchHttpClient with redirects disabled before constructing the built-ins. The [composition test](../../packages/core/src/pull-requests/Providers.test.ts) exercises normalized GitHub/Azure results and redirect rejection through PullRequests without host HTTP wiring.
+
+Accepted extension point, not implemented: a future `GitHubCli.ts` or `AzureDevOpsCli.ts` constructor can return the same GitHostingProvider, capturing its process runner, executable configuration and authentication strategy at construction. It must decode CLI output, map failures to the shared error vocabulary, redact continuations, preserve cancellation and time bounds, and keep sign-in explicit. CLI-managed authentication need not depend on ProviderAuthentication. CLI processes must use explicit executable/argument arrays without a shell and must not inherit an HTTP bearer-token policy blindly.
+
+Core composition selects exactly one implementation per provider and passes the constructed values to `makePullRequestsLayer(providers)`. Selecting an HTTP or CLI adapter changes no ReviewSession, command or view code. Registering both for the same remote would produce Ambiguous, not automatic transport fallback. Automatic HTTP-to-CLI fallback, user transport settings, CLI adapters and Bitbucket remain unimplemented.
+
+This keeps rat-stack's job-shaped port and captured dependencies. Duff deliberately differs from its strict contracts-only core: [D006](02-decision-log.md#d006-feature-owned-core-and-editor-packages) keeps adapters with their owning features in headless core rather than introducing another package.
 
 ## Discovery flow
 

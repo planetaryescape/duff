@@ -60,5 +60,5 @@ Set `duff.automaticDiscovery` to `false` to disable background provider reads. T
 ## Design and next slices
 
 See the [documentation map](docs/README.md) and [current capability/session contract](docs/blueprint/04-capabilities-and-review-session.md). There is no generic plugin lifecycle. Bitbucket is deferred; opening a discovered PR as a local review remains proposed.
-Core owns provider contracts, implementations and tests. The extension supplies native authentication and transport, then consumes ReviewSession state and actions.
-The capability/session cutover passes check, 40 tests and packaging. Native supplied-service verification covers progressive groups, paging, retained Refreshing/Stale results and repository replacement. Real provider requests and native sign-in remain unverified.
+Core owns provider contracts, implementations, transport composition and tests. The extension supplies native authentication, then consumes ReviewSession state and actions. Both built-ins currently use HTTP; the shared contract also permits CLI adapters without changing editor code. CLI adapters are not implemented.
+Check, 41 tests and packaging pass. Native supplied-service verification covers the preceding session cutover: progressive groups, paging, retained Refreshing/Stale results and repository replacement. Real provider requests and native sign-in remain unverified.

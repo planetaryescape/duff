@@ -16,9 +16,8 @@ let disposeRuntime: (() => Promise<void>) | undefined;
 export function activate(context: vscode.ExtensionContext) {
   const observability = context.extensionMode === vscode.ExtensionMode.Development
     ? observabilityLayer.pipe(Layer.provide(FetchHttpClient.layer)) : Layer.empty;
-  const transport = FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" })));
   const gitContextLayer = makeGitContextLayer(process.env);
-  const providers = pullRequestsLayer.pipe(Layer.provide(Layer.merge(authenticationLayer, transport)));
+  const providers = pullRequestsLayer.pipe(Layer.provide(authenticationLayer));
   const sessionLayer = ReviewSession.layer.pipe(Layer.provide(Layer.merge(gitContextLayer, providers)));
   const runtime = ManagedRuntime.make(Layer.mergeAll(gitReviewLayer, gitContextLayer, sessionLayer).pipe(Layer.provideMerge(observability)));
   disposeRuntime = () => runtime.dispose();

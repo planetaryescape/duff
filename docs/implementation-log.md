@@ -186,3 +186,13 @@ A disposable supplied-provider fixture exercised real core/session code and nati
 The fixture was removed, obsolete test windows closed, and the updated VSIX installed. One normal VSCodium window remains on gbfm with automatic discovery disabled. Native comparison against origin/prod showed 23 changed files, matching Git, and opened the exports.ts immutable diff and then its real workspace file. Existing dirty gbfm files were left unchanged.
 
 Limits: real provider requests, native sign-in and the account-change path remain unverified. No fetch, checkout, provider mutation, telemetry export, deployment or infrastructure changes ran. Bitbucket, opening PRs as local reviews, polling and persistence remain deferred. This is local delivery, not a Marketplace release or remote push. The unrelated untracked review-workspace-problem-ux.md draft remains untouched.
+
+## 2026-10-10: Provider-owned transport composition
+
+Moved built-in provider HTTP wiring from extension.ts into core/pull-requests/Providers.ts. GitHubHttp.ts and AzureDevOpsHttp.ts now make the implementation choice visible beside their shared GitHostingProvider contract. The extension supplies native authentication only for this capability; its independent telemetry HTTP client remains unchanged.
+
+The shared contract already exposed authentication and normalized PR-page jobs without HTTP dependencies, so no generic request transport or extra registry service was added. Core can substitute a CLI-backed implementation through makePullRequestsLayer without changing ReviewSession or editor consumers. The current blueprint records that seam, authentication/cancellation constraints and the distinction between supported contract and unimplemented CLI adapters. This follows rat-stack's job-shaped boundaries while preserving Duff's approved feature-owned runtime core.
+
+Verification: both typechecks, ESLint, all 41 tests, build and VSIX packaging passed. The added composition test supplies fake Fetch and native-authentication seams and exercises both built-ins through PullRequests without host HTTP wiring. It verifies distinct normalized GitHub/Azure results and rejection of a redirect with manual redirect handling. No real provider requests, sign-in, telemetry export or native UI changes ran for this transport-only slice. Earlier native session verification is recorded above, not claimed as a new packaged-host smoke test.
+
+Delivery at recording: verified local edits, awaiting atomic commit and the owner-authorized push. The two preceding local commits are also awaiting that push. No release, deployment or infrastructure changes are included. The unrelated untracked review-workspace-problem-ux.md draft remains untouched.

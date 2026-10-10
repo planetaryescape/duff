@@ -64,7 +64,7 @@ Repository selection
 ```
 
 `GitContext`, the job-shaped GitHostingProvider contract, PullRequests and ReviewSession are implemented.
-Core owns GitHub and Azure DevOps implementations and tests beside their shared contract. Its Providers.ts constructs the built-ins. The extension composition root supplies native authentication and HTTP transport through public Layer exports, not individual adapters. ReviewSession owns FiberMap jobs and exposes SubscriptionRef changes to both native views. Discovery reads at most four groups concurrently and emits results unordered. Connect and loadMore take group IDs, never UI-owned cursors.
+Core owns GitHub and Azure DevOps implementations and tests beside their shared contract. Its Providers.ts constructs the built-in HTTP adapters and supplies their transport. The extension composition root supplies native authentication through public Layer exports, not individual adapters. GitHostingProvider and ProviderRepository are transport-neutral; a CLI implementation can satisfy the same contract without requiring an HTTP client. ReviewSession owns FiberMap jobs and exposes SubscriptionRef changes to both native views. Discovery reads at most four groups concurrently and emits results unordered. Connect and loadMore take group IDs, never UI-owned cursors.
 See the [focused contract](04-capabilities-and-review-session.md) for refresh, Stale results, pagination and failure transitions. The [staged plugin design](plugins/00-problem.md) is historical, superseded by D007. No generic lifecycle or Bitbucket implementation is included.
 Core contracts must not import provider SDKs or choose credentials implicitly.
 Opening a discovered PR locally remains a proposed follow-up; selecting a PR currently opens its provider page.

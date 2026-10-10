@@ -4,7 +4,7 @@ import { TestClock } from "effect/testing";
 import { AuthenticationRequired, ProviderUnavailable, RateLimited, RepositoryUnavailable, type Remote } from "../GitHostingProvider";
 import { ProviderAuthentication, type ProviderSession } from "../ProviderAuthentication";
 import { ProviderHttp } from "../ProviderHttp";
-import { makeGitHub } from "./GitHub";
+import { makeGitHubHttp } from "./GitHubHttp";
 
 const remote = (destination: string): Remote => ({ name: "origin", destination, transport: "ssh", credentials: { _tag: "NotApplicable" } });
 const request = { scope: "repository", cursor: Option.none<Redacted.Redacted<string>>() } satisfies Parameters<import("../GitHostingProvider").ProviderRepository["listOpenPullRequests"]>[0];
@@ -21,7 +21,7 @@ const make = Effect.fn("GitHubTest.make")(function* (
   auth: ProviderAuthentication["Service"] = { session: () => Effect.succeed(Option.none()) },
   http: ProviderHttp["Service"] = { get: () => Effect.succeed({ body: [], headers: {} }) },
 ) {
-  const provider = yield* makeGitHub.pipe(
+  const provider = yield* makeGitHubHttp.pipe(
     Effect.provideService(ProviderAuthentication, ProviderAuthentication.of(auth)),
     Effect.provideService(ProviderHttp, ProviderHttp.of(http)),
   );
