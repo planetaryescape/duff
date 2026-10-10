@@ -43,6 +43,6 @@ Commit-story navigation, review notes, binary rendering, and provider write oper
 - Plugins ship in-process through a supplied registry and one runtime.
 - Editor authentication sessions remain separate from Git credential configuration; only explicit Connect prompts.
 - Discovery lists all open PRs per supported remote. Current-branch filtering is not implemented.
-- Context inspection starts cancellable discovery; the setting `duff.automaticDiscovery` disables it, and Refresh restarts it.
+- Context inspection starts cancellable discovery; `duff.automaticDiscovery` disables background reads, while Check Pull Requests performs an explicit manual read.
 
 See [provider strategies](03-identity-and-provider-strategies.md) for proposed defaults and safety constraints.

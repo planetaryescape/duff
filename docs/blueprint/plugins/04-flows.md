@@ -39,7 +39,7 @@ Repository selected / refresh ----+
 1. The composition root supplies built-in definitions, HTTP/authentication dependencies, and plugin construction Layers. It validates unique IDs and contribution kinds. Construction performs no provider requests or login prompts.
 2. The host selects the repository. A new request generation clears previous provider rows and continuations, interrupts old discovery, and shows local inspection in progress.
 3. GitContext.inspect receives the repository directory. Allowlisted Git reads produce a decoded GitContextSnapshot. Identity and credential-strategy metadata remain local; no helper is executed to obtain a secret.
-4. If the generation still matches, publish the local snapshot. If discovery is disabled, stop here with a truthful disabled state, not a claim of no PRs.
+4. If the generation still matches, publish the local snapshot. If automatic discovery is disabled, background inspection stops here with a Check Pull Requests button, not a claim of no PRs. That explicit action repeats inspection and performs a manual provider read without changing the setting.
 5. ProviderDiscovery.discover receives the snapshot and uses its captured registry. Each sanitized Remote goes through the same ProviderContribution.recognizeRemote contract. Recognition performs no network I/O.
 6. Zero matches yield Unsupported; multiple matches yield Ambiguous. Neither performs authentication or listing. A unique match yields a plugin identity and bound ProviderRepository.
 7. Call the bound inspectAuthentication operation. Its adapter checks the selected API authentication mechanism without prompting. Decode external responses and return Authenticated, Unauthenticated, Unknown, or a typed inspection failure.

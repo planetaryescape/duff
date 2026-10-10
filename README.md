@@ -55,7 +55,7 @@ Background discovery never prompts for sign-in. **Connect Provider** is an expli
 
 Azure DevOps supports modern and legacy HTTPS remotes and Azure v3 SSH remotes. It uses the editor's Microsoft authentication provider with Azure DevOps `user_impersonation` permission. Without a session it reports authentication required, not an empty PR list. Custom provider hosts and SSH aliases are unsupported.
 
-Set `duff.automaticDiscovery` to `false` to keep Duff entirely local. Repository selection, explicit refresh, and editor-session changes invalidate old results. Advanced Git credential patterns remain explicitly unresolved rather than guessed. Full credential retrieval, fetching, branch switching, PR mutations, polling, and persistent caches are not implemented.
+Set `duff.automaticDiscovery` to `false` to disable background provider reads. The **Check Pull Requests** button and toolbar action still perform a manual read without changing that setting. Repository selection, explicit refresh, and editor-session changes invalidate old results. Advanced Git credential patterns remain explicitly unresolved rather than guessed. Full credential retrieval, fetching, branch switching, PR mutations, polling, and persistent caches are not implemented.
 
 ## Design and next slices
 

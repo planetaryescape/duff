@@ -8,7 +8,7 @@ export function registerGitContextCommands(
   context: vscode.ExtensionContext,
   runtime: CommandRuntime,
   currentRoot: () => string | undefined,
-  onSnapshot: (snapshot: GitContextSnapshot) => Promise<void>,
+  onSnapshot: (snapshot: GitContextSnapshot, discovery: "automatic" | "manual") => Promise<void>,
   onClear: () => void,
 ) {
   const provider = new GitContextView();
@@ -25,7 +25,7 @@ export function registerGitContextCommands(
     view.message = undefined;
   };
 
-  const inspectContext = async (root?: string, focus = true) => {
+  const inspectContext = async (root?: string, focus = true, discovery: "automatic" | "manual" = "automatic") => {
     const directory = root ?? currentRoot() ?? await chooseDirectory();
     if (!directory) return;
     clear();
@@ -43,13 +43,14 @@ export function registerGitContextCommands(
     if (snapshot) {
       provider.setSnapshot(snapshot);
       view.message = "Local snapshot · authentication not verified. Hover rows for sources and scope.";
-      await onSnapshot(snapshot);
+      await onSnapshot(snapshot, discovery);
     } else {
       view.message = "Inspection failed. No previous configuration is shown. Try Inspect / Refresh Git Context again.";
     }
     if (focus && request === contextRequest) await vscode.commands.executeCommand("duff.context.focus");
   };
 
-  context.subscriptions.push(provider, view, { dispose: () => pending?.abort() }, vscode.commands.registerCommand("duff.inspectContext", () => inspectContext()));
+  context.subscriptions.push(provider, view, { dispose: () => pending?.abort() }, vscode.commands.registerCommand("duff.inspectContext", (mode: unknown) =>
+    inspectContext(undefined, mode !== "manual", mode === "manual" ? "manual" : "automatic")));
   return { clear, inspect: inspectContext };
 }

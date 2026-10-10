@@ -48,7 +48,7 @@
       },
       {
         "command": "duff.refreshProviders",
-        "title": "Refresh Pull Request Discovery",
+        "title": "Check Pull Requests",
         "icon": "$(refresh)",
         "category": "Duff"
       },
@@ -90,7 +90,7 @@
         "duff.automaticDiscovery": {
           "type": "boolean",
           "default": true,
-          "description": "Read open pull requests after local Git inspection. Never prompts for sign-in or changes Git. Disable to keep Duff entirely local."
+          "description": "Read open pull requests automatically after local Git inspection. Never prompts for sign-in or changes Git. When disabled, use Check Pull Requests for a manual read."
         }
       }
     },
@@ -102,7 +102,12 @@
       "contents": "Inspect local identity and credential configuration without authenticating.\n[Inspect Git Context](command:duff.inspectContext)"
     }, {
       "view": "duff.providers",
-      "contents": "Discover open pull requests for GitHub and Azure DevOps remotes.\n[Refresh Discovery](command:duff.refreshProviders)"
+      "contents": "Discover open pull requests for GitHub and Azure DevOps remotes.\n[Check Pull Requests](command:duff.refreshProviders)",
+      "when": "config.duff.automaticDiscovery != false"
+    }, {
+      "view": "duff.providers",
+      "contents": "Automatic discovery is off. Check pull requests when you need them, without enabling background discovery.\n[Check Pull Requests](command:duff.refreshProviders)",
+      "when": "config.duff.automaticDiscovery == false"
     }],
     "menus": {
       "view/title": [

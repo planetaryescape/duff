@@ -27,11 +27,10 @@ export function registerPluginCommands(context: vscode.ExtensionContext, runtime
     provider.setRows(rows);
     view.message = undefined;
   };
-  const discover = async (next: GitContextSnapshot) => {
+  const discover = async (next: GitContextSnapshot, mode: "automatic" | "manual" = "automatic") => {
     clear();
     snapshot = next;
-    if (!vscode.workspace.getConfiguration("duff").get<boolean>("automaticDiscovery", true)) {
-      view.message = "Automatic discovery disabled. Enable duff.automaticDiscovery to read provider PRs.";
+    if (mode === "automatic" && !vscode.workspace.getConfiguration("duff").get<boolean>("automaticDiscovery", true)) {
       return;
     }
     const request = generation;
@@ -94,11 +93,14 @@ export function registerPluginCommands(context: vscode.ExtensionContext, runtime
     const result = await runOperation(runtime, "Duff.connectProvider", ProviderDiscovery.use((service) => service.connect(next, name)), undefined, abort.signal);
     if (request !== generation || abort.signal.aborted) return;
     discovery = undefined;
-    if (result) await vscode.commands.executeCommand("duff.inspectContext");
+    if (result) await vscode.commands.executeCommand("duff.refreshProviders");
     else view.message = "Provider connection unavailable or cancelled. Refresh to retry.";
   };
   context.subscriptions.push(provider, view, { dispose: clear },
-    vscode.commands.registerCommand("duff.refreshProviders", () => vscode.commands.executeCommand("duff.inspectContext")),
+    vscode.commands.registerCommand("duff.refreshProviders", async () => {
+      await vscode.commands.executeCommand("duff.inspectContext", "manual");
+      await vscode.commands.executeCommand("duff.providers.focus");
+    }),
     vscode.commands.registerCommand("duff.loadMoreProviders", loadMore),
     vscode.commands.registerCommand("duff.connectProvider", connect),
   );
