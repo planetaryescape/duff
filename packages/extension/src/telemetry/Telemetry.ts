@@ -2,7 +2,8 @@ import { Cause, Config, Effect, Layer, Option, Redacted, Schema } from "effect";
 import { HttpBody } from "effect/http";
 import { OtlpLogger, OtlpSerialization, OtlpTracer } from "effect/observability";
 
-export type Operation = "Duff.inspectContext" | "Duff.listBranches" | "Duff.compare" | "Duff.refresh" | "Duff.readSnapshot";
+export type Operation = "Duff.inspectContext" | "Duff.listBranches" | "Duff.compare" | "Duff.refresh" | "Duff.readSnapshot"
+  | "Duff.discoverProviders" | "Duff.loadMoreProviders" | "Duff.connectProvider";
 const resource = { serviceName: "duff", attributes: { "deployment.environment.name": "development" } };
 
 const serialization = Layer.succeed(OtlpSerialization.OtlpSerialization, {
@@ -51,9 +52,9 @@ export const observabilityLayer = Layer.unwrap(Effect.gen(function* () {
   Effect.as(Layer.empty),
 ))));
 
-export const observeOperation = <A, E, R>(operation: Operation, work: Effect.Effect<A, E, R>) => work.pipe(
+export const observeOperation = <A, E, R>(operation: Operation, work: Effect.Effect<A, E, R>, summarize?: (value: A) => "success" | "partial") => work.pipe(
   Effect.onExit((exit) => {
-    const outcome = exit._tag === "Success" ? "success" : Cause.hasInterruptsOnly(exit.cause) ? "interrupted" : "failure";
+    const outcome = exit._tag === "Success" ? summarize?.(exit.value) ?? "success" : Cause.hasInterruptsOnly(exit.cause) ? "interrupted" : "failure";
     return (outcome === "failure" ? Effect.logWarning("Operation failed") : Effect.logInfo("Operation completed")).pipe(
       Effect.annotateLogs({ operation, outcome }),
     );

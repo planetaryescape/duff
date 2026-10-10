@@ -26,12 +26,12 @@ Docs: update the [strategy contract](blueprint/03-identity-and-provider-strategi
 
 ## S04: Plugin seam and GitHub discovery
 
-Status: planned. Depends on verified S03 and a GitHub authentication decision; D005 built-ins are accepted.
+Status: implemented with deterministic adapter/service verification; authenticated account smoke testing has not run. Local Git context remains conservative for advanced credential patterns.
 Detailed boundary, tests, and usable delivery: [plugin design](blueprint/plugins/PROGRESS.md) and [Slice 2](blueprint/plugins/07-pr-slices.md#slice-2-usable-github-discovery-through-the-shared-plugin-contract).
 Scope: shared provider contract, registry/composition, GitHub strategy, native PR list and discovery states.
 Acceptance: recognize supported GitHub remotes; show open PRs, drafts and source/target context; distinguish auth failure, empty results, and pagination.
 Automatic discovery is cancellable and does not prompt for login or block local review.
-Checks: remote-recognition fixtures, supplied Effect services, provider API seam tests, and an explicitly authorized account/repository smoke check.
+Checks: remote-recognition fixtures, supplied Effect services, provider API seam tests, and native fixture states. An authenticated account/repository smoke check remains separately authorized work.
 No fetch, checkout, PR mutations, or credential storage in this slice.
 
 ## S05: Azure DevOps discovery

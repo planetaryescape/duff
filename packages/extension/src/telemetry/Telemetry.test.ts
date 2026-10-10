@@ -47,6 +47,7 @@ it.effect("exports correlated outcomes and nested spans without private payloads
     )).toBe("canary-secret");
     const failure = yield* observeOperation("Duff.compare", Effect.die("canary-secret")).pipe(Effect.exit);
     expect(failure._tag).toBe("Failure");
+    yield* observeOperation("Duff.discoverProviders", Effect.succeed("canary-secret"), () => "partial");
     yield* Effect.logInfo("canary-secret");
   }).pipe(Effect.provide(layer)));
   const sent = yield* Ref.get(deliveries);
@@ -65,7 +66,8 @@ it.effect("exports correlated outcomes and nested spans without private payloads
   const logs = yield* Effect.forEach(sent.filter(({ url }) => url.endsWith("/logs")), ({ body }) =>
     Schema.decodeUnknownEffect(Schema.fromJsonString(LogPayload))(body));
   const records = logs.flatMap((data) => data.resourceLogs.flatMap((resource) => resource.scopeLogs.flatMap((scope) => scope.logRecords)));
-  expect(records).toHaveLength(2);
+  expect(records).toHaveLength(3);
   expect(records.some((record) => record.traceId === root?.traceId && record.spanId === root.spanId)).toBe(true);
   expect(records.flatMap((record) => record.attributes.map((attribute) => attribute.value.stringValue))).toContain("failure");
+  expect(records.flatMap((record) => record.attributes.map((attribute) => attribute.value.stringValue))).toContain("partial");
 }));

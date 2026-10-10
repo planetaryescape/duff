@@ -6,14 +6,14 @@ import { chooseDirectory } from "../Repository";
 import { observeOperation } from "../telemetry/Telemetry";
 import { ReviewFile, ReviewView, snapshotUri } from "./ReviewView";
 
-export function registerReviewCommands(context: vscode.ExtensionContext, runtime: CommandRuntime, onReview: () => void) {
+export function registerReviewCommands(context: vscode.ExtensionContext, runtime: CommandRuntime, onReview: (root: string) => void) {
   const savedLayout = context.workspaceState.get<unknown>("reviewLayout");
   const provider = new ReviewView(savedLayout === "tree" ? "tree" : "list");
   const view = vscode.window.createTreeView("duff.files", { treeDataProvider: provider });
   let review: Review | undefined;
 
   const showReview = (next: Review) => {
-    onReview();
+    onReview(next.root);
     review = next;
     provider.setReview(next);
     const base = next.baseBranch.replace(/^refs\/(heads|remotes)\//, "");

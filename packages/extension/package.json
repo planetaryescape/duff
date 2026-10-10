@@ -4,6 +4,11 @@
   "displayName": "Duff",
   "description": "Review local branch changes with native diffs and workspace files",
   "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/planetaryescape/duff.git",
+    "directory": "packages/extension"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -42,6 +47,22 @@
         "category": "Duff"
       },
       {
+        "command": "duff.refreshProviders",
+        "title": "Refresh Pull Request Discovery",
+        "icon": "$(refresh)",
+        "category": "Duff"
+      },
+      {
+        "command": "duff.loadMoreProviders",
+        "title": "Load More Pull Requests",
+        "category": "Duff"
+      },
+      {
+        "command": "duff.connectProvider",
+        "title": "Connect Provider",
+        "category": "Duff"
+      },
+      {
         "command": "duff.openFile",
         "title": "Open Workspace File",
         "icon": "$(go-to-file)",
@@ -58,7 +79,20 @@
       }, {
         "id": "duff.context",
         "name": "Git Context"
+      }, {
+        "id": "duff.providers",
+        "name": "Pull Requests"
       }]
+    },
+    "configuration": {
+      "title": "Duff",
+      "properties": {
+        "duff.automaticDiscovery": {
+          "type": "boolean",
+          "default": true,
+          "description": "Read open pull requests after local Git inspection. Never prompts for sign-in or changes Git. Disable to keep Duff entirely local."
+        }
+      }
     },
     "viewsWelcome": [{
       "view": "duff.files",
@@ -66,6 +100,9 @@
     }, {
       "view": "duff.context",
       "contents": "Inspect local identity and credential configuration without authenticating.\n[Inspect Git Context](command:duff.inspectContext)"
+    }, {
+      "view": "duff.providers",
+      "contents": "Discover open pull requests for GitHub and Azure DevOps remotes.\n[Refresh Discovery](command:duff.refreshProviders)"
     }],
     "menus": {
       "view/title": [
@@ -88,6 +125,11 @@
           "command": "duff.inspectContext",
           "when": "view == duff.context",
           "group": "navigation@1"
+        },
+        {
+          "command": "duff.refreshProviders",
+          "when": "view == duff.providers",
+          "group": "navigation@1"
         }
       ],
       "view/item/context": [
@@ -103,6 +145,14 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "duff.loadMoreProviders",
+          "when": "false"
+        },
+        {
+          "command": "duff.connectProvider",
+          "when": "false"
+        },
         {
           "command": "duff.openDiff",
           "when": "false"

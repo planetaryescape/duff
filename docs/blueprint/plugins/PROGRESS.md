@@ -1,6 +1,6 @@
 # Plugin interface design: progress
 
-## Status: Implementation started
+## Status: GitHub discovery implemented; Azure parity in progress
 
 This tech-spec-pro design lives in the blueprint at the owner's request.
 It covers the general plugin interface, with provider discovery as its first concrete contribution.
@@ -32,3 +32,4 @@ Drafted layers are not accepted decisions or implemented behavior.
 - 2026-10-10: Owner confirmed the test plan and approved frontend checkouts for local ADO tests. Read-only remote-host inspection confirmed srx-app, srx-ui-lib, and srx-engine use Azure SSH.
 - 2026-10-10: Drafted [delivery slices](07-pr-slices.md): finish Git context, integrated GitHub discovery, then Azure parity. Full-folder review remains pending.
 - 2026-10-10: Owner asked to implement and permitted subagents. Started Slice 1 with conventional HTTP(S) credential-policy resolution and grouped native presentation. Unsupported contexts remain unresolved; the shared plugin contract and provider adapters are not implemented. Full-folder Plannotator session remains open, with no returned annotations at this check.
+- 2026-10-10: Added the shared compiled plugin contract, discovery service, captured native authentication/HTTP seams, GitHub adapter, and native PR integration. Deterministic native checks exercised first/complete/partial pages with Azure fixtures under development. Provider reads, login, and Git mutation were not used by the fixture harness. The owner also requested public publication; the existing baseline is now at planetaryescape/duff.

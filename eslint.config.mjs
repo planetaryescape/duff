@@ -35,6 +35,16 @@ export default tseslint.config(
     },
   },
   {
+    files: ["packages/extension/src/**/*Commands.ts", "packages/extension/src/**/*View.ts"],
+    rules: {
+      "no-restricted-imports": ["error", {
+        patterns: [
+          "**/core/src/**", "**/github/**", "**/azure-devops/**", "**/ProviderHttp", "**/ProviderAuthentication", "effect/http", "effect/http/*",
+        ],
+      }],
+    },
+  },
+  {
     files: ["packages/**/*.ts"],
     ignores: ["packages/extension/src/extension.ts"],
     rules: {

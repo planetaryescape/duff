@@ -1,6 +1,6 @@
 # Contracts: one provider capability, two implementations
 
-Status: contract design confirmed; TypeScript sketches are not compiled interfaces or implemented behavior. Shape: [01-shape.md](01-shape.md). Both GitHub and Azure DevOps must implement the same provider contribution; neither gets a weaker optional method set. Sequencing and presentation are proposed in [flows](04-flows.md).
+Status: shared contract and GitHub implementation exist in [Plugin.ts](../../../packages/core/src/plugins/Plugin.ts) and [ProviderDiscovery.ts](../../../packages/core/src/plugins/ProviderDiscovery.ts). Sketches summarize the compiled boundary. Azure parity is the next slice. Both providers implement the same capability, including explicit connection. See [flows](04-flows.md) and [delivery evidence](../../implementation-log.md).
 
 ## Ownership
 
@@ -135,6 +135,8 @@ interface ProviderRepository {
   readonly identity: RepositoryIdentity;
   readonly inspectAuthentication:
     () => Effect.Effect<Authentication, AuthenticationError>;
+  readonly connectAuthentication:
+    () => Effect.Effect<Authentication, AuthenticationError>;
   readonly listOpenPullRequests:
     (input: ListOpenPullRequests) => Effect.Effect<PullRequestPage, DiscoveryError>;
 }
@@ -198,6 +200,8 @@ type RemoteDiscovery =
 type RemoteNotFound = { readonly _tag: "RemoteNotFound" };
 
 interface ProviderDiscovery {
+  readonly connect: (context: GitContextSnapshot, remoteName: string) =>
+    Effect.Effect<Authentication, AuthenticationError | RemoteNotFound>;
   readonly discover:
     (context: GitContextSnapshot) => Effect.Effect<ReadonlyArray<RemoteDiscovery>>;
   readonly loadMore: (input: {
@@ -222,10 +226,11 @@ Runtime construction supplies implementations; it does not require a selected Gi
 
 Git credential-strategy inspection does not execute helpers or expose tokens. Provider API authentication is a separate adapter concern, potentially using a different session than Git transport. Automatic discovery cannot silently invoke arbitrary helpers or prompt for login. Missing provider authentication never blocks local branch review.
 
-## Remaining decisions
+## Authentication choice and remaining work
 
-- Authentication transport for each implementation, including an explicit connection action.
-- Public-read workflow policy: [flows](04-flows.md#authentication-and-authorization) propose attempting listing after successful Unauthenticated/Unknown inspection without falling back after a rejected session.
+- GitHub uses native editor sessions with `repo`; explicit Connect opts into prompting after a permission warning. Silent inspection has a 12-second deadline, connection 120 seconds, and complete HTTP reads 20 seconds. The editor's authentication promise cannot itself be cancelled; stale completion cannot publish into a replaced operation.
+- Public GitHub reads are permitted only after successful missing-session inspection. Rejected authentication is a failure, not anonymous fallback. Azure's native session strategy is implemented in the following parity slice.
+- Refresh invalidates service-issued cursors as well as host rows. Tokens and cursors are private, Redacted, and memory-only. HTTP redirects are rejected rather than followed with a bearer token.
 - Shared service operations for the future capabilities the owner wants to define after discovery.
 
 No persistence DTO, external plugin protocol, or public VS Code extension API is added. All plugins compile and ship together. See [progress](PROGRESS.md) before treating any sketch as accepted policy.
