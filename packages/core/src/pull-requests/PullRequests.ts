@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Option, Redacted, Schema, Stream } from "effect";
+import { Context, Effect, Layer, Option, Redacted, Ref, Schema, Stream } from "effect";
 import { GitContextSnapshot } from "../git-context/GitContext";
 import { Authentication, AuthenticationError, DiscoveryError, GitHostingProvider, InvalidContinuation, OpenPullRequest, ProviderIdentity, ProviderRepository, Remote, RepositoryIdentity } from "./GitHostingProvider";
 
@@ -32,7 +32,7 @@ export const makePullRequestsLayer = (providers: ReadonlyArray<GitHostingProvide
   if (new Set(providers.map((provider) => provider.identity.id)).size !== providers.length) {
     return yield* Effect.die(new Error("Duplicate Duff provider registration."));
   }
-  let generation = 0;
+  const generation = yield* Ref.make(0);
   interface Entry {
     group: RepositoryGroup;
     repository: ProviderRepository;
@@ -58,7 +58,7 @@ export const makePullRequestsLayer = (providers: ReadonlyArray<GitHostingProvide
     return { _tag: "Ready", group: entry.group, authentication: result.success.authentication, items: result.success.page.items, hasMore: Option.isSome(entry.cursor) };
   });
   const discover = (snapshot: GitContextSnapshot): Stream.Stream<DiscoveryEvent> => Stream.unwrap(Effect.gen(function* () {
-    generation++;
+    const currentGeneration = yield* Ref.updateAndGet(generation, (value) => value + 1);
     const grouped = new Map<string, Entry>();
     const notices: DiscoveryNotice[] = [];
     for (const remote of snapshot.remotes) {
@@ -73,7 +73,7 @@ export const makePullRequestsLayer = (providers: ReadonlyArray<GitHostingProvide
       const existing = grouped.get(key);
       if (existing) existing.group = { ...existing.group, remoteNames: [...existing.group.remoteNames, remote.name] };
       else grouped.set(key, {
-        group: { id: GroupId.make(`${generation}:${key}`), key, provider: match.provider.identity, repository: match.repository.identity, remoteNames: [remote.name] },
+        group: { id: GroupId.make(`${currentGeneration}:${key}`), key, provider: match.provider.identity, repository: match.repository.identity, remoteNames: [remote.name] },
         repository: match.repository, cursor: Option.none(), seen: new Set(),
       });
     }
