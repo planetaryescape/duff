@@ -1,6 +1,6 @@
 # Delivery slices: built-in provider discovery
 
-Status: proposed, awaiting review. This is a design handoff, not implementation authorization or a request to open PRs. Deliver local atomic commits; pushing, publishing, and authenticated account checks require their own authorization.
+Status: owner authorized implementation. Slice 1 is in progress; provider adapters remain unimplemented. Deliver local atomic commits; pushing, publishing, and authenticated account checks require their own authorization. Full-folder Plannotator feedback remains pending.
 
 Each slice leaves local review usable. Tests are developed vertically according to [06-test-plan.md](06-test-plan.md), not as a separate all-types or all-tests delivery. The [file map](05-file-map.md) names ownership; these slices name observable outcomes.
 
@@ -16,6 +16,8 @@ Each slice leaves local review usable. Tests are developed vertically according 
 **Acceptance:** two remotes with different credential settings produce different truthful rows; no helper is invoked, secrets are not exposed, and local branch review works unchanged. Commit the feature, tests, and delivery records together.
 
 **Deferred:** plugin implementation and API authentication. No contract-only commit is necessary to deliver this local capability.
+
+Current increment: conventional HTTP(S) URLs now have per-remote policy rows, and SSH is separate. Userinfo-bearing remotes, encoded/nonstandard paths, and partial/user-qualified credential patterns remain explicitly unresolved. This increment is useful but does not claim complete Git credential matching; see the [implementation log](../../implementation-log.md#2026-10-10-per-remote-credential-policy-increment).
 
 ## Slice 2: usable GitHub discovery through the shared plugin contract
 

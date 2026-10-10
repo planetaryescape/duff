@@ -120,3 +120,17 @@ Verification: both typechecks, ESLint, all 8 existing tests, build, and VSIX pac
 Inspected screenshot: `.amp/in/artifacts/feature-owned-diff.png`. gbfm's branch and existing untracked files stayed unchanged. Obsolete test hosts were closed before replacement; one development host remains for inspection.
 Limits: the pending-inspection race and full F5 launch were not independently automated in this slice. Their existing request-generation and launch wiring were preserved. No authenticated telemetry export was attempted during this refactor.
 Delivery: prepared as a separate local refactor commit. No push, publication, deployment, provider integration, or infrastructure changes.
+
+## 2026-10-10: Per-remote credential policy increment
+
+Related: S03, D003, plugin Slice 1. Result: conventional HTTP(S) remotes now show configured helpers after resets, configured username, and `useHttpPath` with provenance. The native tree groups policy beneath each remote and keeps all helper declarations in a separate collapsed group. SSH explicitly reports that HTTP credential helpers do not apply.
+
+Git supplies include/scope expansion, URL matching, and boolean decoding. Unique synthetic marker keys preserve every matching declaration; Duff folds them in config order rather than incorrectly selecting one most-specific helper. Temporary config goes through stdin, and subprocess input/output share the operation's cancellation signal. No credential helper, network authentication, login, fetch, or provider API was invoked.
+
+Verification: the new public-service regression failed before implementation, then passed. Both typechecks, ESLint, all 9 tests, build, and VSIX packaging passed. Real Git fixtures cover helper accumulation, resets, path boundaries, last-matching scalar precedence, boolean defaults and implicit true, separate SSH, unresolved partial patterns, and the existing secret canary. Packaging initially failed because the temporary Bun vsce cache lacked usable dependencies; reinstalling that disposable cache fixed it without repository dependency changes.
+
+Native verification reused one isolated VSCodium host. A disposable repository showed cache/host-only and manager/path-aware policies, a separate SSH state, an unresolved userinfo-bearing URL, and expanded safe declarations. DOM checks excluded the synthetic secret. Inspected screenshots: `.amp/in/artifacts/credential-http.png` and `.amp/in/artifacts/credential-declarations.png`. The fixture was removed, and the host returned to gbfm. gbfm's comparison against origin/prod still produced Git's two expected paths and opened the render.ts diff. Its branch and six preexisting untracked PNGs stayed unchanged.
+
+Limits: userinfo-bearing remotes, encoded/nonstandard paths, and partial/user-qualified or unsupported credential patterns remain explicitly unresolved. This is a usable increment, not complete S03 or provider discovery. The new VSIX was packaged but not reinstalled for this increment. Authenticated telemetry export and ADO native discovery were not exercised. The approved frontend repositories remain available for the Azure slice.
+
+Delivery: prepared as one atomic local feature commit, `feat(git-context): show per-remote credential policy`. No push, publication, merge, deployment, or shared infrastructure change. Blueprint progress now records implementation authorization; full-folder Plannotator feedback has not returned.

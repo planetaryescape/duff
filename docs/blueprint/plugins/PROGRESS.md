@@ -1,6 +1,6 @@
 # Plugin interface design: progress
 
-## Status: Paused
+## Status: Implementation started
 
 This tech-spec-pro design lives in the blueprint at the owner's request.
 It covers the general plugin interface, with provider discovery as its first concrete contribution.
@@ -13,7 +13,7 @@ Drafted layers are not accepted decisions or implemented behavior.
 - [x] Layer 4: Flows (confirmed by request to continue)
 - [x] Layer 5: File map (confirmed)
 - [x] Layer 6: Test plan (confirmed; frontend checkouts approved for local ADO testing)
-- [ ] Layer 7: PR delivery slices (drafted, awaiting full-folder review)
+- [x] Layer 7: PR delivery slices (owner asked to implement)
 - [ ] Plannotator review (flows session closed without annotations; full-spec review pending)
 
 ## Log
@@ -31,3 +31,4 @@ Drafted layers are not accepted decisions or implemented behavior.
 - 2026-10-10: Owner confirmed the file map. Drafted [test plan](06-test-plan.md) with vertical red/green cycles and separate native/API evidence; paused before delivery slices.
 - 2026-10-10: Owner confirmed the test plan and approved frontend checkouts for local ADO tests. Read-only remote-host inspection confirmed srx-app, srx-ui-lib, and srx-engine use Azure SSH.
 - 2026-10-10: Drafted [delivery slices](07-pr-slices.md): finish Git context, integrated GitHub discovery, then Azure parity. Full-folder review remains pending.
+- 2026-10-10: Owner asked to implement and permitted subagents. Started Slice 1 with conventional HTTP(S) credential-policy resolution and grouped native presentation. Unsupported contexts remain unresolved; the shared plugin contract and provider adapters are not implemented. Full-folder Plannotator session remains open, with no returned annotations at this check.

@@ -4,7 +4,8 @@ Status: local identity inspection implemented in part; provider plugins accepted
 
 Current inspection shows effective name/email with scope and origin, separate commit author/committer, sanitized fetch remotes, ordered helper declarations, and whether a custom SSH command is configured.
 Apple Git can report built-in configuration with scope `unknown`; Duff preserves that scope instead of guessing its precedence.
-Helper declarations are not the effective per-remote chain. URL matching, configured credential username, and `useHttpPath` remain gaps in S03.
+For conventional HTTP(S) URLs and full HTTP(S) credential patterns, inspection also shows each remote's configured helper chain after resets, configured username, and `useHttpPath`, with provenance. SSH remotes explicitly separate their strategy from HTTP helpers.
+Userinfo-bearing remotes, encoded or nonstandard paths, partial credential patterns, user-qualified patterns, and other unsupported patterns produce an explicit unresolved policy. These remain gaps in S03, not inferred effective credentials.
 Refresh is explicit. Changing the review clears the context snapshot. No helper is executed and no authentication is attempted.
 
 ## 1. Inspect the effective Git context
@@ -28,16 +29,18 @@ Git name/email describe commit attribution, not a verified GitHub or Azure accou
 Likewise, a credential helper or SSH-agent setting does not prove which credential will be used successfully.
 There may be several remotes and several accounts. Do not invent one global "active credential".
 
-### Proposed inspection approach
+### Inspection approach
 
 - Query allowlisted keys in the repository context, preserving Git's precedence and conditional includes.
-- Evaluate URL-specific credential configuration for each sanitized remote, not only global configuration.
+- Evaluate supported URL-specific credential configuration for each remote, not only global configuration. Keep raw URLs private and sanitize the public snapshot.
 - Preserve the ordered helper chain; an empty helper value can reset inherited helpers.
 - Use Git's effective identity resolution separately from configured name/email when reporting environment overrides.
 - Inspect transport metadata without invoking authentication just to discover a username.
 - Refresh after repository, branch, worktree, or relevant configuration changes.
 
-Choose exact CLI commands and decode their output against the installed Git version during implementation.
+Git expands includes and scopes through an allowlisted NUL-delimited configuration query. A stdin-only synthetic config gives each declaration a unique marker key, so Git's URL matcher selects all applicable declarations without collapsing helpers to one most-specific value. Duff folds the selected declarations in original order. Git also parses the configured boolean values.
+
+This differs from directly calling `git config --get-urlmatch credential`: that command selects one most-specific value per key, while the credential subsystem accumulates all matching helpers and applies later scalar values in config order. Unsupported contexts stay unresolved rather than substituting that incorrect shortcut. See [Git's credential configuration](https://github.com/git/git/blob/v2.54.0/credential.c) and [URL matching](https://github.com/git/git/blob/v2.54.0/urlmatch.c).
 Do not read every config key into a UI model and try to redact it afterwards.
 
 ### Credential safety
