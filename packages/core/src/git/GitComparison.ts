@@ -45,23 +45,26 @@ export const Branches = Schema.Struct({
 
 export interface Branches extends Schema.Schema.Type<typeof Branches> {}
 
-export class ReviewError extends Schema.TaggedError<ReviewError>()('ReviewError', {
-  operation: Schema.String,
-  message: Schema.String,
-}) {}
-
-export class BranchReview extends Context.Service<
-  BranchReview,
+export class GitComparisonError extends Schema.TaggedError<GitComparisonError>()(
+  'GitComparisonError',
   {
-    readonly branches: (directory: string) => Effect.Effect<Branches, ReviewError>
-    readonly compare: (root: string, branch: string) => Effect.Effect<Review, ReviewError>
-    readonly read: (snapshot: Snapshot) => Effect.Effect<string, ReviewError>
+    operation: Schema.String,
+    message: Schema.String,
+  },
+) {}
+
+export class GitComparison extends Context.Service<
+  GitComparison,
+  {
+    readonly branches: (directory: string) => Effect.Effect<Branches, GitComparisonError>
+    readonly compare: (root: string, branch: string) => Effect.Effect<Review, GitComparisonError>
+    readonly read: (snapshot: Snapshot) => Effect.Effect<string, GitComparisonError>
   }
->()('duff/BranchReview') {}
+>()('duff/git/GitComparison') {}
 
 const execute = promisify(execFile)
 
-const git = Effect.fn('GitReview.git')(function* (root: string, args: ReadonlyArray<string>) {
+const git = Effect.fn('GitComparison.git')(function* (root: string, args: ReadonlyArray<string>) {
   const result = yield* Effect.tryPromise({
     try: (signal) =>
       execute('git', ['-C', root, ...args], {
@@ -70,7 +73,7 @@ const git = Effect.fn('GitReview.git')(function* (root: string, args: ReadonlyAr
         signal,
       }),
     catch: () =>
-      new ReviewError({
+      new GitComparisonError({
         operation: args[0] ?? 'git',
         message:
           'Git operation failed. Check that Git is installed, the repository has commits, and the selected branch is available locally. Raw diagnostics are hidden because they may contain private data.',
@@ -80,7 +83,7 @@ const git = Effect.fn('GitReview.git')(function* (root: string, args: ReadonlyAr
   return result.stdout
 })
 
-const decodeFiles = Effect.fn('GitReview.decodeFiles')(function* (output: string) {
+const decodeFiles = Effect.fn('GitComparison.decodeFiles')(function* (output: string) {
   const tokens = output.split('\0')
   const files: FileChange[] = []
 
@@ -96,7 +99,7 @@ const decodeFiles = Effect.fn('GitReview.decodeFiles')(function* (output: string
     const file = yield* Schema.decodeUnknownEffect(FileChange)(input).pipe(
       Effect.mapError(
         () =>
-          new ReviewError({
+          new GitComparisonError({
             operation: 'decode changed files',
             message: 'Git returned an unsupported file change.',
           }),
@@ -109,13 +112,13 @@ const decodeFiles = Effect.fn('GitReview.decodeFiles')(function* (output: string
   return files
 })
 
-const commit = Effect.fn('GitReview.commit')(function* (root: string, ref: string) {
+const commit = Effect.fn('GitComparison.commit')(function* (root: string, ref: string) {
   const output = yield* git(root, ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`])
 
   return yield* Schema.decodeUnknownEffect(Commit)(output.trim()).pipe(
     Effect.mapError(
       () =>
-        new ReviewError({
+        new GitComparisonError({
           operation: 'resolve commit',
           message: 'Git returned an invalid commit ID.',
         }),
@@ -123,10 +126,10 @@ const commit = Effect.fn('GitReview.commit')(function* (root: string, ref: strin
   )
 })
 
-export const gitReviewLayer = Layer.effect(
-  BranchReview,
+export const gitComparisonLayer = Layer.effect(
+  GitComparison,
   Effect.gen(function* () {
-    const branches = Effect.fn('BranchReview.branches')(function* (directory: string) {
+    const branches = Effect.fn('GitComparison.branches')(function* (directory: string) {
       const root = (yield* git(directory, ['rev-parse', '--show-toplevel'])).trim()
       const current = (yield* git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
 
@@ -147,7 +150,10 @@ export const gitReviewLayer = Layer.effect(
       })
     })
 
-    const compare = Effect.fn('BranchReview.compare')(function* (root: string, baseBranch: string) {
+    const compare = Effect.fn('GitComparison.compare')(function* (
+      root: string,
+      baseBranch: string,
+    ) {
       const headCommit = yield* commit(root, 'HEAD')
       const targetCommit = yield* commit(root, baseBranch)
       const ancestor = (yield* git(root, ['merge-base', targetCommit, headCommit])).trim()
@@ -155,7 +161,7 @@ export const gitReviewLayer = Layer.effect(
       const baseCommit = yield* Schema.decodeUnknownEffect(Commit)(ancestor).pipe(
         Effect.mapError(
           () =>
-            new ReviewError({
+            new GitComparisonError({
               operation: 'merge-base',
               message: 'The branches have no valid common ancestor.',
             }),
@@ -179,10 +185,11 @@ export const gitReviewLayer = Layer.effect(
       return Review.make({ root, baseBranch, headBranch, baseCommit, headCommit, files })
     })
 
-    const read = Effect.fn('BranchReview.read')(function* (input: Snapshot) {
+    const read = Effect.fn('GitComparison.read')(function* (input: Snapshot) {
       const snapshot = yield* Schema.decodeUnknownEffect(Snapshot)(input).pipe(
         Effect.mapError(
-          () => new ReviewError({ operation: 'read snapshot', message: 'Invalid snapshot.' }),
+          () =>
+            new GitComparisonError({ operation: 'read snapshot', message: 'Invalid snapshot.' }),
         ),
       )
 
@@ -191,6 +198,6 @@ export const gitReviewLayer = Layer.effect(
       return yield* git(snapshot.root, ['show', `${snapshot.commit}:${snapshot.path}`])
     })
 
-    return BranchReview.of({ branches, compare, read })
+    return GitComparison.of({ branches, compare, read })
   }),
 )

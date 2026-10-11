@@ -11,7 +11,7 @@ import {
   Stream,
 } from 'effect'
 
-import { type GitContextSnapshot } from '../git-context/GitContext'
+import { type GitRepositorySnapshot } from '../git/GitRepository'
 import {
   type Authentication,
   type AuthenticationError,
@@ -134,12 +134,12 @@ export class GroupNotFound extends Schema.TaggedError<GroupNotFound>()('GroupNot
 
 /**
  * Owns continuation safety: same-group reads and connections queue, while different groups run
- * independently. ReviewSession owns action suppression and discovery-job cancellation.
+ * independently. RepositorySession owns action suppression and discovery-job cancellation.
  */
 export class PullRequests extends Context.Service<
   PullRequests,
   {
-    readonly discover: (snapshot: GitContextSnapshot) => Stream.Stream<DiscoveryEvent>
+    readonly discover: (snapshot: GitRepositorySnapshot) => Stream.Stream<DiscoveryEvent>
     readonly loadMore: (id: GroupId) => Effect.Effect<GroupResult, GroupNotFound>
     readonly connect: (
       id: GroupId,
@@ -193,7 +193,7 @@ export const makePullRequestsLayer = (providers: ReadonlyArray<GitHostingProvide
         )
       })
 
-      const discover = (snapshot: GitContextSnapshot): Stream.Stream<DiscoveryEvent> =>
+      const discover = (snapshot: GitRepositorySnapshot): Stream.Stream<DiscoveryEvent> =>
         Stream.unwrap(
           Effect.gen(function* () {
             const currentGeneration = yield* Ref.updateAndGet(generation, (value) => value + 1)

@@ -1,5 +1,5 @@
 import { GroupId } from '@duff/core/pull-requests'
-import { ReviewSession } from '@duff/core/review-session'
+import { RepositorySession } from '@duff/core/repository-session'
 import { Effect, Fiber, Option, Schema, Stream } from 'effect'
 import * as vscode from 'vscode'
 
@@ -14,7 +14,7 @@ export function registerPullRequestCommands(
   const view = vscode.window.createTreeView('duff.providers', { treeDataProvider: provider })
 
   const subscription = runtime.runFork(
-    ReviewSession.use((session) =>
+    RepositorySession.use((session) =>
       session.changes.pipe(
         Stream.runForEach((state) =>
           Effect.sync(() => {
@@ -56,7 +56,7 @@ export function registerPullRequestCommands(
         return runOperation(
           runtime,
           'Duff.loadMoreProviders',
-          ReviewSession.use((session) => session.loadMore(id.value)),
+          RepositorySession.use((session) => session.loadMore(id.value)),
         )
     }),
     vscode.commands.registerCommand('duff.connectProvider', async (value: unknown) => {
@@ -74,7 +74,7 @@ export function registerPullRequestCommands(
         await runOperation(
           runtime,
           'Duff.connectProvider',
-          ReviewSession.use((session) => session.connect(id.value)),
+          RepositorySession.use((session) => session.connect(id.value)),
         )
     }),
   )

@@ -30,7 +30,7 @@ const CredentialPolicy = Schema.Union([
   Schema.TaggedStruct('NotApplicable', {}),
 ])
 
-export const GitContextSnapshot = Schema.Struct({
+export const GitRepositorySnapshot = Schema.Struct({
   root: Schema.String,
   name: Schema.optional(ConfigValue),
   email: Schema.optional(ConfigValue),
@@ -48,24 +48,29 @@ export const GitContextSnapshot = Schema.Struct({
   sshCommandConfigured: Schema.Boolean,
 })
 
-export interface GitContextSnapshot extends Schema.Schema.Type<typeof GitContextSnapshot> {}
+export interface GitRepositorySnapshot extends Schema.Schema.Type<typeof GitRepositorySnapshot> {}
 
-export class GitContextError extends Schema.TaggedError<GitContextError>()('GitContextError', {
-  operation: Schema.String,
-  message: Schema.String,
-}) {}
-
-export class GitContext extends Context.Service<
-  GitContext,
+export class GitRepositoryError extends Schema.TaggedError<GitRepositoryError>()(
+  'GitRepositoryError',
   {
-    readonly inspect: (directory: string) => Effect.Effect<GitContextSnapshot, GitContextError>
+    operation: Schema.String,
+    message: Schema.String,
+  },
+) {}
+
+export class GitRepository extends Context.Service<
+  GitRepository,
+  {
+    readonly inspect: (
+      directory: string,
+    ) => Effect.Effect<GitRepositorySnapshot, GitRepositoryError>
   }
->()('duff/GitContext') {}
+>()('duff/git/GitRepository') {}
 
 const execute = promisify(execFile)
 
 const safeFailure = (operation: string) =>
-  new GitContextError({
+  new GitRepositoryError({
     operation,
     message: `Cannot ${operation}. Check that Git is installed, the folder is a repository, and its configuration is valid. Raw Git diagnostics are hidden because they may contain credentials.`,
   })
@@ -85,7 +90,7 @@ function helperStrategy(value: string): string {
   return 'Custom helper (command and arguments hidden)'
 }
 
-const Remote = GitContextSnapshot.fields.remotes.value
+const Remote = GitRepositorySnapshot.fields.remotes.value
 
 const RemoteDestination = Schema.Struct({
   destination: Remote.fields.destination,
@@ -137,13 +142,13 @@ function remoteDestination(raw: Redacted.Redacted): RemoteDestination {
   })
 }
 
-export const makeGitContextLayer = (environment: NodeJS.ProcessEnv) =>
+export const makeGitRepositoryLayer = (environment: NodeJS.ProcessEnv) =>
   Layer.effect(
-    GitContext,
+    GitRepository,
     Effect.gen(function* () {
       const env = { ...environment }
 
-      const git = Effect.fn('GitContext.git')(function* (
+      const git = Effect.fn('GitRepository.git')(function* (
         root: string,
         args: ReadonlyArray<string>,
         operation: string,
@@ -189,7 +194,7 @@ export const makeGitContextLayer = (environment: NodeJS.ProcessEnv) =>
         return output
       })
 
-      const config = Effect.fn('GitContext.config')(function* (root: string, key: string) {
+      const config = Effect.fn('GitRepository.config')(function* (root: string, key: string) {
         const raw = yield* git(
           root,
           ['config', '--includes', '--null', '--show-origin', '--show-scope', '--get', key],
@@ -209,7 +214,10 @@ export const makeGitContextLayer = (environment: NodeJS.ProcessEnv) =>
         }).pipe(Effect.mapError(() => safeFailure('decode identity configuration')))
       })
 
-      const identity = Effect.fn('GitContext.identity')(function* (root: string, variable: string) {
+      const identity = Effect.fn('GitRepository.identity')(function* (
+        root: string,
+        variable: string,
+      ) {
         const raw = yield* git(root, ['var', variable], 'resolve commit identity', 128)
         const output = Redacted.value(raw)
 
@@ -221,7 +229,7 @@ export const makeGitContextLayer = (environment: NodeJS.ProcessEnv) =>
         )
       })
 
-      const inspect = Effect.fn('GitContext.inspect')(function* (directory: string) {
+      const inspect = Effect.fn('GitRepository.inspect')(function* (directory: string) {
         const root = Redacted.value(
           yield* git(directory, ['rev-parse', '--show-toplevel'], 'locate repository'),
         ).trim()
@@ -252,7 +260,7 @@ export const makeGitContextLayer = (environment: NodeJS.ProcessEnv) =>
         )
 
         const tokens = Redacted.value(rawHelpers).split('\0')
-        const helpers: GitContextSnapshot['helpers'][number][] = []
+        const helpers: GitRepositorySnapshot['helpers'][number][] = []
         const declarations: { key: string; record: ConfigValue }[] = []
 
         for (let index = 0; index < tokens.length - 1; index += 3) {
@@ -282,7 +290,7 @@ export const makeGitContextLayer = (environment: NodeJS.ProcessEnv) =>
             })
         }
 
-        const credentials = Effect.fn('GitContext.credentials')(function* (
+        const credentials = Effect.fn('GitRepository.credentials')(function* (
           raw: Redacted.Redacted,
           transport: string,
         ) {
@@ -349,7 +357,7 @@ export const makeGitContextLayer = (environment: NodeJS.ProcessEnv) =>
               .map((line) => line.split(' ')[0]),
           )
 
-          const selected: GitContextSnapshot['helpers'][number][] = []
+          const selected: GitRepositorySnapshot['helpers'][number][] = []
           let username: ConfigValue | undefined
           let useHttpPath: ConfigValue = { scope: 'unknown', origin: 'Git default', value: 'false' }
 
@@ -384,7 +392,7 @@ export const makeGitContextLayer = (environment: NodeJS.ProcessEnv) =>
 
         const remotes = yield* Effect.forEach(
           names,
-          Effect.fn('GitContext.remote')(function* (name) {
+          Effect.fn('GitRepository.remote')(function* (name) {
             const raw = Redacted.make(
               Redacted.value(
                 yield* git(root, ['remote', 'get-url', '--', name], 'read remote destination'),
@@ -408,7 +416,7 @@ export const makeGitContextLayer = (environment: NodeJS.ProcessEnv) =>
           1,
         )
 
-        let snapshot: GitContextSnapshot = {
+        let snapshot: GitRepositorySnapshot = {
           root,
           remotes,
           helpers,
@@ -425,9 +433,9 @@ export const makeGitContextLayer = (environment: NodeJS.ProcessEnv) =>
 
         if (committer) snapshot = { ...snapshot, committer }
 
-        return GitContextSnapshot.make(snapshot)
+        return GitRepositorySnapshot.make(snapshot)
       })
 
-      return GitContext.of({ inspect })
+      return GitRepository.of({ inspect })
     }),
   )

@@ -12,10 +12,10 @@ import {
 } from 'effect'
 
 import {
-  GitContext,
-  type GitContextError,
-  type GitContextSnapshot,
-} from '../git-context/GitContext'
+  GitRepository,
+  type GitRepositoryError,
+  type GitRepositorySnapshot,
+} from '../git/GitRepository'
 import { type DiscoveryError } from '../pull-requests/GitHostingProvider'
 import {
   type DiscoveryNotice,
@@ -48,14 +48,14 @@ export class GroupRow extends Data.Class<{
 
 const RowContent = Data.taggedEnum<GroupRow['content']>()
 
-export type ReviewState =
+export type SessionState =
   | { readonly _tag: 'Idle' }
   | {
       readonly _tag: 'Active'
       readonly directory: string
       readonly inspection: 'Inspecting' | 'Ready' | 'Failed'
-      readonly snapshot: Option.Option<GitContextSnapshot>
-      readonly inspectionError: Option.Option<GitContextError>
+      readonly snapshot: Option.Option<GitRepositorySnapshot>
+      readonly inspectionError: Option.Option<GitRepositoryError>
       readonly discovering: boolean
       readonly problem: Option.Option<'UnexpectedFailure'>
       readonly rows: ReadonlyArray<GroupRow>
@@ -63,13 +63,13 @@ export type ReviewState =
     }
 
 /** Named constructors for session state; no wire codec is needed for this internal state. */
-export const ReviewState = Data.taggedEnum<ReviewState>()
+export const SessionState = Data.taggedEnum<SessionState>()
 
-export class ReviewSession extends Context.Service<
-  ReviewSession,
+export class RepositorySession extends Context.Service<
+  RepositorySession,
   {
-    readonly changes: Stream.Stream<ReviewState>
-    readonly current: () => Effect.Effect<ReviewState>
+    readonly changes: Stream.Stream<SessionState>
+    readonly current: () => Effect.Effect<SessionState>
     readonly selectRepository: (
       directory: string,
       options: { readonly discover: boolean },
@@ -78,20 +78,20 @@ export class ReviewSession extends Context.Service<
     readonly loadMore: (id: GroupId) => Effect.Effect<void>
     readonly connect: (id: GroupId) => Effect.Effect<void>
   }
->()('duff/review-session/ReviewSession') {
+>()('duff/repository-session/RepositorySession') {
   static readonly layer = Layer.effect(
-    ReviewSession,
+    RepositorySession,
     Effect.gen(function* () {
-      const git = yield* GitContext
+      const git = yield* GitRepository
       const prs = yield* PullRequests
-      const state = yield* SubscriptionRef.make<ReviewState>(ReviewState.Idle())
+      const state = yield* SubscriptionRef.make<SessionState>(SessionState.Idle())
       const work = yield* FiberMap.make<string, void>()
       const gate = yield* Semaphore.make(1)
 
       const updateRow = (id: GroupId, update: (row: GroupRow) => GroupRow) =>
         SubscriptionRef.update(state, (state) =>
           state._tag === 'Active'
-            ? ReviewState.Active({
+            ? SessionState.Active({
                 ...state,
                 rows: state.rows.map((row) => (row.group.id === id ? update(row) : row)),
               })
@@ -121,9 +121,9 @@ export class ReviewSession extends Context.Service<
           Effect.onExit((exit) => {
             if (exit._tag === 'Success' || Cause.hasInterruptsOnly(exit.cause)) return Effect.void
 
-            return SubscriptionRef.update(state, (state): ReviewState =>
+            return SubscriptionRef.update(state, (state): SessionState =>
               state._tag === 'Active'
-                ? ReviewState.Active({
+                ? SessionState.Active({
                     ...state,
                     discovering: false,
                     problem: Option.some('UnexpectedFailure'),
@@ -187,8 +187,8 @@ export class ReviewSession extends Context.Service<
         })
       }
 
-      const discover = Effect.fn('ReviewSession.discover')(function* (
-        snapshot: GitContextSnapshot,
+      const discover = Effect.fn('RepositorySession.discover')(function* (
+        snapshot: GitRepositorySnapshot,
       ) {
         yield* prs.discover(snapshot).pipe(
           Stream.runForEach((event) =>
@@ -196,7 +196,7 @@ export class ReviewSession extends Context.Service<
               if (state._tag !== 'Active') return state
 
               if (event._tag === 'Started')
-                return ReviewState.Active({
+                return SessionState.Active({
                   ...state,
                   discovering: true,
                   notices: event.notices,
@@ -214,7 +214,7 @@ export class ReviewSession extends Context.Service<
                   }),
                 })
 
-              return ReviewState.Active({
+              return SessionState.Active({
                 ...state,
                 rows: state.rows.map((row) =>
                   row.group.id === event.result.group.id ? accept(row, event.result, false) : row,
@@ -224,27 +224,27 @@ export class ReviewSession extends Context.Service<
           ),
         )
         yield* SubscriptionRef.update(state, (state) =>
-          state._tag === 'Active' ? ReviewState.Active({ ...state, discovering: false }) : state,
+          state._tag === 'Active' ? SessionState.Active({ ...state, discovering: false }) : state,
         )
       })
 
-      const clear = Effect.fn('ReviewSession.clear')(
+      const clear = Effect.fn('RepositorySession.clear')(
         function* () {
           yield* FiberMap.clear(work)
-          yield* SubscriptionRef.set(state, ReviewState.Idle())
+          yield* SubscriptionRef.set(state, SessionState.Idle())
         },
         gate.withPermits(1),
         Effect.uninterruptible,
       )
 
-      const selectRepository = Effect.fn('ReviewSession.selectRepository')(
+      const selectRepository = Effect.fn('RepositorySession.selectRepository')(
         function* (directory: string, options: { readonly discover: boolean }) {
           yield* FiberMap.clear(work)
           const old = yield* SubscriptionRef.get(state)
           const retain = old._tag === 'Active' && old.directory === directory && options.discover
           yield* SubscriptionRef.set(
             state,
-            ReviewState.Active({
+            SessionState.Active({
               directory,
               inspection: 'Inspecting',
               snapshot: Option.none(),
@@ -271,14 +271,14 @@ export class ReviewSession extends Context.Service<
             work,
             'inspection',
             supervise(
-              'ReviewSession.inspect',
+              'RepositorySession.inspect',
               Effect.gen(function* () {
                 const inspected = yield* Effect.result(git.inspect(directory))
 
                 if (inspected._tag === 'Failure') {
-                  yield* SubscriptionRef.update(state, (state): ReviewState =>
+                  yield* SubscriptionRef.update(state, (state): SessionState =>
                     state._tag === 'Active'
-                      ? ReviewState.Active({
+                      ? SessionState.Active({
                           ...state,
                           inspection: 'Failed',
                           inspectionError: Option.some(inspected.failure),
@@ -291,9 +291,9 @@ export class ReviewSession extends Context.Service<
                   return
                 }
 
-                yield* SubscriptionRef.update(state, (state): ReviewState =>
+                yield* SubscriptionRef.update(state, (state): SessionState =>
                   state._tag === 'Active'
-                    ? ReviewState.Active({
+                    ? SessionState.Active({
                         ...state,
                         inspection: 'Ready',
                         snapshot: Option.some(inspected.success),
@@ -310,7 +310,7 @@ export class ReviewSession extends Context.Service<
         Effect.uninterruptible,
       )
 
-      const loadMore = Effect.fn('ReviewSession.loadMore')(
+      const loadMore = Effect.fn('RepositorySession.loadMore')(
         function* (id: GroupId) {
           const current = yield* SubscriptionRef.get(state)
 
@@ -331,7 +331,7 @@ export class ReviewSession extends Context.Service<
             work,
             id,
             supervise(
-              'ReviewSession.loadMore',
+              'RepositorySession.loadMore',
               Effect.gen(function* () {
                 const result = yield* prs.loadMore(id)
                 yield* updateRow(id, (row) => accept(row, result, true))
@@ -358,7 +358,7 @@ export class ReviewSession extends Context.Service<
         Effect.uninterruptible,
       )
 
-      const connect = Effect.fn('ReviewSession.connect')(
+      const connect = Effect.fn('RepositorySession.connect')(
         function* (id: GroupId) {
           const current = yield* SubscriptionRef.get(state)
 
@@ -376,7 +376,7 @@ export class ReviewSession extends Context.Service<
           yield* FiberMap.clear(work)
           yield* SubscriptionRef.update(state, (state) =>
             state._tag === 'Active'
-              ? ReviewState.Active({
+              ? SessionState.Active({
                   ...state,
                   discovering: false,
                   rows: state.rows.map((row) => failed(row, 'InspectionFailed')),
@@ -388,7 +388,7 @@ export class ReviewSession extends Context.Service<
             work,
             'connection',
             supervise(
-              'ReviewSession.connect',
+              'RepositorySession.connect',
               Effect.gen(function* () {
                 const result = yield* Effect.result(prs.connect(id))
 
@@ -412,7 +412,7 @@ export class ReviewSession extends Context.Service<
         Effect.uninterruptible,
       )
 
-      return ReviewSession.of({
+      return RepositorySession.of({
         changes: SubscriptionRef.changes(state),
         current: () => SubscriptionRef.get(state),
         selectRepository,

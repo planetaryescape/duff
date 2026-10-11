@@ -16,7 +16,7 @@ import {
   RepositoryIdentity,
 } from '../GitHostingProvider'
 import { ProviderAuthentication } from '../ProviderAuthentication'
-import { ProviderHttp } from '../ProviderHttp'
+import { ProviderHttp } from './ProviderHttp'
 
 const scopes = ['499b84ac-1321-427f-aa17-267ca6975798/user_impersonation']
 
@@ -100,7 +100,7 @@ function repositoryUrl(address: Address): string {
   return `https://dev.azure.com/${encodeURIComponent(address.org)}/${encodeURIComponent(address.project)}/_git/${encodeURIComponent(address.repo)}`
 }
 
-export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
+export const makeAzureDevOpsProvider = Effect.gen(function* (): Effect.gen.Return<
   GitHostingProvider,
   never,
   ProviderAuthentication | ProviderHttp

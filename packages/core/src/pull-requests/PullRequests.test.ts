@@ -1,7 +1,7 @@
 import { expect, it } from '@effect/vitest'
 import { Cause, Deferred, Effect, Fiber, Option, Redacted, Stream } from 'effect'
 
-import { type GitContextSnapshot } from '../git-context/GitContext'
+import { type GitRepositorySnapshot } from '../git/GitRepository'
 import {
   type GitHostingProvider,
   type ProviderRepository,
@@ -17,7 +17,7 @@ const remote = (name: string): Remote => ({
   credentials: { _tag: 'NotApplicable' },
 })
 
-const snapshot = (names: string[]): GitContextSnapshot => ({
+const snapshot = (names: string[]): GitRepositorySnapshot => ({
   root: '/fixture',
   remotes: names.map(remote),
   helpers: [],

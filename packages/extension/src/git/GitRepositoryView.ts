@@ -1,4 +1,4 @@
-import { type ConfigValue, type GitContextSnapshot } from '@duff/core/git-context'
+import { type ConfigValue, type GitRepositorySnapshot } from '@duff/core/git-repository'
 import * as vscode from 'vscode'
 
 function row(label: string, value: string, detail?: string): vscode.TreeItem {
@@ -13,13 +13,15 @@ function configRow(label: string, value: ConfigValue | undefined): vscode.TreeIt
   return row(label, value?.value || 'Unset', value ? `${value.scope} · ${value.origin}` : undefined)
 }
 
-export class GitContextView implements vscode.TreeDataProvider<vscode.TreeItem>, vscode.Disposable {
+export class GitRepositoryView
+  implements vscode.TreeDataProvider<vscode.TreeItem>, vscode.Disposable
+{
   private readonly changes = new vscode.EventEmitter<void>()
   readonly onDidChangeTreeData = this.changes.event
   private rows: vscode.TreeItem[] = []
   private readonly children = new Map<vscode.TreeItem, vscode.TreeItem[]>()
 
-  setSnapshot(snapshot: GitContextSnapshot) {
+  setSnapshot(snapshot: GitRepositorySnapshot) {
     this.children.clear()
 
     const remotes = snapshot.remotes.map((remote) => {

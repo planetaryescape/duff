@@ -1,12 +1,12 @@
-import { ReviewSession } from '@duff/core/review-session'
+import { RepositorySession } from '@duff/core/repository-session'
 import { Effect, Fiber, Option, Stream } from 'effect'
 import * as vscode from 'vscode'
 
 import { type CommandRuntime, runOperation } from '../Operations'
 import { chooseDirectory } from '../Repository'
-import { GitContextView } from './GitContextView'
+import { GitRepositoryView } from './GitRepositoryView'
 
-class GitContextCommands {
+class GitRepositoryCommands {
   constructor(
     readonly inspect: (
       root?: string,
@@ -16,16 +16,16 @@ class GitContextCommands {
   ) {}
 }
 
-export function registerGitContextCommands(
+export function registerGitRepositoryCommands(
   context: vscode.ExtensionContext,
   runtime: CommandRuntime,
   currentRoot: () => string | undefined,
 ) {
-  const provider = new GitContextView()
+  const provider = new GitRepositoryView()
   const view = vscode.window.createTreeView('duff.context', { treeDataProvider: provider })
 
   const subscription = runtime.runFork(
-    ReviewSession.use((session) =>
+    RepositorySession.use((session) =>
       session.changes.pipe(
         Stream.runForEach((state) =>
           Effect.sync(() => {
@@ -67,7 +67,7 @@ export function registerGitContextCommands(
     await runOperation(
       runtime,
       'Duff.inspectContext',
-      ReviewSession.use((session) => session.selectRepository(directory, { discover })),
+      RepositorySession.use((session) => session.selectRepository(directory, { discover })),
     )
 
     if (focus) await vscode.commands.executeCommand('duff.context.focus')
@@ -86,5 +86,5 @@ export function registerGitContextCommands(
     ),
   )
 
-  return new GitContextCommands(inspect)
+  return new GitRepositoryCommands(inspect)
 }

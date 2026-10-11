@@ -11,8 +11,8 @@ import {
   type Remote,
 } from '../GitHostingProvider'
 import { ProviderAuthentication, type ProviderSession } from '../ProviderAuthentication'
-import { ProviderHttp } from '../ProviderHttp'
-import { makeGitHubHttp } from './GitHubHttp'
+import { makeGitHubProvider } from './GitHubProvider'
+import { ProviderHttp } from './ProviderHttp'
 
 const remote = (destination: string): Remote => ({
   name: 'origin',
@@ -52,7 +52,7 @@ const make = Effect.fn('GitHubTest.make')(function* (
   auth: ProviderAuthentication['Service'] = { session: () => Effect.succeed(Option.none()) },
   http: ProviderHttp['Service'] = { get: () => Effect.succeed({ body: [], headers: {} }) },
 ) {
-  const provider = yield* makeGitHubHttp.pipe(
+  const provider = yield* makeGitHubProvider.pipe(
     Effect.provideService(ProviderAuthentication, ProviderAuthentication.of(auth)),
     Effect.provideService(ProviderHttp, ProviderHttp.of(http)),
   )

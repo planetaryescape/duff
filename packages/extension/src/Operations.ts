@@ -1,20 +1,20 @@
-import { type GitContext, GitContextError } from '@duff/core/git-context'
-import { type BranchReview, ReviewError } from '@duff/core/review'
-import { type ReviewSession } from '@duff/core/review-session'
+import { type GitComparison, GitComparisonError } from '@duff/core/git-comparison'
+import { type GitRepository, GitRepositoryError } from '@duff/core/git-repository'
+import { type RepositorySession } from '@duff/core/repository-session'
 import { Cause, type Effect, type ManagedRuntime, Option } from 'effect'
 import * as vscode from 'vscode'
 
 import { observeOperation, type Operation } from './telemetry/Telemetry'
 
 export type CommandRuntime = ManagedRuntime.ManagedRuntime<
-  BranchReview | GitContext | ReviewSession,
+  GitComparison | GitRepository | RepositorySession,
   never
 >
 
 export async function runOperation<A, E>(
   runtime: CommandRuntime,
   operation: Operation,
-  work: Effect.Effect<A, E, BranchReview | GitContext | ReviewSession>,
+  work: Effect.Effect<A, E, GitComparison | GitRepository | RepositorySession>,
   onFailure?: () => void,
   signal?: AbortSignal,
   summarize?: (value: A) => 'success' | 'partial',
@@ -31,7 +31,7 @@ export async function runOperation<A, E>(
 
   const message =
     Option.isSome(error) &&
-    (error.value instanceof ReviewError || error.value instanceof GitContextError)
+    (error.value instanceof GitComparisonError || error.value instanceof GitRepositoryError)
       ? error.value.message
       : 'Operation failed. Refresh to retry; provider sign-in may be unavailable in this editor.'
 

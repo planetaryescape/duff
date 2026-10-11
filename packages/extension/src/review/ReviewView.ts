@@ -1,4 +1,4 @@
-import { type FileChange, type Review, type Snapshot } from '@duff/core/review'
+import { type FileChange, type Review, type Snapshot } from '@duff/core/git-comparison'
 import * as vscode from 'vscode'
 
 export function snapshotUri(snapshot: Snapshot): vscode.Uri {

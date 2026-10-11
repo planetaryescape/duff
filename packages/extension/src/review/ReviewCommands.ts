@@ -1,4 +1,4 @@
-import { BranchReview, type Review, ReviewError, Snapshot } from '@duff/core/review'
+import { GitComparison, type Review, GitComparisonError, Snapshot } from '@duff/core/git-comparison'
 import { Effect, Schema } from 'effect'
 import * as vscode from 'vscode'
 
@@ -52,7 +52,7 @@ export function registerReviewCommands(
     const repository = await runOperation(
       runtime,
       'Duff.listBranches',
-      BranchReview.use((service) => service.branches(directory)),
+      GitComparison.use((service) => service.branches(directory)),
     )
 
     if (!repository) return
@@ -78,7 +78,7 @@ export function registerReviewCommands(
     const next = await runOperation(
       runtime,
       'Duff.compare',
-      BranchReview.use((service) => service.compare(repository.root, selected.ref)),
+      GitComparison.use((service) => service.compare(repository.root, selected.ref)),
     )
 
     if (!next) return
@@ -100,7 +100,7 @@ export function registerReviewCommands(
       const next = await runOperation(
         runtime,
         'Duff.refresh',
-        BranchReview.use((service) => service.compare(current.root, current.baseBranch)),
+        GitComparison.use((service) => service.compare(current.root, current.baseBranch)),
       )
 
       if (next) showReview(next)
@@ -172,9 +172,12 @@ export function registerReviewCommands(
           const input = Schema.decodeUnknownEffect(Schema.fromJsonString(Snapshot))(uri.query).pipe(
             Effect.mapError(
               () =>
-                new ReviewError({ operation: 'read snapshot', message: 'Invalid snapshot URI.' }),
+                new GitComparisonError({
+                  operation: 'read snapshot',
+                  message: 'Invalid snapshot URI.',
+                }),
             ),
-            Effect.flatMap((snapshot) => BranchReview.use((service) => service.read(snapshot))),
+            Effect.flatMap((snapshot) => GitComparison.use((service) => service.read(snapshot))),
           )
 
           return await runtime.runPromise(observeOperation('Duff.readSnapshot', input), {

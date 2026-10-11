@@ -1,4 +1,8 @@
-import { type GroupRow, type ReviewState, type SessionProblem } from '@duff/core/review-session'
+import {
+  type GroupRow,
+  type SessionState,
+  type SessionProblem,
+} from '@duff/core/repository-session'
 import { Option } from 'effect'
 import * as vscode from 'vscode'
 
@@ -117,7 +121,7 @@ export class PullRequestView
   private roots: vscode.TreeItem[] = []
   private readonly children = new Map<vscode.TreeItem, vscode.TreeItem[]>()
 
-  setState(state: ReviewState) {
+  setState(state: SessionState) {
     this.children.clear()
     this.roots =
       state._tag === 'Idle'

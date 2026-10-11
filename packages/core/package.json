@@ -3,13 +3,13 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./review": "./src/review/BranchReview.ts",
-    "./git-context": "./src/git-context/GitContext.ts",
+    "./git-comparison": "./src/git/GitComparison.ts",
+    "./git-repository": "./src/git/GitRepository.ts",
     "./git-hosting-provider": "./src/pull-requests/GitHostingProvider.ts",
     "./pull-requests": "./src/pull-requests/PullRequests.ts",
     "./pull-request-providers": "./src/pull-requests/Providers.ts",
     "./provider-authentication": "./src/pull-requests/ProviderAuthentication.ts",
-    "./review-session": "./src/review-session/ReviewSession.ts"
+    "./repository-session": "./src/repository-session/RepositorySession.ts"
   },
   "scripts": { "typecheck": "tsc --noEmit" },
   "dependencies": { "effect": "4.0.2" }

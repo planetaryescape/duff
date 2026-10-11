@@ -8,7 +8,7 @@ import {
   ProviderUnavailable,
   RateLimited,
   RepositoryUnavailable,
-} from './GitHostingProvider'
+} from '../GitHostingProvider'
 
 /** Transport output remains undecoded until the owning provider selects its wire schema. */
 export const ProviderResponse = Schema.Struct({

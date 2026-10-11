@@ -15,7 +15,7 @@ import {
   RepositoryIdentity,
 } from '../GitHostingProvider'
 import { ProviderAuthentication } from '../ProviderAuthentication'
-import { ProviderHttp } from '../ProviderHttp'
+import { ProviderHttp } from './ProviderHttp'
 
 const Segment = Schema.String.check(Schema.isPattern(/^(?!\.{1,2}$)[a-zA-Z0-9_.-]+$/))
 
@@ -120,7 +120,7 @@ const nextPage = Effect.fn('GitHub.nextPage')(function* (
   return next
 })
 
-export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
+export const makeGitHubProvider = Effect.gen(function* (): Effect.gen.Return<
   GitHostingProvider,
   never,
   ProviderAuthentication | ProviderHttp

@@ -79,7 +79,7 @@ it.effect(
 
       yield* Effect.scoped(
         Effect.gen(function* () {
-          const child = Effect.fn('GitContext.inspect')(function* () {
+          const child = Effect.fn('GitRepository.inspect')(function* () {
             yield* Effect.annotateCurrentSpan('private', 'canary-secret')
 
             return 'canary-secret'
@@ -122,7 +122,7 @@ it.effect(
       )
 
       const root = spans.find((span) => span.name === 'Duff.inspectContext')
-      const child = spans.find((span) => span.name === 'GitContext.inspect')
+      const child = spans.find((span) => span.name === 'GitRepository.inspect')
       expect(root).toBeDefined()
       expect(child?.parentSpanId).toBe(root?.spanId)
       expect(spans.find((span) => span.name === 'Duff.compare')?.status.code).toBe(2)

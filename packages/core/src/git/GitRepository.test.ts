@@ -8,7 +8,7 @@ import { promisify } from 'node:util'
 import { expect, it } from '@effect/vitest'
 import { Effect } from 'effect'
 
-import { GitContext, makeGitContextLayer } from './GitContext'
+import { GitRepository, makeGitRepositoryLayer } from './GitRepository'
 
 const execute = promisify(execFile)
 
@@ -50,8 +50,8 @@ it.effect(
       yield* write(included, '[user]\nname = Included Name\nemail = included@example.invalid\n')
       yield* command(root, env, 'config', 'user.email', 'local@example.invalid')
 
-      const conditional = yield* GitContext.use((service) => service.inspect(root)).pipe(
-        Effect.provide(makeGitContextLayer(env)),
+      const conditional = yield* GitRepository.use((service) => service.inspect(root)).pipe(
+        Effect.provide(makeGitRepositoryLayer(env)),
       )
 
       expect(conditional.name).toEqual({
@@ -64,9 +64,9 @@ it.effect(
       yield* command(root, env, 'config', 'extensions.worktreeConfig', 'true')
       yield* command(root, env, 'config', '--worktree', 'user.name', 'Worktree Name')
 
-      const context = yield* GitContext.use((service) => service.inspect(root)).pipe(
+      const context = yield* GitRepository.use((service) => service.inspect(root)).pipe(
         Effect.provide(
-          makeGitContextLayer({
+          makeGitRepositoryLayer({
             ...env,
             GIT_AUTHOR_NAME: 'Override Author',
             GIT_AUTHOR_EMAIL: 'author@example.invalid',
@@ -109,8 +109,8 @@ it.effect(
         ),
       )
 
-      const context = yield* GitContext.use((service) => service.inspect(root)).pipe(
-        Effect.provide(makeGitContextLayer(env)),
+      const context = yield* GitRepository.use((service) => service.inspect(root)).pipe(
+        Effect.provide(makeGitRepositoryLayer(env)),
       )
 
       expect(
@@ -156,8 +156,8 @@ it.effect("resolves each remote's ordered helper chain, resets, username, and pa
     yield* command(root, env, 'config', 'credential.username', 'local-user')
     yield* command(root, env, 'config', 'credential.useHttpPath', 'false')
 
-    const inherited = yield* GitContext.use((service) => service.inspect(root)).pipe(
-      Effect.provide(makeGitContextLayer(env)),
+    const inherited = yield* GitRepository.use((service) => service.inspect(root)).pipe(
+      Effect.provide(makeGitRepositoryLayer(env)),
     )
 
     const inheritedTeam = inherited.remotes.find((remote) => remote.name === 'team')?.credentials
@@ -181,8 +181,8 @@ it.effect("resolves each remote's ordered helper chain, resets, username, and pa
       'manager',
     )
 
-    const context = yield* GitContext.use((service) => service.inspect(root)).pipe(
-      Effect.provide(makeGitContextLayer(env)),
+    const context = yield* GitRepository.use((service) => service.inspect(root)).pipe(
+      Effect.provide(makeGitRepositoryLayer(env)),
     )
 
     const team = context.remotes.find((remote) => remote.name === 'team')?.credentials
@@ -206,8 +206,8 @@ it.effect("resolves each remote's ordered helper chain, resets, username, and pa
     )
     yield* command(root, env, 'config', '--unset', 'credential.useHttpPath')
 
-    const scoped = yield* GitContext.use((service) => service.inspect(root)).pipe(
-      Effect.provide(makeGitContextLayer(env)),
+    const scoped = yield* GitRepository.use((service) => service.inspect(root)).pipe(
+      Effect.provide(makeGitRepositoryLayer(env)),
     )
 
     const scopedTeam = scoped.remotes.find((remote) => remote.name === 'team')?.credentials
@@ -223,8 +223,8 @@ it.effect("resolves each remote's ordered helper chain, resets, username, and pa
     })
     yield* command(root, env, 'config', 'credential.example.invalid.helper', 'store')
 
-    const partial = yield* GitContext.use((service) => service.inspect(root)).pipe(
-      Effect.provide(makeGitContextLayer(env)),
+    const partial = yield* GitRepository.use((service) => service.inspect(root)).pipe(
+      Effect.provide(makeGitRepositoryLayer(env)),
     )
 
     expect(partial.remotes.find((remote) => remote.name === 'team')?.credentials._tag).toBe(
@@ -235,8 +235,8 @@ it.effect("resolves each remote's ordered helper chain, resets, username, and pa
       appendFile(join(root, '.git', 'config'), '[credential]\nuseHttpPath\n'),
     )
 
-    const implicit = yield* GitContext.use((service) => service.inspect(root)).pipe(
-      Effect.provide(makeGitContextLayer(env)),
+    const implicit = yield* GitRepository.use((service) => service.inspect(root)).pipe(
+      Effect.provide(makeGitRepositoryLayer(env)),
     )
 
     const implicitOther = implicit.remotes.find((remote) => remote.name === 'other')?.credentials
@@ -253,8 +253,8 @@ it.effect('accepts platform-provided helper scopes alongside local declarations'
     yield* command(root, env, 'config', 'user.email', 'fixture@example.invalid')
     yield* command(root, env, 'config', 'credential.helper', 'cache')
 
-    const context = yield* GitContext.use((service) => service.inspect(root)).pipe(
-      Effect.provide(makeGitContextLayer({ ...env, GIT_CONFIG_NOSYSTEM: '0' })),
+    const context = yield* GitRepository.use((service) => service.inspect(root)).pipe(
+      Effect.provide(makeGitRepositoryLayer({ ...env, GIT_CONFIG_NOSYSTEM: '0' })),
     )
 
     expect(context.helpers[context.helpers.length - 1]).toEqual({
@@ -272,8 +272,8 @@ it.effect('distinguishes unset configuration from invalid configuration with saf
     const { root, env } = yield* fixture
     yield* command(root, env, 'config', 'user.useConfigOnly', 'true')
 
-    const context = yield* GitContext.use((service) => service.inspect(root)).pipe(
-      Effect.provide(makeGitContextLayer(env)),
+    const context = yield* GitRepository.use((service) => service.inspect(root)).pipe(
+      Effect.provide(makeGitRepositoryLayer(env)),
     )
 
     expect(context.name).toBeUndefined()
@@ -284,12 +284,12 @@ it.effect('distinguishes unset configuration from invalid configuration with saf
     expect(context.remotes).toEqual([])
     yield* write(join(root, '.git', 'config'), '[canary-secret invalid config')
 
-    const failure = yield* GitContext.use((service) => service.inspect(root)).pipe(
-      Effect.provide(makeGitContextLayer(env)),
+    const failure = yield* GitRepository.use((service) => service.inspect(root)).pipe(
+      Effect.provide(makeGitRepositoryLayer(env)),
       Effect.flip,
     )
 
-    expect(failure._tag).toBe('GitContextError')
+    expect(failure._tag).toBe('GitRepositoryError')
     expect(JSON.stringify(failure)).not.toContain('canary-secret')
   }),
 )

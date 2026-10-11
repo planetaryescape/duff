@@ -1,14 +1,14 @@
-import { makeGitContextLayer } from '@duff/core/git-context'
+import { gitComparisonLayer } from '@duff/core/git-comparison'
+import { makeGitRepositoryLayer } from '@duff/core/git-repository'
 import { pullRequestsLayer } from '@duff/core/pull-request-providers'
-import { gitReviewLayer } from '@duff/core/review'
-import { ReviewSession } from '@duff/core/review-session'
+import { RepositorySession } from '@duff/core/repository-session'
 import { Effect, Layer, ManagedRuntime } from 'effect'
 import { FetchHttpClient } from 'effect/http'
 import * as vscode from 'vscode'
 
-import { registerGitContextCommands } from './git-context/GitContextCommands'
-import { authenticationLayer } from './pull-requests/ProviderAuthentication'
+import { registerGitRepositoryCommands } from './git/GitRepositoryCommands'
 import { registerPullRequestCommands } from './pull-requests/PullRequestCommands'
+import { authenticationLayer } from './pull-requests/VsCodeAuthentication'
 import { registerReviewCommands } from './review/ReviewCommands'
 import { observabilityLayer } from './telemetry/Telemetry'
 
@@ -20,15 +20,15 @@ export function activate(context: vscode.ExtensionContext) {
       ? observabilityLayer.pipe(Layer.provide(FetchHttpClient.layer))
       : Layer.empty
 
-  const gitContextLayer = makeGitContextLayer(process.env)
+  const gitRepositoryLayer = makeGitRepositoryLayer(process.env)
   const providers = pullRequestsLayer.pipe(Layer.provide(authenticationLayer))
 
-  const sessionLayer = ReviewSession.layer.pipe(
-    Layer.provide(Layer.merge(gitContextLayer, providers)),
+  const sessionLayer = RepositorySession.layer.pipe(
+    Layer.provide(Layer.merge(gitRepositoryLayer, providers)),
   )
 
   const runtime = ManagedRuntime.make(
-    Layer.mergeAll(gitReviewLayer, gitContextLayer, sessionLayer).pipe(
+    Layer.mergeAll(gitComparisonLayer, gitRepositoryLayer, sessionLayer).pipe(
       Layer.provideMerge(observability),
     ),
   )
@@ -37,18 +37,18 @@ export function activate(context: vscode.ExtensionContext) {
   registerPullRequestCommands(context, runtime)
 
   const startInspection = (root?: string) =>
-    runtime.runFork(Effect.promise(() => gitContext.inspect(root, false)))
+    runtime.runFork(Effect.promise(() => gitRepository.inspect(root, false)))
 
   const review = registerReviewCommands(context, runtime, (root) => {
     startInspection(root)
   })
 
-  const gitContext = registerGitContextCommands(context, runtime, review.currentRoot)
+  const gitRepository = registerGitRepositoryCommands(context, runtime, review.currentRoot)
 
   const resetInspection = (reason: 'authentication' | 'configuration') =>
     runtime.runFork(
       Effect.gen(function* () {
-        const session = yield* ReviewSession
+        const session = yield* RepositorySession
         const state = yield* session.current()
 
         if (
@@ -60,9 +60,9 @@ export function activate(context: vscode.ExtensionContext) {
         yield* session.clear()
 
         if (state._tag === 'Active')
-          yield* Effect.promise(() => gitContext.inspect(state.directory, false))
+          yield* Effect.promise(() => gitRepository.inspect(state.directory, false))
         else if (vscode.workspace.workspaceFolders?.length === 1)
-          yield* Effect.promise(() => gitContext.inspect(undefined, false))
+          yield* Effect.promise(() => gitRepository.inspect(undefined, false))
       }),
     )
 
@@ -72,7 +72,7 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(() =>
       runtime.runFork(
-        ReviewSession.use((session) =>
+        RepositorySession.use((session) =>
           session.clear().pipe(
             Effect.andThen(
               Effect.sync(() => {

@@ -76,8 +76,8 @@
     },
     {
       "files": [
-        "packages/core/src/git-context/GitContext.ts",
-        "packages/core/src/review-session/ReviewSession.test.ts"
+        "packages/core/src/git/GitRepository.ts",
+        "packages/core/src/repository-session/RepositorySession.test.ts"
       ],
       "rules": { "typescript/no-misused-spread": "off" }
     },
@@ -96,11 +96,7 @@
         "no-restricted-imports": [
           "error",
           {
-            "patterns": [
-              "**/core/src/**",
-              "@duff/core/pull-requests/github/*",
-              "@duff/core/pull-requests/azure-devops/*"
-            ]
+            "patterns": ["**/core/src/**", "@duff/core/pull-requests/adapters/*"]
           }
         ]
       }
@@ -113,8 +109,7 @@
           {
             "patterns": [
               "**/core/src/**",
-              "**/github/**",
-              "**/azure-devops/**",
+              "**/adapters/**",
               "**/ProviderHttp",
               "**/ProviderAuthentication",
               "@duff/core/pull-request-providers",
@@ -132,8 +127,8 @@
     },
     {
       "files": [
-        "packages/core/src/review/BranchReview.ts",
-        "packages/core/src/pull-requests/azure-devops/AzureDevOpsHttp.ts"
+        "packages/core/src/git/GitComparison.ts",
+        "packages/core/src/pull-requests/adapters/AzureDevOpsProvider.ts"
       ],
       "rules": { "no-control-regex": "off" }
     }

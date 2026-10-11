@@ -2,7 +2,7 @@ import { expect, it } from '@effect/vitest'
 import { Deferred, Effect, Layer, Option, Redacted, Stream } from 'effect'
 import { TestClock } from 'effect/testing'
 
-import { GitContext, type GitContextSnapshot } from '../git-context/GitContext'
+import { GitRepository, type GitRepositorySnapshot } from '../git/GitRepository'
 import {
   type GitHostingProvider,
   type OpenPullRequest,
@@ -11,7 +11,7 @@ import {
   RateLimited,
 } from '../pull-requests/GitHostingProvider'
 import { makePullRequestsLayer } from '../pull-requests/PullRequests'
-import { ReviewSession, type ReviewState } from './ReviewSession'
+import { RepositorySession, type SessionState } from './RepositorySession'
 
 const identity = { authority: 'example.invalid', key: 'owner/repo', displayName: 'owner/repo' }
 
@@ -24,7 +24,7 @@ const pr = (id: string): OpenPullRequest => ({
   target: { repository: identity, ref: { name: 'refs/heads/main', revision: Option.none() } },
 })
 
-const context = (root: string): GitContextSnapshot => ({
+const context = (root: string): GitRepositorySnapshot => ({
   root,
   helpers: [],
   sshCommandConfigured: false,
@@ -40,7 +40,7 @@ const context = (root: string): GitContextSnapshot => ({
 
 const testLayer = (
   list: ProviderRepository['listOpenPullRequests'],
-  inspect: GitContext['Service']['inspect'] = (root) => Effect.succeed(context(root)),
+  inspect: GitRepository['Service']['inspect'] = (root) => Effect.succeed(context(root)),
 ) => {
   const provider: GitHostingProvider = {
     identity: { id: 'fixture', displayName: 'Fixture' },
@@ -57,14 +57,17 @@ const testLayer = (
       }),
   }
 
-  return ReviewSession.layer.pipe(
+  return RepositorySession.layer.pipe(
     Layer.provide(
-      Layer.merge(Layer.succeed(GitContext, { inspect }), makePullRequestsLayer([provider])),
+      Layer.merge(Layer.succeed(GitRepository, { inspect }), makePullRequestsLayer([provider])),
     ),
   )
 }
 
-const waitFor = (session: ReviewSession['Service'], predicate: (state: ReviewState) => boolean) =>
+const waitFor = (
+  session: RepositorySession['Service'],
+  predicate: (state: SessionState) => boolean,
+) =>
   session.changes.pipe(
     Stream.filter(predicate),
     Stream.take(1),
@@ -72,7 +75,7 @@ const waitFor = (session: ReviewSession['Service'], predicate: (state: ReviewSta
     Effect.map((states) => states[0]),
   )
 
-const settled = (state: ReviewState) =>
+const settled = (state: SessionState) =>
   state._tag === 'Active' && state.inspection === 'Ready' && !state.discovering
 
 it.effect('keeps PRs during refresh and explicitly marks them stale after a failed refresh', () =>
@@ -80,7 +83,7 @@ it.effect('keeps PRs during refresh and explicitly marks them stale after a fail
     const refresh = yield* Deferred.make<void>()
     let first = true
     yield* Effect.gen(function* () {
-      const session = yield* ReviewSession
+      const session = yield* RepositorySession
       yield* session.selectRepository('/fixture', { discover: true })
       yield* waitFor(session, settled)
       yield* session.selectRepository('/fixture', { discover: true })
@@ -123,7 +126,7 @@ it.effect('cancels old repository work, clears old PRs, and respects manual-only
     const started = yield* Deferred.make<void>()
     const stopped = yield* Deferred.make<void>()
     yield* Effect.gen(function* () {
-      const session = yield* ReviewSession
+      const session = yield* RepositorySession
       yield* session.selectRepository('/old', { discover: true })
       yield* Deferred.await(started)
       yield* session.selectRepository('/new', { discover: false })
@@ -155,7 +158,7 @@ it.effect(
     Effect.gen(function* () {
       let limited = true
       yield* Effect.gen(function* () {
-        const session = yield* ReviewSession
+        const session = yield* RepositorySession
         yield* session.selectRepository('/fixture', { discover: true })
         const first = yield* waitFor(session, settled)
 
@@ -216,7 +219,7 @@ it.effect('releases owned discovery when the session scope closes', () =>
     const started = yield* Deferred.make<void>()
     const stopped = yield* Deferred.make<void>()
     yield* Effect.gen(function* () {
-      const session = yield* ReviewSession
+      const session = yield* RepositorySession
       yield* session.selectRepository('/fixture', { discover: true })
       yield* Deferred.await(started)
     }).pipe(
@@ -264,10 +267,10 @@ it.effect(
           }),
       }
 
-      const layer = ReviewSession.layer.pipe(
+      const layer = RepositorySession.layer.pipe(
         Layer.provide(
           Layer.merge(
-            Layer.succeed(GitContext, {
+            Layer.succeed(GitRepository, {
               inspect: (root) =>
                 Effect.succeed({
                   ...context(root),
@@ -286,7 +289,7 @@ it.effect(
       )
 
       yield* Effect.gen(function* () {
-        const session = yield* ReviewSession
+        const session = yield* RepositorySession
         yield* session.selectRepository('/fixture', { discover: true })
         yield* Deferred.await(slowStarted)
 

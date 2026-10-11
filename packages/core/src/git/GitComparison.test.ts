@@ -7,7 +7,7 @@ import { promisify } from 'node:util'
 import { expect, it } from '@effect/vitest'
 import { Effect } from 'effect'
 
-import { BranchReview, gitReviewLayer } from './BranchReview'
+import { GitComparison, gitComparisonLayer } from './GitComparison'
 
 const execute = promisify(execFile)
 
@@ -51,7 +51,7 @@ it.effect(
       yield* command(root, 'add', '.')
       yield* command(root, 'commit', '-m', 'Feature changes')
       yield* write(root, 'changed.ts', 'uncommitted\n')
-      const service = yield* BranchReview
+      const service = yield* GitComparison
       const branches = yield* service.branches(root)
       expect(branches.current).toBe('feature')
       expect(branches.branches).toEqual(['refs/heads/main'])
@@ -77,8 +77,8 @@ it.effect(
         .read({ root, commit: review.headCommit, path: 'deleted.txt' })
         .pipe(Effect.flip)
 
-      expect(missing._tag).toBe('ReviewError')
-    }).pipe(Effect.provide(gitReviewLayer)),
+      expect(missing._tag).toBe('GitComparisonError')
+    }).pipe(Effect.provide(gitComparisonLayer)),
 )
 
 it.effect('handles detached HEAD and identical branches without inventing changes', () =>
@@ -88,20 +88,20 @@ it.effect('handles detached HEAD and identical branches without inventing change
     yield* command(root, 'add', '.')
     yield* command(root, 'commit', '-m', 'Base')
     yield* command(root, 'checkout', '--detach')
-    const service = yield* BranchReview
+    const service = yield* GitComparison
     expect((yield* service.branches(root)).current).toBe('HEAD')
     expect((yield* service.compare(root, 'refs/heads/main')).files).toEqual([])
-  }).pipe(Effect.provide(gitReviewLayer)),
+  }).pipe(Effect.provide(gitComparisonLayer)),
 )
 
 it.effect('fails a missing base branch rather than returning an empty review', () =>
   Effect.gen(function* () {
     const root = yield* repository
     yield* command(root, 'commit', '--allow-empty', '-m', 'Base')
-    const service = yield* BranchReview
+    const service = yield* GitComparison
     const failure = yield* service.compare(root, 'refs/heads/canary-secret').pipe(Effect.flip)
-    expect(failure._tag).toBe('ReviewError')
+    expect(failure._tag).toBe('GitComparisonError')
     expect(failure.operation).toBe('rev-parse')
     expect(failure.message).not.toContain('canary-secret')
-  }).pipe(Effect.provide(gitReviewLayer)),
+  }).pipe(Effect.provide(gitComparisonLayer)),
 )

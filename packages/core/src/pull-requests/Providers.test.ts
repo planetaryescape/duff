@@ -2,7 +2,7 @@ import { expect, it } from '@effect/vitest'
 import { Effect, Layer, Option, Redacted, Stream } from 'effect'
 import { FetchHttpClient } from 'effect/http'
 
-import { type GitContextSnapshot } from '../git-context/GitContext'
+import { type GitRepositorySnapshot } from '../git/GitRepository'
 import { ProviderAuthentication } from './ProviderAuthentication'
 import { pullRequestsLayer } from './Providers'
 import { PullRequests } from './PullRequests'
@@ -67,7 +67,7 @@ it.effect('built-ins discover both providers without host HTTP wiring and reject
     'https://github.com/owner/redirect',
   ]
 
-  const snapshot: GitContextSnapshot = {
+  const snapshot: GitRepositorySnapshot = {
     root: '/fixture',
     helpers: [],
     sshCommandConfigured: false,

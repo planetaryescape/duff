@@ -1,14 +1,14 @@
 import { Effect, Layer } from 'effect'
 import { FetchHttpClient } from 'effect/http'
 
-import { makeAzureDevOpsHttp } from './azure-devops/AzureDevOpsHttp'
-import { makeGitHubHttp } from './github/GitHubHttp'
-import { ProviderHttp } from './ProviderHttp'
+import { makeAzureDevOpsProvider } from './adapters/AzureDevOpsProvider'
+import { makeGitHubProvider } from './adapters/GitHubProvider'
+import { ProviderHttp } from './adapters/ProviderHttp'
 import { makePullRequestsLayer } from './PullRequests'
 
 export const pullRequestsLayer = Layer.unwrap(
   Effect.gen(function* () {
-    return makePullRequestsLayer([yield* makeGitHubHttp, yield* makeAzureDevOpsHttp])
+    return makePullRequestsLayer([yield* makeGitHubProvider, yield* makeAzureDevOpsProvider])
   }),
 ).pipe(
   Layer.provide(

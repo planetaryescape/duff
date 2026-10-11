@@ -1,8 +1,8 @@
 import { type Effect, type Option, type Redacted, Schema } from 'effect'
 
-import { type GitContextSnapshot } from '../git-context/GitContext'
+import { type GitRepositorySnapshot } from '../git/GitRepository'
 
-export type Remote = GitContextSnapshot['remotes'][number]
+export type Remote = GitRepositorySnapshot['remotes'][number]
 
 export const ProviderIdentity = Schema.Struct({
   id: Schema.NonEmptyString,
