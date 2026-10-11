@@ -59,8 +59,8 @@ An unset name is not a failed inspection. Unknown authentication is not a succes
 ## 2. Provider adapter contract
 
 The adapter owns remote recognition, provider authentication, and read-only PR discovery.
-PullRequests owns routing, equivalent-remote groups and private pagination. ReviewSession owns repository selection, refresh/cancellation and retained state; the extension renders native UI.
-The local BranchReview service stays provider-neutral.
+PullRequests owns routing, equivalent-remote groups and private pagination. RepositorySession owns repository selection, refresh/cancellation and retained state; the extension renders native UI.
+The local GitComparison service stays provider-neutral.
 
 The owner confirmed one shared job-shaped capability contract for GitHub and Azure DevOps. The [current chapter](04-capabilities-and-review-session.md) defines the inspected boundary and supersedes the historical [plugin contracts](plugins/03-contracts.md). Neither adapter gets its own incompatible public API. Bitbucket is deferred; there is no generic plugin lifecycle.
 

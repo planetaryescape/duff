@@ -31,7 +31,7 @@ Choose a branch, browse changed files, open a native diff, and navigate the real
 ## Identity and discovery
 
 Local inspection shows safe identity and per-remote credential policy. Advanced credential patterns remain explicitly unresolved.
-Built-in GitHub and Azure DevOps adapters live in core and use one job-shaped contract and native PR view. PullRequests groups equivalent remotes and publishes progressive results; ReviewSession owns one selected local repository, cancellation and retained refresh state. See the [current contract](04-capabilities-and-review-session.md). Native supplied-service UI verification passes; real provider requests and native sign-in remain unverified.
+Built-in GitHub and Azure DevOps adapters live in core and use one job-shaped contract and native PR view. PullRequests groups equivalent remotes and publishes progressive results; RepositorySession owns one selected local repository, cancellation and retained refresh state. See the [current contract](04-capabilities-and-review-session.md). Native supplied-service UI verification passes; real provider requests and native sign-in remain unverified.
 
 ## Non-goals for these slices
 

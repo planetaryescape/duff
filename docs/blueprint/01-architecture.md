@@ -6,22 +6,22 @@ Status: review, conservative local identity inspection, and shared GitHub/Azure 
 
 | Owner | File | Contract |
 | --- | --- | --- |
-| Review capability | [BranchReview.ts](../../packages/core/src/review/BranchReview.ts) | Schemas, typed errors, service and Git Layer; read-only CLI operations, immutable revisions, NUL-delimited path parsing |
+| Branch comparison | [GitComparison.ts](../../packages/core/src/git/GitComparison.ts) | Schemas, typed errors, service and Git Layer; read-only CLI operations, immutable revisions, NUL-delimited path parsing |
 | Native view | [ReviewView.ts](../../packages/extension/src/review/ReviewView.ts) | File rows and historical document URIs |
 | Review integration | [ReviewCommands.ts](../../packages/extension/src/review/ReviewCommands.ts) | Branch picker, comparison state, list/tree persistence, immutable content provider, diff and current-file commands |
-| Git-context integration | [GitContextCommands.ts](../../packages/extension/src/git-context/GitContextCommands.ts) | Select repository through ReviewSession and render its inspection state |
-| Session | [ReviewSession.ts](../../packages/core/src/review-session/ReviewSession.ts) | One selected local repository, FiberMap jobs and SubscriptionRef changes |
+| Git repository integration | [GitRepositoryCommands.ts](../../packages/extension/src/git/GitRepositoryCommands.ts) | Select repository through RepositorySession and render its inspection state |
+| Session | [RepositorySession.ts](../../packages/core/src/repository-session/RepositorySession.ts) | One selected local repository, FiberMap jobs and SubscriptionRef changes |
 | Pull requests | [PullRequests.ts](../../packages/core/src/pull-requests/PullRequests.ts) | Group equivalent remotes, private continuation state and progressive results |
 | Shared editor boundaries | [Operations.ts](../../packages/extension/src/Operations.ts), [Repository.ts](../../packages/extension/src/Repository.ts) | Operation tracing and error notifications; workspace-folder selection |
 | Composition root | [extension.ts](../../packages/extension/src/extension.ts) | Layers, feature registration and coordination, one managed runtime and disposal |
-| Verification | [BranchReview.test.ts](../../packages/core/src/review/BranchReview.test.ts) | Real temporary repositories, divergence, dirty files, renames, detached HEAD, failures |
-| Git context | [GitContext.ts](../../packages/core/src/git-context/GitContext.ts), [test](../../packages/core/src/git-context/GitContext.test.ts), [view](../../packages/extension/src/git-context/GitContextView.ts) | Safe local identity, config provenance, sanitized remotes, helper declarations |
+| Verification | [GitComparison.test.ts](../../packages/core/src/git/GitComparison.test.ts) | Real temporary repositories, divergence, dirty files, renames, detached HEAD, failures |
+| Git repository | [GitRepository.ts](../../packages/core/src/git/GitRepository.ts), [test](../../packages/core/src/git/GitRepository.test.ts), [view](../../packages/extension/src/git/GitRepositoryView.ts) | Safe local identity, config provenance, sanitized remotes, helper declarations |
 
 ## Bun workspace boundaries
 
 `packages/core` owns headless capabilities by feature. Each service keeps its schemas, errors, implementation Layer, and tests nearby. `packages/extension` owns the editor integration and telemetry.
 Dependencies point extension → core. Cross-package imports use explicit exports and `workspace:*` dependencies. Core can use Node for local Git adapters, but cannot depend on VS Code or the extension.
-The extension supplies the environment to the GitContext Layer during activation. Importing core does not inspect Git configuration or select the process environment.
+The extension supplies the environment to the GitRepository Layer during activation. Importing core does not inspect Git configuration or select the process environment.
 The private root owns the pinned Bun version, shared tooling, aggregate scripts, and one lockfile. Each package has its own typecheck; only the extension enables VS Code ambient types.
 Bun bundles all runtime workspace dependencies into `packages/extension/dist/extension.js`; only VS Code and Node runtime modules remain external. The extension manifest stays inside `packages/extension`.
 The VSIX excludes source, maps, workspace links, and node_modules. Packaging uses pinned vsce without dependency traversal. Missing repository and license metadata are tolerated for local smoke packaging, not a claim of publishing readiness.
@@ -34,7 +34,7 @@ Snapshots pin both sides of the diff to commit IDs. Workspace files are separate
 Review registration exposes only the current repository root to Git-context registration. Publishing a comparison starts session inspection through the composition root. The session cancels old jobs and clears the context snapshot; same-repository discovery retains PR content as Refreshing. Feature modules do not create runtimes or import each other's internals.
 
 ```text
-Branch quick pick → BranchReview.compare → Git adapter → immutable Review
+Branch quick pick → GitComparison.compare → Git adapter → immutable Review
                                                        ↓
 Native file list → snapshot URI → content provider → Git blob → native diff
         ↓
@@ -43,14 +43,14 @@ Open Workspace File → real file URI → editable workspace document
 
 ## Provider discovery
 
-Keep configuration inspection and provider discovery outside BranchReview.
+Keep configuration inspection and provider discovery outside GitComparison.
 They own different facts, authentication requirements, and failure behavior.
 Do not require network access to compare local branches.
 
 ```text
 Repository selection
-    ├── local BranchReview → native file list and diff
-    └── GitContext inspection → safe identity and remote metadata
+    ├── local GitComparison → native file list and diff
+    └── GitRepository inspection → safe identity and remote metadata
                                  ↓
                         PullRequests groups remotes
                          ├── GitHub adapter
@@ -58,13 +58,13 @@ Repository selection
                                  ↓
                        Started / Updated Stream
                                  ↓
-                       ReviewSession retained state
+                       RepositorySession retained state
                                  ↓
                          native PR list / browser link
 ```
 
-`GitContext`, the job-shaped GitHostingProvider contract, PullRequests and ReviewSession are implemented.
-Core owns GitHub and Azure DevOps implementations and tests beside their shared contract. Its Providers.ts constructs the built-in HTTP adapters and supplies their transport. The extension composition root supplies native authentication through public Layer exports, not individual adapters. GitHostingProvider and ProviderRepository are transport-neutral; a CLI implementation can satisfy the same contract without requiring an HTTP client. ReviewSession owns FiberMap jobs and exposes SubscriptionRef changes to both native views. Discovery reads at most four groups concurrently and emits results unordered. Connect and loadMore take group IDs, never UI-owned cursors.
+`GitRepository`, the job-shaped GitHostingProvider contract, PullRequests and RepositorySession are implemented.
+Core owns GitHub and Azure DevOps implementations and tests beside their shared contract. Its Providers.ts constructs the built-in HTTP adapters and supplies their transport. The extension composition root supplies native authentication through public Layer exports, not individual adapters. GitHostingProvider and ProviderRepository are transport-neutral; a CLI implementation can satisfy the same contract without requiring an HTTP client. RepositorySession owns FiberMap jobs and exposes SubscriptionRef changes to both native views. Discovery reads at most four groups concurrently and emits results unordered. Connect and loadMore take group IDs, never UI-owned cursors.
 See the [focused contract](04-capabilities-and-review-session.md) for refresh, Stale results, pagination and failure transitions. The [staged plugin design](plugins/00-problem.md) is historical, superseded by D007. No generic lifecycle or Bitbucket implementation is included.
 Core contracts must not import provider SDKs or choose credentials implicitly.
 Opening a discovered PR locally remains a proposed follow-up; selecting a PR currently opens its provider page.

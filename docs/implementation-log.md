@@ -206,3 +206,13 @@ Type-aware Oxlint replaces ESLint. Pinned @effect/tsgo patches TypeScript 7.0.2,
 Verification: frozen Bun install confirmed patched hashes; formatting, all three package typechecks and type-aware lint passed. All 41 application tests and anti-slop rule tests passed. Build and VSIX packaging passed. Disposable negative probes rejected VS Code imports in core, provider imports in editor views, runtime execution outside the entrypoint, floating Promises, unsafe JSON assignments, and an aliased floating Effect. Probe files were removed. No new native host smoke test, real provider request, sign-in or telemetry export ran for this tooling slice.
 
 Delivery at recording: Ref slice committed locally; tooling verified and ready for its own atomic commit and the owner-authorized push. No Marketplace release, deployment or infrastructure change is included. The unrelated untracked review-workspace-problem-ux.md remains untouched.
+
+## 2026-10-10: Git-prefixed services and provider adapters
+
+Applied [D008](blueprint/02-decision-log.md#d008-git-prefixed-local-services-and-provider-adapters) as a rename with no behavior change. Core now reads `git/` (GitRepository, GitComparison), `pull-requests/` (contract, authentication contract, Providers.ts, PullRequests and `adapters/` holding ProviderHttp, GitHub and Azure DevOps) and `repository-session/`. The extension mirrors this with `git/GitRepositoryCommands.ts`, `git/GitRepositoryView.ts` and `pull-requests/VsCodeAuthentication.ts`. Package exports are now `git-comparison`, `git-repository` and `repository-session`. Lint import restrictions and file-scoped exceptions follow the new paths, and `adapters/` replaces the per-provider patterns. Current blueprint chapters, README and plan use the new names. The chapter file name and the D007 anchor stay unchanged so existing links keep working.
+
+Error tags (GitRepositoryError, GitComparisonError), Context service keys and span names (`GitRepository.*`, `GitComparison.*`, `RepositorySession.*`) changed with the services. The session state type is now SessionState. VS Code command, view and setting IDs and user-facing messages are unchanged. Layers remain exported functions (`makeGitRepositoryLayer`, `gitComparisonLayer`) rather than static members.
+
+Verification: formatting, all three typechecks, type-aware lint, all 44 application tests, anti-slop rule tests and build passed. VSIX packaging and a native host smoke test were not run for this rename.
+
+Delivery at recording: committed in two atomic commits on branch `refactor/git-and-pull-request-structure` and pushed to origin. Not merged or released. The unrelated untracked review-workspace-problem-ux.md draft remains untouched.

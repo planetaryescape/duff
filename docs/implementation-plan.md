@@ -27,8 +27,8 @@ Docs: update the [strategy contract](blueprint/03-identity-and-provider-strategi
 ## S04: Pull-request capability and GitHub discovery
 
 Status: adapters and owner-approved capability/session cutover implemented and verified locally. Check, 40 tests, packaging and native supplied-service UI verification pass. Real provider requests and native sign-in remain unverified. Local Git context remains conservative for advanced credential patterns.
-Depends on: D007. Current boundary: [capabilities and review session](blueprint/04-capabilities-and-review-session.md). [Plugin progress](blueprint/plugins/PROGRESS.md) is historical.
-Scope: one job-shaped adapter contract, grouped progressive PullRequests discovery, ReviewSession job/state ownership, GitHub adapter and native PR list.
+Depends on: D007. Current boundary: [capabilities and repository session](blueprint/04-capabilities-and-review-session.md). [Plugin progress](blueprint/plugins/PROGRESS.md) is historical.
+Scope: one job-shaped adapter contract, grouped progressive PullRequests discovery, RepositorySession job/state ownership, GitHub adapter and native PR list.
 Acceptance: recognize supported GitHub remotes; show open PRs, drafts and source/target context; distinguish auth failure, empty results, and pagination.
 Automatic discovery is cancellable and does not prompt for login or block local review.
 Checks: remote-recognition fixtures, supplied Effect services, provider API seams, progressive grouping and session cancellation/refresh tests. Native verification exercised group-based loadMore, retained Refreshing/Stale rows and repository replacement. Connection interruption/failure is covered through the core service; native sign-in remains unverified. See the [delivery log](implementation-log.md#2026-10-10-core-owned-pull-requests-and-review-session). An authenticated account/repository smoke check remains separately authorized work.
