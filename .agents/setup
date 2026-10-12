@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+export PATH="$HOME/.bun/bin:$PATH"
+started=$SECONDS
+
+echo "[setup] Checking system prerequisites"
+missing=()
+for package in ca-certificates curl unzip xz-utils git; do
+  if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
+    missing+=("$package")
+  fi
+done
+if ((${#missing[@]})); then
+  sudo apt-get update -qq
+  sudo apt-get install -y "${missing[@]}"
+fi
+
+echo "[setup] Checking Node (rule tests require 22.18+)"
+if ! command -v node >/dev/null || ! node -e '
+  const [major, minor] = process.versions.node.split(".").map(Number);
+  process.exit(major > 22 || (major === 22 && minor >= 18) ? 0 : 1);
+'; then
+  case "$(uname -m)" in
+    x86_64) architecture=x64 ;;
+    aarch64) architecture=arm64 ;;
+    *) echo "Unsupported Node architecture" >&2; exit 1 ;;
+  esac
+  temporary="$(mktemp -d)"
+  trap 'rm -rf "$temporary"' EXIT
+  curl -fsSL "https://nodejs.org/dist/v22.18.0/node-v22.18.0-linux-$architecture.tar.xz" -o "$temporary/node.tar.xz"
+  tar -xJf "$temporary/node.tar.xz" -C "$temporary"
+  mkdir -p "$HOME/.bun/bin"
+  install -m 755 "$temporary/node-v22.18.0-linux-$architecture/bin/node" "$HOME/.bun/bin/node"
+  rm -rf "$temporary"
+  trap - EXIT
+fi
+
+bun_version="$(node -p 'require("./package.json").packageManager.replace(/^bun@/, "")')"
+echo "[setup] Checking Bun $bun_version"
+if ! command -v bun >/dev/null || [[ "$(bun --version)" != "$bun_version" ]]; then
+  curl -fsSL https://bun.com/install | bash -s -- "bun-v$bun_version"
+fi
+
+profile_marker='# Duff orb toolchain'
+if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
+  printf '\n%s\nexport PATH="$HOME/.bun/bin:$PATH"\n' "$profile_marker" >> "$HOME/.bash_profile"
+fi
+
+echo "[setup] Toolchains ready after $((SECONDS - started))s: Bun $(bun --version), Node $(node --version)"
+dependencies_started=$SECONDS
+bun install --frozen-lockfile
+echo "[setup] Locked dependencies and Effect tool patches ready after $((SECONDS - dependencies_started))s"
+echo "[setup] Complete after $((SECONDS - started))s; no credentials or services required"

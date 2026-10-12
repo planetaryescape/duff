@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PATH="$HOME/.bun/bin:$PATH"
+
+# Dependencies belong to setup and the snapshot, not each wake-up.
+if [[ ! -x "$repo_root/node_modules/.bin/tsc" || ! -x "$repo_root/node_modules/.bin/oxlint" ]]; then
+  echo "[resume] Missing Duff dependencies; run .agents/setup to repair this orb" >&2
+  exit 1
+fi
+echo "[resume] Duff dependencies available; no authentication or services to reconnect"
