@@ -84,6 +84,7 @@ Revisit when: a concrete tenant or supported platform cannot obtain the required
 ## D009: Explicit, current-snapshot viewed progress
 
 Status: accepted by the owner; implemented on the feature branch. Date: 2026-10-15.
+PR persistence and update transfer are superseded by [D011](#d011-multiple-local-pr-sessions-with-explicit-forgetting). Local branch comparisons keep this contract.
 
 Chosen: reversible local marks from native file rows and the active immutable diff, with visible icons and overall progress. Opening a diff never marks it. Persist one current snapshot per editor workspace, keyed by exact root, base commit, head commit and changed path.
 Reason: review progress must reflect an explicit reviewer decision and must not imply that new revisions have been reviewed.
@@ -100,3 +101,14 @@ Reason: a PR can target a different branch or originate in a fork, so current HE
 Alternatives: synthetic merge commits, implicit fetches, guessed fork URLs, automatic checkout/worktree creation and silent refresh under a reader are excluded. An unmatched fork can still be reviewed when its exact objects already exist locally.
 Consequences: at most two Duff-owned refs are updated; moved fallback branches fail exact-SHA verification. Missing/shallow history and ambiguous common ancestors fail actionably. Preparation has owned cancellation and preserves the accepted review on failure/cancel. Explicit refresh creates a new snapshot; exit restores the prior local comparison. No provider writes or owner checkout/index changes occur. This supersedes S06's original no-fetch proposal only for user-consented acquisition.
 Revisit when: a supported provider requires another safe revision acquisition strategy or a concrete platform cannot satisfy process ownership.
+
+## D011: Multiple local PR sessions with explicit forgetting
+
+Status: owner-confirmed behavior implemented; storage/retention choices selected within the authorized implementation. Date: 2026-10-15.
+
+Chosen: multiple saved PR sessions, one current snapshot each, automatic restore of the last active review/diff, and viewed-mark transfer only for unchanged full file comparisons. Exit stays inactive; Forget explicitly removes progress. A native picker avoids a second sidebar panel. Workspace-local JSON and Duff-owned Git pins provide offline resume without copied contents or credentials.
+Reason: closing the editor or switching PRs must not discard the reviewer's work, and a different diff must never inherit a reviewed claim.
+Alternatives: one global mark record loses other PR progress; resolving latest on resume silently changes the review; filename/source-only matching ignores base, rename and mode changes; a revision timeline exceeds the owner's scope. Silent expiry would delete progress without consent.
+Consequences: serialized, atomic saves precede acknowledgment. A per-workspace writer lease prevents last-writer-wins loss. Acceptance and deletion journal pin work for recovery; Update/Forget release only obsolete owned refs, with no GC commands. Sessions do not expire automatically, so their reachable Git objects consume space until explicitly forgotten or updated. Multi-root automatic selection and workspace/repository migration are not included. Existing fetch acquisition still uses two bounded refs; session retention adds separate per-session refs and supersedes D010's two-ref limit for accepted-session retention only.
+Revisit when: a demonstrated storage-size problem needs an owner-approved retention policy, or the owner requests multi-window sharing, migration or synchronization.
+References: [persistent session contract](04-capabilities-and-review-session.md#persistent-pr-review-sessions), [design discussion](../../.specs/pr-review-sessions/PROGRESS.md).

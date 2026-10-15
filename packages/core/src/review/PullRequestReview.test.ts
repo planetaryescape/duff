@@ -1,5 +1,5 @@
 import { expect, it } from '@effect/vitest'
-import { Deferred, Effect, Layer, Option, Stream } from 'effect'
+import { Deferred, Effect, Fiber, Layer, Option, Stream } from 'effect'
 
 import { type GitContextSnapshot } from '../git-context/GitContext'
 import {
@@ -9,6 +9,8 @@ import {
 } from '../pull-requests/PullRequests'
 import { BranchReview, FetchRequired, Review, ReviewError } from './BranchReview'
 import { PullRequestReview, type PreparationState } from './PullRequestReview'
+import { ReviewSessions } from './ReviewSessions'
+import { SavedReviewCatalog, SavedReviews, ReviewStorageError } from './SavedReviews'
 
 const snapshot: GitContextSnapshot = {
   root: '/fixture',
@@ -57,8 +59,36 @@ const review = (commit: string) =>
 const testLayer = (
   resolve: PullRequests['Service']['resolve'],
   prepare: BranchReview['Service']['prepare'],
+  beforeSave: SavedReviews['Service']['save'] = () => Effect.void,
 ) =>
   PullRequestReview.layer.pipe(
+    Layer.provideMerge(ReviewSessions.layer),
+    Layer.provide(
+      Layer.effect(
+        SavedReviews,
+        Effect.sync(() => {
+          let catalog = SavedReviewCatalog.make({
+            version: 1,
+            active: Option.none(),
+            sessions: [],
+            pendingRelease: [],
+          })
+
+          return SavedReviews.of({
+            owner: 'a'.repeat(64),
+            load: () => Effect.succeed(catalog),
+            save: (next) =>
+              beforeSave(next).pipe(
+                Effect.andThen(
+                  Effect.sync(() => {
+                    catalog = next
+                  }),
+                ),
+              ),
+          })
+        }),
+      ),
+    ),
     Layer.provide(
       Layer.merge(
         Layer.succeed(
@@ -77,6 +107,9 @@ const testLayer = (
             branches: () => Effect.die('unused'),
             compare: () => Effect.die('unused'),
             read: () => Effect.die('unused'),
+            comparisons: () => Effect.succeed([]),
+            retain: () => Effect.void,
+            release: () => Effect.void,
           }),
         ),
       ),
@@ -181,4 +214,84 @@ it.effect(
         ),
       )
     }),
+)
+
+it.effect(
+  'publishes only after durability, and cancellation waits for a committing snapshot to publish',
+  () =>
+    Effect.gen(function* () {
+      const saving = yield* Deferred.make<void>()
+      const proceed = yield* Deferred.make<void>()
+      yield* Effect.gen(function* () {
+        const service = yield* PullRequestReview
+        yield* service.repositoryChanged(Option.some('/fixture'), Option.some(snapshot.root))
+        yield* service.start(snapshot, selection('b'))
+        yield* Deferred.await(saving)
+        expect((yield* service.current()).accepted).toEqual(Option.none())
+        const cancellation = yield* service.cancel().pipe(Effect.forkChild)
+        yield* Deferred.succeed(proceed, undefined)
+        yield* Fiber.join(cancellation)
+        expect(
+          Option.map((yield* service.current()).accepted, (value) => value.selection.id),
+        ).toEqual(Option.some('b'))
+        expect((yield* service.current()).activity._tag).toBe('Idle')
+      }).pipe(
+        Effect.provide(
+          testLayer(
+            () => Effect.succeed(resolved('b')),
+            () => Effect.succeed(review('b'.repeat(40))),
+            (next) =>
+              next.sessions.length > 0
+                ? Deferred.succeed(saving, undefined).pipe(Effect.andThen(Deferred.await(proceed)))
+                : Effect.void,
+          ),
+        ),
+      )
+    }),
+)
+
+it.effect('a failed durable update never replaces the accepted snapshot', () => {
+  let reject = false
+
+  return Effect.gen(function* () {
+    const service = yield* PullRequestReview
+    yield* service.repositoryChanged(Option.some('/fixture'), Option.some(snapshot.root))
+    yield* service.start(snapshot, selection('b'))
+    yield* waitFor(service, (state) => Option.isSome(state.accepted))
+    const previous = (yield* service.current()).accepted
+    reject = true
+    yield* service.start(snapshot, selection('c'))
+    yield* waitFor(service, (state) => state.activity._tag === 'Failed')
+    expect((yield* service.current()).accepted).toEqual(previous)
+  }).pipe(
+    Effect.provide(
+      testLayer(
+        (_snapshot, selected) => Effect.succeed(resolved(selected.id)),
+        (_root, revisions) => Effect.succeed(review(revisions.source.commit)),
+        (next) =>
+          reject && next.sessions.length === 2
+            ? Effect.fail(new ReviewStorageError({ reason: 'write-failed' }))
+            : Effect.void,
+      ),
+    ),
+  )
+})
+
+it.effect('leaving without an accepted PR does not require writable session storage', () =>
+  Effect.gen(function* () {
+    const service = yield* PullRequestReview
+    yield* service.repositoryChanged(Option.some('/fixture'), Option.some(snapshot.root))
+    yield* service.exit()
+    const state = yield* service.current()
+    expect(state.accepted).toEqual(Option.none())
+    expect(state.activity._tag).toBe('Idle')
+  }).pipe(
+    Effect.provide(
+      testLayer(
+        () => Effect.die('no provider access needed'),
+        () => Effect.die('no Git preparation needed'),
+        () => Effect.fail(new ReviewStorageError({ reason: 'unavailable' })),
+      ),
+    ),
+  ),
 )

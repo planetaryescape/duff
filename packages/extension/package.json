@@ -13,7 +13,7 @@
     "vscode": "^1.85.0"
   },
   "categories": ["Other"],
-  "activationEvents": ["onView:duff.files"],
+  "activationEvents": ["onStartupFinished", "onView:duff.files"],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -58,6 +58,8 @@
       { "command": "duff.cancelPullRequestReview", "title": "Cancel PR Preparation", "icon": "$(close)", "category": "Duff" },
       { "command": "duff.refreshPullRequestReview", "title": "Refresh PR Review", "icon": "$(refresh)", "category": "Duff" },
       { "command": "duff.exitPullRequestReview", "title": "Exit PR Review", "icon": "$(sign-out)", "category": "Duff" },
+      { "command": "duff.resumeReview", "title": "Resume Review…", "icon": "$(history)", "category": "Duff" },
+      { "command": "duff.forgetReview", "title": "Forget Saved Review…", "category": "Duff" },
       {
         "command": "duff.loadMoreProviders",
         "title": "Load More Pull Requests",
@@ -114,7 +116,7 @@
     },
     "viewsWelcome": [{
       "view": "duff.files",
-      "contents": "Review committed changes on your current branch.\n[Compare Against Branch](command:duff.compare)\nClick a changed file to open its diff. Use Open Workspace File to edit and navigate."
+      "contents": "Review committed changes on your current branch.\n[Compare Against Branch](command:duff.compare)\n[Resume Review…](command:duff.resumeReview)\nClick a changed file to open its diff. Use Open Workspace File to edit and navigate."
     }, {
       "view": "duff.context",
       "contents": "Inspect local identity and credential configuration without authenticating.\n[Inspect Git Context](command:duff.inspectContext)"
@@ -141,6 +143,8 @@
         },
         { "command": "duff.refreshPullRequestReview", "when": "view == duff.files && duff.prReview && duff.prPreparation != Preparing && duff.prPreparation != AwaitingFetch", "group": "navigation@2" },
         { "command": "duff.exitPullRequestReview", "when": "view == duff.files && duff.prReview", "group": "navigation@5" },
+        { "command": "duff.resumeReview", "when": "view == duff.files", "group": "navigation@4" },
+        { "command": "duff.forgetReview", "when": "view == duff.files", "group": "review@1" },
         { "command": "duff.fetchReviewRevisions", "when": "view == duff.files && duff.prPreparation == AwaitingFetch", "group": "navigation@2" },
         { "command": "duff.cancelPullRequestReview", "when": "view == duff.files && (duff.prPreparation == AwaitingFetch || duff.prPreparation == Preparing)", "group": "navigation@4" },
         {
