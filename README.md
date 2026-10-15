@@ -25,6 +25,10 @@ Alternatively, run `bun run watch` and launch the development host yourself.
 - Click **Toggle File List / Tree** in the view toolbar to switch layouts. The workspace remembers your choice; list mode shows directories to distinguish matching filenames.
 - Click **Refresh Comparison** after commits or branch changes.
 
+Use **Mark as Viewed** or **Mark as Unviewed** on a file row (inline or context menu), or in the active Duff diff's toolbar or command palette. Opening a diff never marks it. Hollow circles mean unviewed; checked circles mean viewed. The Changed Files pane shows viewed/total progress in both layouts.
+
+Marks stay local to this editor workspace and the exact repository root, base commit, head commit and changed path. They survive unchanged refreshes, layout changes and editor reloads: choose the same comparison again after reload. Selecting different revisions or another repository replaces the saved marks, not a review history. Old diff tabs cannot mark the new comparison. Workspace files and unrelated editors do not offer diff-marking commands. No provider viewed state or Git data is changed.
+
 Uncommitted edits are excluded from the review. A workspace file can therefore differ from its committed diff.
 Historical virtual documents can have limited language intelligence. Open the real workspace file for deeper navigation.
 This first slice targets text-file review, not binary-file rendering.

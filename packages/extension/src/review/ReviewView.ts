@@ -14,6 +14,7 @@ export class ReviewFile extends vscode.TreeItem {
     readonly review: Review,
     readonly change: FileChange,
     mode: 'list' | 'tree',
+    viewed: boolean,
   ) {
     super(vscode.Uri.joinPath(vscode.Uri.file(review.root), change.path))
     this.id = `file:${change.path}`
@@ -22,8 +23,12 @@ export class ReviewFile extends vscode.TreeItem {
       mode === 'list' && change.path.includes('/')
         ? `${change.status} · ${directory}`
         : change.status
-    this.tooltip = `${change.previousPath ? `${change.previousPath} → ` : ''}${change.path} (${change.status})`
-    this.contextValue = change.status === 'D' ? 'deletedReviewFile' : 'reviewFile'
+    this.tooltip = `${change.previousPath ? `${change.previousPath} → ` : ''}${change.path} (${change.status}) · ${viewed ? 'Viewed' : 'Unviewed'}`
+    this.contextValue = `${change.status === 'D' ? 'deletedReviewFile' : 'reviewFile'}.${viewed ? 'viewed' : 'unviewed'}`
+    this.iconPath = new vscode.ThemeIcon(viewed ? 'pass-filled' : 'circle-large-outline')
+    this.accessibilityInformation = {
+      label: `${change.path}, ${change.status}, ${viewed ? 'viewed' : 'unviewed'}`,
+    }
     this.command = { command: 'duff.openDiff', title: 'Open Diff', arguments: [this] }
   }
 }
@@ -43,6 +48,7 @@ export class ReviewView
   private readonly changes = new vscode.EventEmitter<void>()
   readonly onDidChangeTreeData = this.changes.event
   private review: Review | undefined
+  private viewed = new Set<string>()
 
   constructor(private mode: 'list' | 'tree' = 'list') {}
 
@@ -53,8 +59,9 @@ export class ReviewView
     return this.mode
   }
 
-  setReview(review: Review) {
+  setReview(review: Review, viewed: ReadonlyArray<string>) {
     this.review = review
+    this.viewed = new Set(viewed)
     this.changes.fire()
   }
 
@@ -68,7 +75,9 @@ export class ReviewView
     if (!review || parent instanceof ReviewFile) return []
 
     if (this.mode === 'list')
-      return review.files.map((file) => new ReviewFile(review, file, this.mode))
+      return review.files.map(
+        (file) => new ReviewFile(review, file, this.mode, this.viewed.has(file.path)),
+      )
     const prefix = parent ? `${parent.path}/` : ''
     const folders = new Set<string>()
     const files: ReviewFile[] = []
@@ -78,7 +87,8 @@ export class ReviewView
       const relative = file.path.slice(prefix.length)
       const separator = relative.indexOf('/')
 
-      if (separator === -1) files.push(new ReviewFile(review, file, this.mode))
+      if (separator === -1)
+        files.push(new ReviewFile(review, file, this.mode, this.viewed.has(file.path)))
       else folders.add(prefix + relative.slice(0, separator))
     }
 

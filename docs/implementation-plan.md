@@ -48,3 +48,10 @@ Status: proposed follow-up, not implementation authorization.
 Scope: normalize a selected PR into an existing local review; explain unavailable refs without mutating Git.
 Acceptance: correctly resolve repository and source/target revisions, including forks, or give an actionable missing-ref result.
 Any fetch or worktree acquisition requires a separate design and authorization decision.
+
+## S07: Viewed progress
+
+Status: implemented and verified locally. Depends on D009.
+Scope: explicit mark/unmark actions on native file rows and the active immutable diff; accessible viewed indicators, overall count and one current-snapshot workspace record.
+Acceptance: no automatic marking; unchanged refresh, layouts and reload retain matching marks; exact root/base/head/path isolation; added/deleted/renamed files and either diff focus work; stale tabs/items and unrelated editors cannot mark another snapshot.
+Evidence: [2026-10-15 viewed progress](implementation-log.md#2026-10-15-explicit-viewed-progress). No provider writes, Git mutation, history or auto-advance.

@@ -67,6 +67,18 @@
         "title": "Open Workspace File",
         "icon": "$(go-to-file)",
         "category": "Duff"
+      },
+      {
+        "command": "duff.markViewed",
+        "title": "Mark as Viewed",
+        "icon": "$(check)",
+        "category": "Duff"
+      },
+      {
+        "command": "duff.markUnviewed",
+        "title": "Mark as Unviewed",
+        "icon": "$(discard)",
+        "category": "Duff"
       }
     ],
     "viewsContainers": {
@@ -139,17 +151,45 @@
       ],
       "view/item/context": [
         {
-          "command": "duff.openFile",
-          "when": "view == duff.files && viewItem == reviewFile",
-          "group": "inline"
+          "command": "duff.markViewed",
+          "when": "view == duff.files && viewItem =~ /^(deletedReviewFile|reviewFile)\\.unviewed$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "duff.markUnviewed",
+          "when": "view == duff.files && viewItem =~ /^(deletedReviewFile|reviewFile)\\.viewed$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "duff.markViewed",
+          "when": "view == duff.files && viewItem =~ /^(deletedReviewFile|reviewFile)\\.unviewed$/",
+          "group": "navigation@1"
+        },
+        {
+          "command": "duff.markUnviewed",
+          "when": "view == duff.files && viewItem =~ /^(deletedReviewFile|reviewFile)\\.viewed$/",
+          "group": "navigation@1"
         },
         {
           "command": "duff.openFile",
-          "when": "view == duff.files && viewItem == reviewFile",
+          "when": "view == duff.files && viewItem =~ /^reviewFile\\./",
+          "group": "inline@2"
+        },
+        {
+          "command": "duff.openFile",
+          "when": "view == duff.files && viewItem =~ /^reviewFile\\./",
           "group": "navigation"
         }
       ],
       "commandPalette": [
+        {
+          "command": "duff.markViewed",
+          "when": "duff.activeFileState == unviewed"
+        },
+        {
+          "command": "duff.markUnviewed",
+          "when": "duff.activeFileState == viewed"
+        },
         {
           "command": "duff.loadMoreProviders",
           "when": "false"
@@ -168,6 +208,16 @@
         }
       ],
       "editor/title": [
+        {
+          "command": "duff.markViewed",
+          "when": "resourceScheme == duff-snapshot && duff.activeFileState == unviewed",
+          "group": "navigation@2"
+        },
+        {
+          "command": "duff.markUnviewed",
+          "when": "resourceScheme == duff-snapshot && duff.activeFileState == viewed",
+          "group": "navigation@2"
+        },
         {
           "command": "duff.openFile",
           "when": "resourceScheme == duff-snapshot",

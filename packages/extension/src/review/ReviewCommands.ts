@@ -1,5 +1,6 @@
 import { BranchReview, type Review, ReviewError, Snapshot } from '@duff/core/review'
-import { Effect, Schema } from 'effect'
+import { fileSnapshots, ReviewProgress, ViewedFiles } from '@duff/core/review-progress'
+import { Effect, Option, Schema } from 'effect'
 import * as vscode from 'vscode'
 
 import { type CommandRuntime, runOperation } from '../Operations'
@@ -30,18 +31,69 @@ export function registerReviewCommands(
   const provider = new ReviewView(savedLayout === 'tree' ? 'tree' : 'list')
   const view = vscode.window.createTreeView('duff.files', { treeDataProvider: provider })
   let review: Review | undefined
+  let progress: ReviewProgress | undefined
 
-  const showReview = (next: Review) => {
+  const activeFile = () => {
+    const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input
+
+    if (
+      !(input instanceof vscode.TabInputTextDiff) ||
+      input.original.scheme !== 'duff-snapshot' ||
+      input.modified.scheme !== 'duff-snapshot'
+    )
+      return
+    const decode = Schema.decodeUnknownOption(Schema.fromJsonString(Snapshot))
+    const original = decode(input.original.query)
+    const modified = decode(input.modified.query)
+
+    if (Option.isNone(original) || Option.isNone(modified)) return
+
+    return progress?.activeFile(original.value, modified.value)
+  }
+
+  const updateActive = async () => {
+    const file = activeFile()
+    const state = file ? (progress?.isViewed(file.path) ? 'viewed' : 'unviewed') : undefined
+    await vscode.commands.executeCommand('setContext', 'duff.activeFileState', state)
+  }
+
+  const renderProgress = () => {
+    if (!progress) return
+    const current = progress.review
+    const paths = progress.saved().paths
+    provider.setReview(current, paths)
+    view.message =
+      current.files.length === 0
+        ? 'No committed changes since the common ancestor. Working-tree edits are excluded.'
+        : `${paths.length}/${current.files.length} viewed · committed changes only`
+  }
+
+  const showReview = async (next: Review) => {
     onReview(next.root)
     review = next
-    provider.setReview(next)
+
+    const saved = Schema.decodeUnknownOption(ViewedFiles)(
+      context.workspaceState.get<unknown>('viewedFiles'),
+    )
+
+    progress = new ReviewProgress(next, progress?.saved() ?? Option.getOrUndefined(saved))
+    renderProgress()
     const base = next.baseBranch.replace(/^refs\/(heads|remotes)\//, '')
     view.description = `${base} → ${next.headBranch}`
-    view.message =
-      next.files.length === 0
-        ? 'No committed changes since the common ancestor. Working-tree edits are excluded.'
-        : `${next.files.length} changed files · committed changes only`
     view.title = 'Changed Files'
+    await context.workspaceState.update('viewedFiles', progress.saved())
+    await updateActive()
+  }
+
+  const mark = async (item: unknown, viewed: boolean) => {
+    if (!progress) return
+    const path = item instanceof ReviewFile ? item.change.path : activeFile()?.path
+    const target = item instanceof ReviewFile ? item.review : review
+
+    if (!target || !path || !progress.setViewed(target, path, viewed)) return
+    renderProgress()
+    await context.workspaceState.update('viewedFiles', progress.saved())
+    await updateActive()
   }
 
   const compare = async () => {
@@ -82,13 +134,20 @@ export function registerReviewCommands(
     )
 
     if (!next) return
-    showReview(next)
+    await showReview(next)
     await vscode.commands.executeCommand('duff.files.focus')
   }
 
   context.subscriptions.push(
     provider,
     view,
+    vscode.window.tabGroups.onDidChangeTabs(() => runtime.runFork(Effect.promise(updateActive))),
+    vscode.window.tabGroups.onDidChangeTabGroups(() =>
+      runtime.runFork(Effect.promise(updateActive)),
+    ),
+    vscode.window.onDidChangeActiveTextEditor(() => runtime.runFork(Effect.promise(updateActive))),
+    vscode.commands.registerCommand('duff.markViewed', (item: unknown) => mark(item, true)),
+    vscode.commands.registerCommand('duff.markUnviewed', (item: unknown) => mark(item, false)),
     vscode.commands.registerCommand('duff.compare', compare),
     vscode.commands.registerCommand('duff.toggleLayout', async () => {
       await context.workspaceState.update('reviewLayout', provider.toggleLayout())
@@ -103,19 +162,16 @@ export function registerReviewCommands(
         BranchReview.use((service) => service.compare(current.root, current.baseBranch)),
       )
 
-      if (next) showReview(next)
+      if (next) await showReview(next)
     }),
     vscode.commands.registerCommand('duff.openDiff', async (item: unknown) => {
       if (!(item instanceof ReviewFile)) return
       const { review: current, change } = item
-      const base = { root: current.root, commit: current.baseCommit }
-      const head = { root: current.root, commit: current.headCommit }
+      const [base, head] = fileSnapshots(current, change)
       await vscode.commands.executeCommand(
         'vscode.diff',
-        snapshotUri(
-          change.status === 'A' ? base : { ...base, path: change.previousPath ?? change.path },
-        ),
-        snapshotUri(change.status === 'D' ? head : { ...head, path: change.path }),
+        snapshotUri(base),
+        snapshotUri(head),
         `${change.path}: ${current.baseBranch.replace(/^refs\/(heads|remotes)\//, '')} ↔ ${current.headBranch}`,
       )
     }),
