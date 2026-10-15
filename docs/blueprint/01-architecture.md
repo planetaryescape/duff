@@ -7,6 +7,7 @@ Status: review, conservative local identity inspection, and shared GitHub/Azure 
 | Owner | File | Contract |
 | --- | --- | --- |
 | Review capability | [BranchReview.ts](../../packages/core/src/review/BranchReview.ts) | Schemas, typed errors, service and Git Layer; read-only CLI operations, immutable revisions, NUL-delimited path parsing |
+| Viewed progress | [ReviewProgress.ts](../../packages/core/src/review/ReviewProgress.ts) | Current-snapshot marks, persistence schema, guarded mark/unmark and exact two-sided immutable diff targeting |
 | Native view | [ReviewView.ts](../../packages/extension/src/review/ReviewView.ts) | File rows and historical document URIs |
 | Review integration | [ReviewCommands.ts](../../packages/extension/src/review/ReviewCommands.ts) | Branch picker, comparison state, list/tree persistence, immutable content provider, diff and current-file commands |
 | Git-context integration | [GitContextCommands.ts](../../packages/extension/src/git-context/GitContextCommands.ts) | Select repository through ReviewSession and render its inspection state |
@@ -31,6 +32,8 @@ Git owns branches, commits, and contents. Duff keeps a calculated review snapsho
 Only the extension boundary publishes a snapshot into the view.
 Comparison errors do not create successful empty reviews; the previous successful review remains visible.
 Snapshots pin both sides of the diff to commit IDs. Workspace files are separate, mutable documents.
+Viewed progress is explicit and reversible, never inferred from opening an editor. ReviewProgress owns snapshot identity (root, base commit, head commit) and changed-path membership. The extension decodes one `workspaceState` record, retains only current changed paths, and replaces it when the comparison changes. Reloading does not restore the comparison itself; selecting it again restores matching marks. There is no review history or provider synchronization.
+The native list/tree shows hollow or checked icons, accessible viewed labels and a viewed/total message. Row actions carry their immutable review and are guarded against stale comparisons. Diff toolbar and palette commands resolve the active text-diff tab's original and modified snapshots together, not the focused document alone. This covers empty added/deleted sides and rename source paths. Stale tabs and ordinary workspace editors have no active mark target. Opening workspace files remains a separate action.
 Review registration exposes only the current repository root to Git-context registration. Publishing a comparison starts session inspection through the composition root. The session cancels old jobs and clears the context snapshot; same-repository discovery retains PR content as Refreshing. Feature modules do not create runtimes or import each other's internals.
 
 ```text

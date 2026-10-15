@@ -80,3 +80,13 @@ Reason: a read-only Mac probe demonstrated CLI-issued Azure DevOps tokens agains
 Alternatives: native Microsoft editor authentication is removed from the Azure route; a full `az repos pr` adapter and strategy settings are deferred.
 Consequences: users install/sign in to Azure CLI outside Duff. Connect only rechecks. No fallback, account selection, login command or CLI default change is allowed. Token changes invalidate old continuations. The adapter owns bounded acquisition, parsing, expiry, cancellation and safe error translation, not Azure CLI's cache internals.
 Revisit when: a concrete tenant or supported platform cannot obtain the required resource token through this path.
+
+## D009: Explicit, current-snapshot viewed progress
+
+Status: accepted by the owner; implemented on the feature branch. Date: 2026-10-15.
+
+Chosen: reversible local marks from native file rows and the active immutable diff, with visible icons and overall progress. Opening a diff never marks it. Persist one current snapshot per editor workspace, keyed by exact root, base commit, head commit and changed path.
+Reason: review progress must reflect an explicit reviewer decision and must not imply that new revisions have been reviewed.
+Alternatives: automatic marking on open, provider viewed APIs, review history and auto-advance are excluded by the requested scope.
+Consequences: unchanged refresh, layout changes and selecting the same comparison after reload retain marks. A replacement comparison discards previous marks. Active commands require both immutable diff sides to match the current snapshot, regardless of original/modified focus. Stale rows and tabs cannot mark a different snapshot. No Git mutation or provider write is involved.
+Revisit when: the owner requests multi-review history or provider synchronization with an explicit conflict policy.

@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     "./review": "./src/review/BranchReview.ts",
+    "./review-progress": "./src/review/ReviewProgress.ts",
     "./git-context": "./src/git-context/GitContext.ts",
     "./git-hosting-provider": "./src/pull-requests/GitHostingProvider.ts",
     "./pull-requests": "./src/pull-requests/PullRequests.ts",
