@@ -6,7 +6,7 @@ import { type AuthenticationError } from './GitHostingProvider'
 export const ProviderSession = Schema.Struct({
   id: Schema.String,
   token: Schema.Redacted(Schema.NonEmptyString),
-  account: Schema.Struct({ id: Schema.String, displayName: Schema.String }),
+  account: Schema.Option(Schema.Struct({ id: Schema.String, displayName: Schema.String })),
 })
 
 export interface ProviderSession extends Schema.Schema.Type<typeof ProviderSession> {}

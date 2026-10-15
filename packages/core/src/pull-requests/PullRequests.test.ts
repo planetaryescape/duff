@@ -31,14 +31,20 @@ const repository = (
   identity: { authority: 'example.invalid', key, displayName: key },
   inspectAuthentication: () => Effect.succeed({ _tag: 'Unauthenticated' }),
   connectAuthentication: () =>
-    Effect.succeed({ _tag: 'Authenticated', account: { id: 'fixture', displayName: 'Fixture' } }),
+    Effect.succeed({
+      _tag: 'Authenticated',
+      account: Option.some({ id: 'fixture', displayName: 'Fixture' }),
+    }),
   listOpenPullRequests: list,
 })
 
 const provider = (
   id: string,
   recognizeRemote: GitHostingProvider['recognizeRemote'],
-): GitHostingProvider => ({ identity: { id, displayName: id }, recognizeRemote })
+): GitHostingProvider => ({
+  identity: { id, displayName: id, authenticationSource: 'editor' },
+  recognizeRemote,
+})
 
 it.effect('groups equivalent remotes while preserving unsupported and ambiguous notices', () =>
   Effect.gen(function* () {

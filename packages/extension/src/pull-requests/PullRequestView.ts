@@ -9,6 +9,18 @@ export function providerError(error: SessionProblem): string {
   if (error === 'UnexpectedFailure') return 'Unexpected operation failure. Refresh to retry.'
 
   switch (error._tag) {
+    case 'AzureCliAuthenticationError':
+      switch (error.reason) {
+        case 'not-installed':
+          return 'Azure CLI is not available on PATH. Install it outside Duff, then restart the editor.'
+        case 'sign-in-required':
+          return 'Azure CLI sign-in required. Run az login outside Duff, then refresh discovery.'
+        case 'invalid-response':
+          return 'Azure CLI returned invalid or expired credentials. Check the CLI outside Duff, then refresh.'
+        case 'unavailable':
+          return 'Azure CLI authentication failed or timed out. Check the CLI outside Duff, then refresh.'
+      }
+
     case 'AuthenticationRequired':
       return 'Provider sign-in required. Git credentials are not API authentication.'
     case 'RepositoryUnavailable':
@@ -37,7 +49,14 @@ function item(label: string, description?: string, command?: vscode.Command): vs
 }
 
 function groupChildren(row: GroupRow, busy: boolean): vscode.TreeItem[] {
-  const children = [item('Remotes', row.group.remoteNames.join(', '))]
+  const children = [
+    item('Remotes', row.group.remoteNames.join(', ')),
+    item(
+      'Authentication source',
+      row.group.provider.authenticationSource === 'azure-cli' ? 'Azure CLI' : 'Editor',
+    ),
+  ]
+
   const content = row.content
 
   if ('data' in content) {
@@ -46,7 +65,10 @@ function groupChildren(row: GroupRow, busy: boolean): vscode.TreeItem[] {
       item(
         'API authentication',
         data.authentication._tag === 'Authenticated'
-          ? data.authentication.account.displayName
+          ? Option.match(data.authentication.account, {
+              onSome: (account) => account.displayName,
+              onNone: () => 'Account identity not verified',
+            })
           : data.authentication._tag,
       ),
     )
@@ -125,7 +147,7 @@ export class PullRequestView
         : state.rows.map((row) => {
             const root = item(
               row.group.repository.displayName,
-              `${row.group.provider.displayName} · ${row.content._tag}`,
+              `${row.group.provider.displayName} · ${row.group.provider.authenticationSource === 'azure-cli' ? 'Azure CLI · ' : ''}${row.content._tag}`,
             )
 
             root.id = row.group.key

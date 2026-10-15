@@ -7,6 +7,7 @@ export type Remote = GitContextSnapshot['remotes'][number]
 export const ProviderIdentity = Schema.Struct({
   id: Schema.NonEmptyString,
   displayName: Schema.NonEmptyString,
+  authenticationSource: Schema.Literals(['editor', 'azure-cli']),
 })
 
 export interface ProviderIdentity extends Schema.Schema.Type<typeof ProviderIdentity> {}
@@ -21,7 +22,7 @@ export interface RepositoryIdentity extends Schema.Schema.Type<typeof Repository
 
 export const Authentication = Schema.Union([
   Schema.TaggedStruct('Authenticated', {
-    account: Schema.Struct({ id: Schema.String, displayName: Schema.String }),
+    account: Schema.Option(Schema.Struct({ id: Schema.String, displayName: Schema.String })),
   }),
   Schema.TaggedStruct('Unauthenticated', {}),
   Schema.TaggedStruct('Unknown', {}),
@@ -88,7 +89,23 @@ export class InvalidContinuation extends Schema.TaggedError<InvalidContinuation>
   {},
 ) {}
 
-export type AuthenticationError = RateLimited | ProviderUnavailable | InvalidProviderResponse
+export class AzureCliAuthenticationError extends Schema.TaggedError<AzureCliAuthenticationError>()(
+  'AzureCliAuthenticationError',
+  {
+    reason: Schema.Literals([
+      'not-installed',
+      'sign-in-required',
+      'unavailable',
+      'invalid-response',
+    ]),
+  },
+) {}
+
+export type AuthenticationError =
+  | RateLimited
+  | ProviderUnavailable
+  | InvalidProviderResponse
+  | AzureCliAuthenticationError
 
 export type DiscoveryError =
   | AuthenticationRequired

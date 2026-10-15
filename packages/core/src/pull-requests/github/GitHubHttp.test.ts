@@ -29,7 +29,7 @@ const request = {
 const session = (token = 'test-token', id = 'session'): ProviderSession => ({
   id,
   token: Redacted.make(token),
-  account: { id: 'account', displayName: 'Test account' },
+  account: Option.some({ id: 'account', displayName: 'Test account' }),
 })
 
 const url = (page: number) =>
@@ -71,7 +71,11 @@ it.effect('construction and remote recognition do not authenticate or call HTTP'
       { get: () => Effect.die('Unexpected HTTP') },
     )
 
-    expect(provider.identity).toEqual({ id: 'github', displayName: 'GitHub' })
+    expect(provider.identity).toEqual({
+      id: 'github',
+      displayName: 'GitHub',
+      authenticationSource: 'editor',
+    })
 
     for (const destination of [
       'https://github.com/owner/repo',

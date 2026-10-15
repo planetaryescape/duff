@@ -5,6 +5,8 @@ import { promisify } from 'node:util'
 
 import { Context, Effect, Layer, Match, Redacted, Schema } from 'effect'
 
+import { repositoryEnvironment } from './RepositoryEnvironment'
+
 export const ConfigValue = Schema.Struct({
   scope: Schema.Literals(['system', 'global', 'local', 'worktree', 'command', 'unknown']),
   origin: Schema.String,
@@ -141,7 +143,7 @@ export const makeGitContextLayer = (environment: NodeJS.ProcessEnv) =>
   Layer.effect(
     GitContext,
     Effect.gen(function* () {
-      const env = { ...environment }
+      const env = repositoryEnvironment(environment)
 
       const git = Effect.fn('GitContext.git')(function* (
         root: string,

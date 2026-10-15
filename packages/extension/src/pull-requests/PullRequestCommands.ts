@@ -64,13 +64,26 @@ export function registerPullRequestCommands(
 
       if (Option.isNone(id)) return
 
+      const state = await runtime.runPromise(ReviewSession.use((session) => session.current()))
+
+      const group =
+        state._tag === 'Active'
+          ? state.rows.find((row) => row.group.id === id.value)?.group
+          : undefined
+
+      if (!group) return
+      const cli = group.provider.authenticationSource === 'azure-cli'
+      const action = cli ? 'Recheck Azure CLI' : 'Continue to Sign In'
+
       const choice = await vscode.window.showInformationMessage(
-        'Provider sign-in can grant broad repository read/write permissions. Duff only reads pull requests and never changes Git or provider data.',
+        cli
+          ? 'Duff will recheck your existing Azure CLI login. It will not open Microsoft sign-in, run az login, or change your CLI account. Duff only reads pull requests.'
+          : 'Provider sign-in can grant broad repository read/write permissions. Duff only reads pull requests and never changes Git or provider data.',
         { modal: true },
-        'Continue to Sign In',
+        action,
       )
 
-      if (choice === 'Continue to Sign In')
+      if (choice === action)
         await runOperation(
           runtime,
           'Duff.connectProvider',

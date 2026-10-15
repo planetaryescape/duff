@@ -267,7 +267,11 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
     })
 
   return GitHostingProvider.of({
-    identity: ProviderIdentity.make({ id: 'github', displayName: 'GitHub' }),
+    identity: ProviderIdentity.make({
+      id: 'github',
+      displayName: 'GitHub',
+      authenticationSource: 'editor',
+    }),
     recognizeRemote: (remote) => Option.map(recognize(remote.destination), bind),
   })
 })

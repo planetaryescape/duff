@@ -36,8 +36,8 @@ No fetch, checkout, PR mutations, or credential storage in this slice.
 
 ## S05: Azure DevOps discovery
 
-Status: implemented through the shared job-shaped seam and native Microsoft authentication; deterministic adapter tests pass. Session integration has native supplied-service verification under S04. Real provider requests and native sign-in remain unverified.
-Scope: Azure strategy and its remote/authentication adapter, with the same host UI.
+Status: implemented through the shared job-shaped seam and CLI-only authentication under D008. Deterministic adapter/subprocess tests pass. Installed-artifact Development Host verification reads active PRs through the existing CLI session; Windows CLI handling and natural token expiry remain unqualified.
+Scope: Azure remote/authentication adapter, with the same host UI. No native Microsoft fallback, setting, login command or CLI account/default changes.
 Acceptance: recognize supported HTTPS/SSH remote forms and list active PRs with provider-safe identity and errors.
 Checks: Azure-specific fixtures and API seam tests; prove the shared review engine needs no provider conditions.
 Local native testing may use the owner's approved `~/source/work/frontend` checkouts; see [Slice 3 and verified candidates](blueprint/plugins/07-pr-slices.md#slice-3-azure-devops-parity-using-the-same-service-and-ui). Preserve their branch, files, and configuration. Authenticated provider API checks still require explicit authorization.

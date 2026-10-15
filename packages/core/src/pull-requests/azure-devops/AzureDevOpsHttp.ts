@@ -143,7 +143,7 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
           .update(
             JSON.stringify([
               session.value.id,
-              session.value.account.id,
+              Option.map(session.value.account, (account) => account.id),
               Redacted.value(session.value.token),
             ]),
           )
@@ -277,7 +277,11 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
     })
 
   return GitHostingProvider.of({
-    identity: ProviderIdentity.make({ id: 'azure-devops', displayName: 'Azure DevOps' }),
+    identity: ProviderIdentity.make({
+      id: 'azure-devops',
+      displayName: 'Azure DevOps',
+      authenticationSource: 'azure-cli',
+    }),
     recognizeRemote,
   })
 })

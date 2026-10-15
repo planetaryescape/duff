@@ -9,6 +9,7 @@
     "./pull-requests": "./src/pull-requests/PullRequests.ts",
     "./pull-request-providers": "./src/pull-requests/Providers.ts",
     "./provider-authentication": "./src/pull-requests/ProviderAuthentication.ts",
+    "./azure-cli-authentication": "./src/pull-requests/azure-devops/AzureCliAuthentication.ts",
     "./review-session": "./src/review-session/ReviewSession.ts"
   },
   "scripts": { "typecheck": "tsc --noEmit" },
