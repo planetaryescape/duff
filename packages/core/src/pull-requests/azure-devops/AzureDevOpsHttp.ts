@@ -132,9 +132,12 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
         ).pipe(Effect.mapError(() => new InvalidProviderResponse()))
       })
 
-      const listOpenPullRequests: ProviderRepository['listOpenPullRequests'] = Effect.fn(
-        'AzureDevOps.listOpenPullRequests',
-      )(function* (input) {
+      const read = Effect.fn('AzureDevOps.readPullRequests')(function* (
+        input: Parameters<ProviderRepository['listOpenPullRequests']>[0],
+        id?: string,
+      ) {
+        if (id !== undefined && !/^[1-9][0-9]*$/.test(id))
+          return yield* new InvalidProviderResponse()
         const session = yield* authentication.session('microsoft', scopes, 'silent')
 
         if (Option.isNone(session)) return yield* new AuthenticationRequired()
@@ -163,13 +166,18 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
           }
 
           skip = continuation.skip
-        } else continuations.delete(continuationOwner)
+        } else if (id === undefined) continuations.delete(continuationOwner)
         const now = yield* Clock.currentTimeMillis
         const cooldown = cooldowns.get(boundIdentity.key) ?? 0
 
         if (cooldown > now)
           return yield* new RateLimited({ retryAfterSeconds: Option.some((cooldown - now) / 1000) })
-        const url = `https://dev.azure.com/${encodeURIComponent(address.org)}/${encodeURIComponent(address.project)}/_apis/git/repositories/${encodeURIComponent(address.repo)}/pullrequests?searchCriteria.status=active&$top=50&$skip=${skip}&api-version=7.1`
+        const endpoint = `https://dev.azure.com/${encodeURIComponent(address.org)}/${encodeURIComponent(address.project)}/_apis/git/repositories/${encodeURIComponent(address.repo)}/pullrequests`
+
+        const url =
+          id === undefined
+            ? `${endpoint}?searchCriteria.status=active&$top=50&$skip=${skip}&api-version=7.1`
+            : `${endpoint}/${id}?api-version=7.1`
 
         const response = yield* http.get(url, Option.some(session.value.token)).pipe(
           Effect.tapError(
@@ -203,9 +211,9 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
             cooldowns.set(boundIdentity.key, received + seconds * 1000)
         }
 
-        const page = yield* Schema.decodeUnknownEffect(WirePage)(response.body).pipe(
-          Effect.mapError(() => new InvalidProviderResponse()),
-        )
+        const page = yield* Schema.decodeUnknownEffect(WirePage)(
+          id === undefined ? response.body : { count: 1, value: [response.body] },
+        ).pipe(Effect.mapError(() => new InvalidProviderResponse()))
 
         if (page.count !== page.value.length || page.value.length > 50)
           return yield* new InvalidProviderResponse()
@@ -213,6 +221,8 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
         const items = yield* Effect.forEach(
           page.value,
           Effect.fn('AzureDevOps.normalizePullRequest')(function* (pr) {
+            if (id !== undefined && String(pr.pullRequestId) !== id)
+              return yield* new InvalidProviderResponse()
             let sourceRepository: Option.Option<RepositoryIdentity> = Option.some(boundIdentity)
 
             if (pr.forkSource !== undefined) {
@@ -256,10 +266,10 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
           }),
         )
 
-        continuations.delete(continuationOwner)
+        if (id === undefined) continuations.delete(continuationOwner)
         let next: Option.Option<Redacted.Redacted> = Option.none()
 
-        if (page.value.length === 50) {
+        if (id === undefined && page.value.length === 50) {
           const key = randomUUID()
           continuations.set(continuationOwner, { key, session: sessionKey, skip: skip + 50 })
           next = Option.some(Redacted.make(key))
@@ -272,7 +282,15 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
         identity: boundIdentity,
         inspectAuthentication: () => inspect('silent'),
         connectAuthentication: () => inspect('connect'),
-        listOpenPullRequests,
+        listOpenPullRequests: (input) => read(input),
+        getPullRequest: Effect.fn('AzureDevOps.getPullRequest')(function* (id) {
+          const page = yield* read({ scope: 'repository', cursor: Option.none() }, id)
+          const pull = page.items[0]
+
+          if (!pull) return yield* new InvalidProviderResponse()
+
+          return pull
+        }),
       })
     })
 

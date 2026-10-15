@@ -1,9 +1,16 @@
+import {
+  PullRequestReview,
+  type PreparationState,
+  type PreparedReview,
+} from '@duff/core/pull-request-review'
 import { BranchReview, type Review, ReviewError, Snapshot } from '@duff/core/review'
 import { fileSnapshots, ReviewProgress, ViewedFiles } from '@duff/core/review-progress'
 import { Effect, Option, Schema } from 'effect'
 import * as vscode from 'vscode'
 
 import { type CommandRuntime, runOperation } from '../Operations'
+import { registerPullRequestReviewCommands } from '../pull-requests/PullRequestReviewCommands'
+import { providerError } from '../pull-requests/PullRequestView'
 import { chooseDirectory } from '../Repository'
 import { observeOperation } from '../telemetry/Telemetry'
 import { ReviewFile, ReviewView, snapshotUri } from './ReviewView'
@@ -32,6 +39,10 @@ export function registerReviewCommands(
   const view = vscode.window.createTreeView('duff.files', { treeDataProvider: provider })
   let review: Review | undefined
   let progress: ReviewProgress | undefined
+  let localReview: Review | undefined
+  let prepared: PreparedReview | undefined
+  let preparation: PreparationState | undefined
+  let localGeneration = 0
 
   const activeFile = () => {
     const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input
@@ -62,14 +73,20 @@ export function registerReviewCommands(
     const current = progress.review
     const paths = progress.saved().paths
     provider.setReview(current, paths)
-    view.message =
+
+    const summary =
       current.files.length === 0
         ? 'No committed changes since the common ancestor. Working-tree edits are excluded.'
         : `${paths.length}/${current.files.length} viewed · committed changes only`
+
+    if (!preparation || preparation.activity._tag === 'Idle')
+      view.message = prepared
+        ? `${prepared.resolved.pullRequest.source._tag === 'Available' ? prepared.resolved.pullRequest.source.ref.name.replace('refs/heads/', '') : 'Unavailable'} → ${prepared.resolved.pullRequest.target.ref.name.replace('refs/heads/', '')} · ${summary}`
+        : summary
   }
 
   const showReview = async (next: Review) => {
-    onReview(next.root)
+    if (!prepared) onReview(next.root)
     review = next
 
     const saved = Schema.decodeUnknownOption(ViewedFiles)(
@@ -80,7 +97,9 @@ export function registerReviewCommands(
     renderProgress()
     const base = next.baseBranch.replace(/^refs\/(heads|remotes)\//, '')
     view.description = `${base} → ${next.headBranch}`
-    view.title = 'Changed Files'
+    view.title = prepared
+      ? `PR #${prepared.resolved.pullRequest.id}: ${prepared.resolved.pullRequest.title}`
+      : 'Changed Files'
     await context.workspaceState.update('viewedFiles', progress.saved())
     await updateActive()
   }
@@ -97,6 +116,9 @@ export function registerReviewCommands(
   }
 
   const compare = async () => {
+    const generation = ++localGeneration
+    await runtime.runPromise(PullRequestReview.use((service) => service.cancel()))
+    const before = await runtime.runPromise(PullRequestReview.use((service) => service.current()))
     const directory = await chooseDirectory()
 
     if (!directory) return
@@ -133,10 +155,57 @@ export function registerReviewCommands(
       BranchReview.use((service) => service.compare(repository.root, selected.ref)),
     )
 
-    if (!next) return
+    if (!next || generation !== localGeneration) return
+    const current = await runtime.runPromise(PullRequestReview.use((service) => service.current()))
+
+    if (current !== before) return
+    await runtime.runPromise(PullRequestReview.use((service) => service.exit()))
+    prepared = undefined
+    localReview = next
     await showReview(next)
     await vscode.commands.executeCommand('duff.files.focus')
   }
+
+  const renderPreparation = async (state: PreparationState) => {
+    preparation = state
+    const accepted = Option.getOrUndefined(state.accepted)
+
+    if (accepted !== prepared) {
+      const previous = prepared
+      prepared = accepted
+
+      if (accepted) {
+        await showReview(accepted.review)
+        await vscode.commands.executeCommand('duff.files.focus')
+      } else if (previous) {
+        if (localReview && localReview.root === Option.getOrUndefined(state.root))
+          await showReview(localReview)
+        else {
+          review = undefined
+          progress = undefined
+          provider.clear()
+          view.title = 'Changed Files'
+          view.description = undefined
+          view.message = undefined
+          await updateActive()
+        }
+      }
+    }
+
+    if (state.activity._tag === 'Preparing')
+      view.message = `Preparing ${state.activity.selection.label}… Existing review remains available. Cancel Preparation to stop.`
+    else if (state.activity._tag === 'AwaitingFetch')
+      view.message = `PR #${state.activity.selection.id}: ${state.activity.resolved.pullRequest.title} · Missing commits. Use Fetch PR Revisions… to consent, or Cancel Preparation. Existing review is unchanged.`
+    else if (state.activity._tag === 'Failed')
+      view.message =
+        state.activity.error._tag === 'ReviewError'
+          ? state.activity.error.message
+          : providerError(state.activity.error)
+    else if (progress) renderProgress()
+    else view.message = undefined
+  }
+
+  registerPullRequestReviewCommands(context, runtime, renderPreparation)
 
   context.subscriptions.push(
     provider,
@@ -153,8 +222,12 @@ export function registerReviewCommands(
       await context.workspaceState.update('reviewLayout', provider.toggleLayout())
     }),
     vscode.commands.registerCommand('duff.refresh', async () => {
+      if (prepared) return vscode.commands.executeCommand('duff.refreshPullRequestReview')
+
       if (!review) return compare()
       const current = review
+      const generation = ++localGeneration
+      const before = await runtime.runPromise(PullRequestReview.use((service) => service.current()))
 
       const next = await runOperation(
         runtime,
@@ -162,7 +235,12 @@ export function registerReviewCommands(
         BranchReview.use((service) => service.compare(current.root, current.baseBranch)),
       )
 
-      if (next) await showReview(next)
+      const after = await runtime.runPromise(PullRequestReview.use((service) => service.current()))
+
+      if (next && review === current && generation === localGeneration && before === after) {
+        localReview = next
+        await showReview(next)
+      }
     }),
     vscode.commands.registerCommand('duff.openDiff', async (item: unknown) => {
       if (!(item instanceof ReviewFile)) return
@@ -208,6 +286,12 @@ export function registerReviewCommands(
           path = snapshot.path
         }
 
+        const choice = await vscode.window.showWarningMessage(
+          'Open the current checkout file? Its content may differ from the immutable revision you are reviewing.',
+          'Open Current Checkout',
+        )
+
+        if (choice !== 'Open Current Checkout') return
         await vscode.window.showTextDocument(vscode.Uri.joinPath(vscode.Uri.file(root), path), {
           preview: false,
         })

@@ -36,6 +36,7 @@ const repository = (
       account: Option.some({ id: 'fixture', displayName: 'Fixture' }),
     }),
   listOpenPullRequests: list,
+  getPullRequest: () => new ProviderUnavailable(),
 })
 
 const provider = (

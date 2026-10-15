@@ -1,4 +1,5 @@
 import { type GitContext, GitContextError } from '@duff/core/git-context'
+import { type PullRequestReview } from '@duff/core/pull-request-review'
 import { type BranchReview, ReviewError } from '@duff/core/review'
 import { type ReviewSession } from '@duff/core/review-session'
 import { Cause, type Effect, type ManagedRuntime, Option } from 'effect'
@@ -7,14 +8,14 @@ import * as vscode from 'vscode'
 import { observeOperation, type Operation } from './telemetry/Telemetry'
 
 export type CommandRuntime = ManagedRuntime.ManagedRuntime<
-  BranchReview | GitContext | ReviewSession,
+  BranchReview | GitContext | ReviewSession | PullRequestReview,
   never
 >
 
 export async function runOperation<A, E>(
   runtime: CommandRuntime,
   operation: Operation,
-  work: Effect.Effect<A, E, BranchReview | GitContext | ReviewSession>,
+  work: Effect.Effect<A, E, BranchReview | GitContext | ReviewSession | PullRequestReview>,
   onFailure?: () => void,
   signal?: AbortSignal,
   summarize?: (value: A) => 'success' | 'partial',

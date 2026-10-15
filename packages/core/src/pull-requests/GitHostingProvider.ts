@@ -117,6 +117,7 @@ export interface ProviderRepository {
   readonly identity: RepositoryIdentity
   readonly inspectAuthentication: () => Effect.Effect<Authentication, AuthenticationError>
   readonly connectAuthentication: () => Effect.Effect<Authentication, AuthenticationError>
+  readonly getPullRequest: (id: string) => Effect.Effect<OpenPullRequest, DiscoveryError>
   readonly listOpenPullRequests: (input: {
     readonly scope: 'repository'
     readonly cursor: Option.Option<Redacted.Redacted>

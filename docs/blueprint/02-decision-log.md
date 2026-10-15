@@ -90,3 +90,13 @@ Reason: review progress must reflect an explicit reviewer decision and must not 
 Alternatives: automatic marking on open, provider viewed APIs, review history and auto-advance are excluded by the requested scope.
 Consequences: unchanged refresh, layout changes and selecting the same comparison after reload retain marks. A replacement comparison discards previous marks. Active commands require both immutable diff sides to match the current snapshot, regardless of original/modified focus. Stale rows and tabs cannot mark a different snapshot. No Git mutation or provider write is involved.
 Revisit when: the owner requests multi-review history or provider synchronization with an explicit conflict policy.
+
+## D010: Exact PR revisions with consent-gated Git acquisition
+
+Status: accepted by the owner; implemented on the feature branch. Date: 2026-10-15.
+
+Chosen: reread selected PR details behind the provider boundary, pin exact source/target SHAs, and compare their unique common ancestor to source. Reuse native immutable diffs and current-snapshot viewed progress. Local objects need no permission. Missing objects require explicit in-app consent for bounded HTTPS/SSH fetches through identity-matched configured remotes.
+Reason: a PR can target a different branch or originate in a fork, so current HEAD and same-name branches cannot establish the reviewed revision. API authentication and Git authentication remain distinct.
+Alternatives: synthetic merge commits, implicit fetches, guessed fork URLs, automatic checkout/worktree creation and silent refresh under a reader are excluded. An unmatched fork can still be reviewed when its exact objects already exist locally.
+Consequences: at most two Duff-owned refs are updated; moved fallback branches fail exact-SHA verification. Missing/shallow history and ambiguous common ancestors fail actionably. Preparation has owned cancellation and preserves the accepted review on failure/cancel. Explicit refresh creates a new snapshot; exit restores the prior local comparison. No provider writes or owner checkout/index changes occur. This supersedes S06's original no-fetch proposal only for user-consented acquisition.
+Revisit when: a supported provider requires another safe revision acquisition strategy or a concrete platform cannot satisfy process ownership.

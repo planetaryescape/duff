@@ -54,6 +54,7 @@ const testLayer = (
             account: Option.some({ id: 'fixture', displayName: 'Fixture' }),
           }),
         listOpenPullRequests: list,
+        getPullRequest: () => new ProviderUnavailable(),
       }),
   }
 
@@ -249,6 +250,7 @@ it.effect(
             inspectAuthentication: () => Effect.succeed({ _tag: 'Unauthenticated' }),
             connectAuthentication: () =>
               Deferred.await(connection).pipe(Effect.andThen(new ProviderUnavailable())),
+            getPullRequest: () => new ProviderUnavailable(),
             listOpenPullRequests: (input) =>
               remote.name === 'slow'
                 ? Deferred.succeed(slowStarted, undefined).pipe(

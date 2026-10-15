@@ -1,6 +1,6 @@
 # Product overview
 
-Status: local review, conservative Git-context inspection, and built-in GitHub/Azure DevOps discovery implemented. Authenticated provider smoke testing remains unverified.
+Status: local branch and exact-revision PR review, conservative Git-context inspection, and built-in GitHub/Azure DevOps discovery implemented. See the delivery log for qualification and provider-specific limits.
 
 ## Goal
 
@@ -26,6 +26,8 @@ Choose a branch, browse changed files, open a native diff, and navigate the real
 - Open the real workspace file separately for editing and language navigation.
 - Open the current working-tree file from a Duff diff's toolbar or the Duff: Open Workspace File command, including uncommitted contents.
 - Refresh comparison explicitly; choose a repository in multi-folder workspaces.
+- Select a GitHub or Azure PR for an exact-revision local review, with explicit consent before acquiring missing Git objects through matched configured remotes.
+- Refresh PR snapshots explicitly, cancel preparation without replacing the review, and exit back to the prior local comparison.
 - Bun watch build and F5 development configuration, with manual extension reload.
 
 ## Identity and discovery

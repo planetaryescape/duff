@@ -1,3 +1,5 @@
+import { type OpenPullRequest } from '@duff/core/git-hosting-provider'
+import { PullRequestSelection } from '@duff/core/pull-requests'
 import { type GroupRow, type ReviewState, type SessionProblem } from '@duff/core/review-session'
 import { Option } from 'effect'
 import * as vscode from 'vscode'
@@ -48,7 +50,35 @@ function item(label: string, description?: string, command?: vscode.Command): vs
   return row
 }
 
-function groupChildren(row: GroupRow, busy: boolean): vscode.TreeItem[] {
+export class PullRequestItem extends vscode.TreeItem {
+  readonly selection: PullRequestSelection
+  constructor(
+    readonly root: string,
+    row: GroupRow,
+    readonly pullRequest: OpenPullRequest,
+  ) {
+    super(`#${pullRequest.id} ${pullRequest.title}`)
+    this.selection = PullRequestSelection.make({
+      provider: row.group.provider.id,
+      repository: row.group.repository,
+      id: pullRequest.id,
+      label: `#${pullRequest.id} ${pullRequest.title} · ${pullRequest.source._tag === 'Available' ? pullRequest.source.ref.name.replace('refs/heads/', '') : 'Unavailable'} → ${pullRequest.target.ref.name.replace('refs/heads/', '')}`,
+    })
+    this.description = pullRequest.draft ? 'Draft' : 'Open'
+    this.iconPath = new vscode.ThemeIcon(
+      pullRequest.draft ? 'git-pull-request-draft' : 'git-pull-request',
+    )
+    this.contextValue = 'pullRequest'
+    this.command = {
+      command: 'duff.reviewPullRequest',
+      title: 'Review Pull Request Locally',
+      arguments: [this],
+    }
+    this.tooltip = `${pullRequest.source._tag === 'Available' ? `${pullRequest.source.repository.displayName}: ${pullRequest.source.ref.name}` : 'Source unavailable'}\n→ ${pullRequest.target.ref.name}\nPrepare an immutable local review. Missing revisions require fetch consent. Never switches branches.`
+  }
+}
+
+function groupChildren(row: GroupRow, busy: boolean, root: string): vscode.TreeItem[] {
   const children = [
     item('Remotes', row.group.remoteNames.join(', ')),
     item(
@@ -74,15 +104,7 @@ function groupChildren(row: GroupRow, busy: boolean): vscode.TreeItem[] {
     )
 
     for (const pr of data.items) {
-      const node = item(`#${pr.id} ${pr.title}`, pr.draft ? 'Draft' : 'Open', {
-        command: 'vscode.open',
-        title: 'Open Pull Request',
-        arguments: [vscode.Uri.parse(pr.url)],
-      })
-
-      node.iconPath = new vscode.ThemeIcon(pr.draft ? 'git-pull-request-draft' : 'git-pull-request')
-      node.tooltip = `${pr.source._tag === 'Available' ? `${pr.source.repository.displayName}: ${pr.source.ref.name}` : 'Source unavailable'}\n→ ${pr.target.ref.name}\nOpens the provider page. Does not fetch or switch branches.`
-      children.push(node)
+      children.push(new PullRequestItem(root, row, pr))
     }
 
     if (content._tag === 'Refreshing') children.push(item('Refreshing…', 'Previous results'))
@@ -160,6 +182,10 @@ export class PullRequestView
                   row.content._tag === 'Loading' ||
                   row.content._tag === 'Refreshing' ||
                   state.rows.some((row) => row.activity === 'Connecting'),
+                Option.getOrElse(
+                  Option.map(state.snapshot, (snapshot) => snapshot.root),
+                  () => state.directory,
+                ),
               ),
             )
 
