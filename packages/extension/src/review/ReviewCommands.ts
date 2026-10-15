@@ -96,7 +96,8 @@ export function registerReviewCommands(
     progress = new ReviewProgress(next, progress?.saved() ?? Option.getOrUndefined(saved))
     renderProgress()
     const base = next.baseBranch.replace(/^refs\/(heads|remotes)\//, '')
-    view.description = `${base} → ${next.headBranch}`
+    const head = next.headBranch.replace(/^refs\/(heads|remotes)\//, '')
+    view.description = prepared ? `${head} → ${base}` : `${base} → ${head}`
     view.title = prepared
       ? `PR #${prepared.resolved.pullRequest.id}: ${prepared.resolved.pullRequest.title}`
       : 'Changed Files'
@@ -193,9 +194,9 @@ export function registerReviewCommands(
     }
 
     if (state.activity._tag === 'Preparing')
-      view.message = `Preparing ${state.activity.selection.label}… Existing review remains available. Cancel Preparation to stop.`
+      view.message = `Preparing ${state.activity.selection.label}…${review ? ' Existing review remains available.' : ''} Cancel Preparation to stop.`
     else if (state.activity._tag === 'AwaitingFetch')
-      view.message = `PR #${state.activity.selection.id}: ${state.activity.resolved.pullRequest.title} · Missing commits. Use Fetch PR Revisions… to consent, or Cancel Preparation. Existing review is unchanged.`
+      view.message = `PR #${state.activity.selection.id}: ${state.activity.resolved.pullRequest.title} · Missing commits. Use Fetch PR Revisions… to consent, or Cancel Preparation.${review ? ' Existing review is unchanged.' : ''}`
     else if (state.activity._tag === 'Failed')
       view.message =
         state.activity.error._tag === 'ReviewError'
@@ -250,7 +251,7 @@ export function registerReviewCommands(
         'vscode.diff',
         snapshotUri(base),
         snapshotUri(head),
-        `${change.path}: ${current.baseBranch.replace(/^refs\/(heads|remotes)\//, '')} ↔ ${current.headBranch}`,
+        `${change.path}: ${current.baseCommit.slice(0, 8)} ↔ ${current.headCommit.slice(0, 8)}`,
       )
     }),
     vscode.commands.registerCommand('duff.openFile', async (item: unknown) => {
