@@ -7,6 +7,8 @@ import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from 'effect'
 import { AzureCliAuthenticationError } from '../GitHostingProvider'
 import { ProviderSession } from '../ProviderAuthentication'
 
+const azureDevOpsResourceId = '499b84ac-1321-427f-aa17-267ca6975798'
+
 const Credential = Schema.fromJsonString(
   Schema.Struct({
     accessToken: Schema.String.check(Schema.isPattern(/^\S+$/)),
@@ -39,7 +41,7 @@ export const makeAzureCliAuthenticationLayer = (environment: NodeJS.ProcessEnv) 
                 'account',
                 'get-access-token',
                 '--resource',
-                '499b84ac-1321-427f-aa17-267ca6975798',
+                azureDevOpsResourceId,
                 '--output',
                 'json',
               ],
