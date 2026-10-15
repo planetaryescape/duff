@@ -357,6 +357,55 @@ it.effect(
     }).pipe(Effect.provide(gitReviewLayer)),
 )
 
+it.effect('rejects shallow ancestry even when Git reports a unique but older merge base', () =>
+  Effect.gen(function* () {
+    const root = yield* repository
+    yield* command(root, 'commit', '--allow-empty', '-m', 'A')
+    const a = (yield* command(root, 'rev-parse', 'HEAD')).stdout.trim()
+    yield* write(root, 'target.txt', 'target only\n')
+    yield* command(root, 'add', '.')
+    yield* command(root, 'commit', '-m', 'B')
+    const b = (yield* command(root, 'rev-parse', 'HEAD')).stdout.trim()
+    yield* write(root, 'feature.txt', 'source change\n')
+    yield* command(root, 'add', '.')
+    yield* command(root, 'commit', '-m', 'C')
+    const c = (yield* command(root, 'rev-parse', 'HEAD')).stdout.trim()
+    const tree = (yield* command(root, 'rev-parse', 'HEAD^{tree}')).stdout.trim()
+
+    const source = (yield* command(
+      root,
+      'commit-tree',
+      tree,
+      '-p',
+      c,
+      '-p',
+      a,
+      '-m',
+      'S',
+    )).stdout.trim()
+
+    expect((yield* command(root, 'merge-base', '--all', source, b)).stdout.trim()).toBe(b)
+    yield* write(root, '.git/shallow', `${c}\n`)
+    expect((yield* command(root, 'merge-base', '--all', source, b)).stdout.trim()).toBe(a)
+    const service = yield* BranchReview
+
+    const failure = yield* service
+      .prepare(
+        root,
+        {
+          source: { commit: source, ref: 'refs/heads/topic', remote: Option.none() },
+          target: { commit: b, ref: 'refs/heads/main', remote: Option.none() },
+        },
+        'local-only',
+      )
+      .pipe(Effect.flip)
+
+    expect(failure._tag).toBe('ReviewError')
+
+    if (failure._tag === 'ReviewError') expect(failure.message).toContain('Shallow')
+  }).pipe(Effect.provide(gitReviewLayer)),
+)
+
 it.live('cancelling acquisition terminates its Git transport descendants', () =>
   Effect.gen(function* () {
     const root = yield* repository

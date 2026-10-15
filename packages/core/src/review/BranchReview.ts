@@ -258,6 +258,13 @@ export const makeGitReviewLayer = (environment: NodeJS.ProcessEnv) => {
         targetCommit: string,
         headCommit: string,
       ) {
+        if ((yield* git(root, ['rev-parse', '--is-shallow-repository'])).trim() !== 'false')
+          return yield* new ReviewError({
+            operation: 'merge-base',
+            message:
+              'Shallow history cannot establish a trustworthy comparison base. Obtain full history outside Duff, then retry. Duff does not unshallow repositories.',
+          })
+
         const ancestor = (yield* git(root, ['merge-base', '--all', targetCommit, headCommit]).pipe(
           Effect.mapError(
             () =>

@@ -96,10 +96,13 @@ it.effect(
 
     return Effect.gen(function* () {
       const service = yield* PullRequestReview
-      yield* service.repositoryChanged(Option.some(snapshot.root))
+      yield* service.repositoryChanged(Option.some('/fixture/nested'), Option.some(snapshot.root))
       yield* service.start(snapshot, selection('1'))
       yield* waitFor(service, (state) => Option.isSome(state.accepted))
       const previous = (yield* service.current()).accepted
+      yield* service.repositoryChanged(Option.some('/fixture/nested'), Option.none())
+      expect((yield* service.current()).accepted).toEqual(previous)
+      yield* service.repositoryChanged(Option.some('/fixture/nested'), Option.some(snapshot.root))
       needsFetch = true
       current = 'c'
       yield* service.start(snapshot, selection('2'))
@@ -146,16 +149,20 @@ it.effect(
       const stopped = yield* Deferred.make<void>()
       yield* Effect.gen(function* () {
         const service = yield* PullRequestReview
-        yield* service.repositoryChanged(Option.some(snapshot.root))
+        yield* service.repositoryChanged(Option.some('/fixture/nested'), Option.some(snapshot.root))
         yield* service.start(snapshot, selection('slow'))
         yield* Deferred.await(started)
+        yield* service.repositoryChanged(Option.some('/fixture/nested'), Option.none())
+        expect(yield* Deferred.isDone(stopped)).toBe(false)
+        expect((yield* service.current()).activity._tag).toBe('Preparing')
+        yield* service.repositoryChanged(Option.some('/fixture/nested'), Option.some(snapshot.root))
         yield* service.start(snapshot, selection('b'))
         yield* waitFor(service, (state) => Option.isSome(state.accepted))
         expect(yield* Deferred.isDone(stopped)).toBe(true)
         expect(
           Option.map((yield* service.current()).accepted, (accepted) => accepted.selection.id),
         ).toEqual(Option.some('b'))
-        yield* service.repositoryChanged(Option.some('/other'))
+        yield* service.repositoryChanged(Option.some('/other/nested'), Option.none())
         yield* service.start(snapshot, selection('c'))
         expect((yield* service.current()).accepted).toEqual(Option.none())
         expect((yield* service.current()).activity._tag).toBe('Idle')

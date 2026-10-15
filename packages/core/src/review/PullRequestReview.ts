@@ -49,7 +49,10 @@ export class PullRequestReview extends Context.Service<
   {
     readonly changes: Stream.Stream<PreparationState>
     readonly current: () => Effect.Effect<PreparationState>
-    readonly repositoryChanged: (root: Option.Option<string>) => Effect.Effect<void>
+    readonly repositoryChanged: (
+      directory: Option.Option<string>,
+      root: Option.Option<string>,
+    ) => Effect.Effect<void>
     readonly start: (
       snapshot: GitContextSnapshot,
       selection: PullRequestSelection,
@@ -75,6 +78,7 @@ export class PullRequestReview extends Context.Service<
 
       const jobs = yield* FiberMap.make<string, void>()
       const gate = yield* Semaphore.make(1)
+      let directory: Option.Option<string> = Option.none()
 
       const activity = (activity: PreparationActivity) =>
         SubscriptionRef.update(
@@ -150,10 +154,15 @@ export class PullRequestReview extends Context.Service<
       )
 
       const repositoryChanged = Effect.fn('PullRequestReview.repositoryChanged')(
-        function* (root: Option.Option<string>) {
+        function* (selected: Option.Option<string>, root: Option.Option<string>) {
           const old = yield* SubscriptionRef.get(state)
+          const sameDirectory = Option.getOrUndefined(directory) === Option.getOrUndefined(selected)
+          directory = selected
 
-          if (Option.getOrUndefined(old.root) === Option.getOrUndefined(root)) return
+          if (sameDirectory && Option.isSome(selected) && Option.isNone(root)) return
+
+          if (sameDirectory && Option.getOrUndefined(old.root) === Option.getOrUndefined(root))
+            return
           yield* FiberMap.clear(jobs)
           yield* SubscriptionRef.set(
             state,

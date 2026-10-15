@@ -39,13 +39,9 @@ export function registerPullRequestReviewCommands(
         Stream.runForEach((state) =>
           PullRequestReview.use((service) =>
             service.repositoryChanged(
+              state._tag === 'Active' ? Option.some(state.directory) : Option.none(),
               state._tag === 'Active'
-                ? Option.some(
-                    Option.getOrElse(
-                      Option.map(state.snapshot, (snapshot) => snapshot.root),
-                      () => state.directory,
-                    ),
-                  )
+                ? Option.map(state.snapshot, (snapshot) => snapshot.root)
                 : Option.none(),
             ),
           ),
@@ -78,7 +74,10 @@ export function registerPullRequestReviewCommands(
           )
             return
           const service = yield* PullRequestReview
-          yield* service.repositoryChanged(Option.some(state.snapshot.value.root))
+          yield* service.repositoryChanged(
+            Option.some(state.directory),
+            Option.some(state.snapshot.value.root),
+          )
           yield* service.start(state.snapshot.value, item.selection)
         }),
       )
