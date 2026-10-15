@@ -1,3 +1,4 @@
+import { AzureCliAuthentication } from '@duff/core/azure-cli-authentication'
 import { InvalidProviderResponse, ProviderUnavailable } from '@duff/core/git-hosting-provider'
 import { ProviderAuthentication, ProviderSession } from '@duff/core/provider-authentication'
 import { Effect, Layer, Option, Redacted, Schema } from 'effect'
@@ -6,11 +7,17 @@ import * as vscode from 'vscode'
 export const authenticationLayer = Layer.effect(
   ProviderAuthentication,
   Effect.gen(function* () {
+    const cli = yield* AzureCliAuthentication
+
     const session = Effect.fn('ProviderAuthentication.session')(function* (
       provider: string,
       scopes: ReadonlyArray<string>,
       mode: 'silent' | 'connect',
     ) {
+      if (provider === 'microsoft') return Option.some(yield* cli.session())
+
+      if (provider !== 'github') return yield* new ProviderUnavailable()
+
       const value = yield* Effect.tryPromise({
         try: () =>
           vscode.authentication.getSession(
@@ -32,7 +39,7 @@ export const authenticationLayer = Layer.effect(
         yield* Schema.decodeUnknownEffect(ProviderSession)({
           id: value.id,
           token: Redacted.make(value.accessToken),
-          account: { id: value.account.id, displayName: value.account.label },
+          account: Option.some({ id: value.account.id, displayName: value.account.label }),
         }).pipe(Effect.mapError(() => new InvalidProviderResponse())),
       )
     })

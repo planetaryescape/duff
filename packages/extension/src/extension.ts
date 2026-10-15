@@ -1,6 +1,7 @@
+import { makeAzureCliAuthenticationLayer } from '@duff/core/azure-cli-authentication'
 import { makeGitContextLayer } from '@duff/core/git-context'
 import { pullRequestsLayer } from '@duff/core/pull-request-providers'
-import { gitReviewLayer } from '@duff/core/review'
+import { makeGitReviewLayer } from '@duff/core/review'
 import { ReviewSession } from '@duff/core/review-session'
 import { Effect, Layer, ManagedRuntime } from 'effect'
 import { FetchHttpClient } from 'effect/http'
@@ -21,14 +22,19 @@ export function activate(context: vscode.ExtensionContext) {
       : Layer.empty
 
   const gitContextLayer = makeGitContextLayer(process.env)
-  const providers = pullRequestsLayer.pipe(Layer.provide(authenticationLayer))
+
+  const providers = pullRequestsLayer.pipe(
+    Layer.provide(
+      authenticationLayer.pipe(Layer.provide(makeAzureCliAuthenticationLayer(process.env))),
+    ),
+  )
 
   const sessionLayer = ReviewSession.layer.pipe(
     Layer.provide(Layer.merge(gitContextLayer, providers)),
   )
 
   const runtime = ManagedRuntime.make(
-    Layer.mergeAll(gitReviewLayer, gitContextLayer, sessionLayer).pipe(
+    Layer.mergeAll(makeGitReviewLayer(process.env), gitContextLayer, sessionLayer).pipe(
       Layer.provideMerge(observability),
     ),
   )
@@ -67,8 +73,8 @@ export function activate(context: vscode.ExtensionContext) {
     )
 
   context.subscriptions.push(
-    vscode.authentication.onDidChangeSessions(() => {
-      resetInspection('authentication')
+    vscode.authentication.onDidChangeSessions((event) => {
+      if (event.provider.id === 'github') resetInspection('authentication')
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(() =>
       runtime.runFork(

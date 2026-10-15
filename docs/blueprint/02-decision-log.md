@@ -70,3 +70,13 @@ Alternatives: generic lifecycle, plugin runtime and ordered batch discovery add 
 Consequences: Started/Updated discovery uses bounded unordered concurrency; connect and loadMore target repository groups; continuation state stays private. Refresh retains PRs as Refreshing and failures mark retained results Stale. Core owns the provider implementations, transport composition and tests. The extension supplies native authentication and consumes the session interface. GitHostingProvider is transport-neutral; core can select an HTTP or CLI implementation without changing the session or editor. No generic transport-request wrapper, third-party loader or plugin distribution contract is introduced.
 Revisit when: a concrete additional capability or independent distribution requirement cannot fit this boundary.
 References: [current contract and inspected owners](04-capabilities-and-review-session.md). Check, 40 tests, packaging and native supplied-service UI verification pass. Real provider requests and native sign-in remain unverified.
+
+## D008: Azure CLI authentication with existing REST reads
+
+Status: accepted by the owner; implemented on the feature branch. Date: 2026-10-15.
+
+Chosen: Azure uses the existing Azure CLI login as its only credential source. Keep the REST adapter, schema validation, pagination and HTTP policy. GitHub keeps native editor authentication. Provider source metadata is available before authentication; verified account identity is optional and never inferred from Git configuration or token claims.
+Reason: a read-only Mac probe demonstrated CLI-issued Azure DevOps tokens against the approved repository. The owner chose CLI-only authentication rather than maintaining multiple Azure sign-in paths.
+Alternatives: native Microsoft editor authentication is removed from the Azure route; a full `az repos pr` adapter and strategy settings are deferred.
+Consequences: users install/sign in to Azure CLI outside Duff. Connect only rechecks. No fallback, account selection, login command or CLI default change is allowed. Token changes invalidate old continuations. The adapter owns bounded acquisition, parsing, expiry, cancellation and safe error translation, not Azure CLI's cache internals.
+Revisit when: a concrete tenant or supported platform cannot obtain the required resource token through this path.

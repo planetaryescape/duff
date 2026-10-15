@@ -26,7 +26,7 @@ const remote = (url: string): Remote => ({
 const session = (token = 'test-token', id = 'session'): ProviderSession => ({
   id,
   token: Redacted.make(token),
-  account: { id: 'account', displayName: 'Test' },
+  account: Option.none(),
 })
 
 const pullRequest = (id = 1) => ({
@@ -86,7 +86,11 @@ describe('AzureDevOps', () => {
         },
       )
 
-      expect(contribution.identity).toEqual({ id: 'azure-devops', displayName: 'Azure DevOps' })
+      expect(contribution.identity).toEqual({
+        id: 'azure-devops',
+        displayName: 'Azure DevOps',
+        authenticationSource: 'azure-cli',
+      })
 
       for (const url of [
         destination,
@@ -122,7 +126,7 @@ describe('AzureDevOps', () => {
   )
 
   it.effect(
-    'uses native silent and connect authentication and requires a session for listing',
+    'uses the supplied silent and connect authentication and requires a session for listing',
     () =>
       Effect.gen(function* () {
         const requests: Array<readonly [string, ReadonlyArray<string>, string]> = []

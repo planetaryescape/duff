@@ -106,7 +106,7 @@ it.effect('built-ins discover both providers without host HTTP wiring and reject
                 Option.some({
                   id: 'test-session',
                   token: Redacted.make('test-token'),
-                  account: { id: 'account', displayName: 'Test' },
+                  account: Option.some({ id: 'account', displayName: 'Test' }),
                 }),
               ),
           }),

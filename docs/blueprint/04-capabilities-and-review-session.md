@@ -1,6 +1,6 @@
 # Pull-request capability and review session
 
-Status: owner-approved cutover and core-owned transport composition implemented, 2026-10-10. Check, 41 tests and packaging pass. Native supplied-service UI verification passes for the preceding session cutover; real provider requests and native sign-in remain unverified.
+Status: capability/session cutover and CLI-only Azure authentication implemented, 2026-10-15. Check, 48 application tests, rule tests and packaging pass. Installed-artifact Development Host verification includes real Azure reads and native CLI failure/Connect interactions. GitHub native sign-in and Windows CLI handling remain unverified. See the delivery log for evidence and limits.
 
 This chapter supersedes the [staged plugin design](plugins/00-problem.md) under [D007](02-decision-log.md#d007-job-shaped-capabilities-and-one-review-session). GitHub and Azure DevOps are built in. Bitbucket is deferred. There is no generic plugin lifecycle or Alchemy.
 
@@ -12,7 +12,7 @@ This chapter supersedes the [staged plugin design](plugins/00-problem.md) under 
 | [PullRequests.ts](../../packages/core/src/pull-requests/PullRequests.ts) | Provider routing, equivalent-remote grouping, progressive discovery, private continuation state, group-based connect and loadMore |
 | [ReviewSession.ts](../../packages/core/src/review-session/ReviewSession.ts) | One selected local repository, local inspection, owned background jobs, retained PR content, observable state |
 | [Providers.ts](../../packages/core/src/pull-requests/Providers.ts) | Constructs built-in HTTP adapters, supplies their HTTP transport and composes PullRequests; native authentication is the remaining host dependency |
-| [ProviderAuthentication.ts](../../packages/core/src/pull-requests/ProviderAuthentication.ts) | Headless session contract. The [extension implementation](../../packages/extension/src/pull-requests/ProviderAuthentication.ts) supplies native editor authentication |
+| [ProviderAuthentication.ts](../../packages/core/src/pull-requests/ProviderAuthentication.ts) | Headless session contract. The [extension implementation](../../packages/extension/src/pull-requests/ProviderAuthentication.ts) routes GitHub to native editor authentication and Azure to the core CLI service |
 | [PullRequestCommands.ts](../../packages/extension/src/pull-requests/PullRequestCommands.ts), [PullRequestView.ts](../../packages/extension/src/pull-requests/PullRequestView.ts) | Subscribe to session changes, render native rows, dispatch explicit group actions, open provider pages |
 | [GitHubHttp.ts](../../packages/core/src/pull-requests/github/GitHubHttp.ts), [AzureDevOpsHttp.ts](../../packages/core/src/pull-requests/azure-devops/AzureDevOpsHttp.ts) | HTTP implementations of the shared adapter contract: recognition, protocol validation, draft/fork normalization, session-bound pagination and cooldowns |
 
@@ -58,7 +58,11 @@ Explicit connect cancels other session jobs, connects the chosen group and redis
 
 ## Authentication and verification limits
 
-Only explicit Connect can prompt, after the editor warns about broad permissions. Silent inspection and discovery never prompt. Git credential configuration does not establish API authentication. GitHub can read public repositories without a session; a rejected session is not retried anonymously. Azure requires a Microsoft session. Tokens remain inside adapters.
+Only explicit GitHub Connect can prompt for editor sign-in, after a broad-permission warning. Silent inspection and discovery never prompt. Git credential configuration does not establish API authentication. GitHub can read public repositories without a session; a rejected session is not retried anonymously. Azure exclusively uses an existing Azure CLI login under [D008](02-decision-log.md#d008-azure-cli-authentication-with-existing-rest-reads). Connect explains and rechecks that login without running login or changing defaults. Tokens remain inside adapters.
+
+The core AzureCliAuthentication service captures the activation environment, invokes PATH-resolved `az` outside the workspace without a shell, disables dynamic extension installation and CLI command-file logging, and decodes the credential with Schema. Numeric `expires_on` is checked against Effect Clock. Credentials are redacted, account is None, and the opaque session identifier is a token digest. The existing REST continuation fingerprint rejects changed tokens. There is no Duff token cache, authentication selector or native Microsoft fallback.
+
+Acquisition has a 12-second timeout, caller interruption, and a combined 1 MiB output bound, matching Node's default execFile buffer budget rather than assuming a token length. POSIX process groups cover the CLI wrapper and Python descendant. Windows only signals the direct child and remains unqualified. Errors expose finite reasons, never stdout, stderr or raw exceptions. Azure CLI may refresh its own cache; Duff does not control every internal CLI side effect.
 
 The extension subscribes to changes and sends group IDs from native rows. Refresh performs a fresh manual inspection; editor-session changes clear and reinspect. `duff.automaticDiscovery` controls background reads, not explicit Check Pull Requests.
 

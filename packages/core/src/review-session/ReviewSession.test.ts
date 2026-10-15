@@ -43,7 +43,7 @@ const testLayer = (
   inspect: GitContext['Service']['inspect'] = (root) => Effect.succeed(context(root)),
 ) => {
   const provider: GitHostingProvider = {
-    identity: { id: 'fixture', displayName: 'Fixture' },
+    identity: { id: 'fixture', displayName: 'Fixture', authenticationSource: 'editor' },
     recognizeRemote: () =>
       Option.some({
         identity,
@@ -51,7 +51,7 @@ const testLayer = (
         connectAuthentication: () =>
           Effect.succeed({
             _tag: 'Authenticated',
-            account: { id: 'fixture', displayName: 'Fixture' },
+            account: Option.some({ id: 'fixture', displayName: 'Fixture' }),
           }),
         listOpenPullRequests: list,
       }),
@@ -242,7 +242,7 @@ it.effect(
       const connection = yield* Deferred.make<void>()
 
       const provider: GitHostingProvider = {
-        identity: { id: 'fixture', displayName: 'Fixture' },
+        identity: { id: 'fixture', displayName: 'Fixture', authenticationSource: 'editor' },
         recognizeRemote: (remote) =>
           Option.some({
             identity: { ...identity, key: remote.name, displayName: remote.name },

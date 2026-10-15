@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -7,16 +7,21 @@ import { promisify } from 'node:util'
 import { expect, it } from '@effect/vitest'
 import { Effect } from 'effect'
 
-import { BranchReview, gitReviewLayer } from './BranchReview'
+import { GitContext, makeGitContextLayer } from '../git-context/GitContext'
+import { BranchReview, makeGitReviewLayer } from './BranchReview'
 
 const execute = promisify(execFile)
 
+const env = { PATH: process.env.PATH, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' }
+
+const gitReviewLayer = makeGitReviewLayer(env)
+
 const repository = Effect.acquireRelease(
   Effect.promise(async () => {
-    const root = await mkdtemp(join(tmpdir(), 'duff-test-'))
-    await execute('git', ['init', '-b', 'main', root])
-    await execute('git', ['-C', root, 'config', 'user.name', 'Duff Test'])
-    await execute('git', ['-C', root, 'config', 'user.email', 'test@example.invalid'])
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'duff-test-')))
+    await execute('git', ['init', '-b', 'main', root], { env })
+    await execute('git', ['-C', root, 'config', 'user.name', 'Duff Test'], { env })
+    await execute('git', ['-C', root, 'config', 'user.email', 'test@example.invalid'], { env })
 
     return root
   }),
@@ -24,7 +29,7 @@ const repository = Effect.acquireRelease(
 )
 
 const command = (root: string, ...args: string[]) =>
-  Effect.promise(() => execute('git', ['-C', root, ...args]))
+  Effect.promise(() => execute('git', ['-C', root, ...args], { env }))
 
 const write = (root: string, path: string, content: string) =>
   Effect.promise(() => writeFile(join(root, path), content))
@@ -104,4 +109,43 @@ it.effect('fails a missing base branch rather than returning an empty review', (
     expect(failure.operation).toBe('rev-parse')
     expect(failure.message).not.toContain('canary-secret')
   }).pipe(Effect.provide(gitReviewLayer)),
+)
+
+it.effect('reviews the requested repository despite inherited hook repository variables', () =>
+  Effect.gen(function* () {
+    const source = yield* repository
+    const target = yield* repository
+    yield* command(source, 'commit', '--allow-empty', '-m', 'Source')
+    yield* command(target, 'commit', '--allow-empty', '-m', 'Target')
+    yield* command(target, 'checkout', '-b', 'review-target')
+    yield* write(target, 'target.txt', 'target only\n')
+    yield* command(target, 'add', '.')
+    yield* command(target, 'commit', '-m', 'Target change')
+    const before = yield* command(source, 'show-ref')
+
+    const redirected = {
+      ...env,
+      GIT_DIR: join(source, '.git'),
+      GIT_COMMON_DIR: join(source, '.git'),
+      GIT_WORK_TREE: source,
+      GIT_INDEX_FILE: join(source, '.git', 'index'),
+      GIT_OBJECT_DIRECTORY: join(source, '.git', 'objects'),
+    }
+
+    const review = yield* BranchReview.use((service) =>
+      service.compare(target, 'refs/heads/main'),
+    ).pipe(Effect.provide(makeGitReviewLayer(redirected)))
+
+    expect(review.root).toBe(target)
+    expect(review.headBranch).toBe('review-target')
+    expect(review.files).toEqual([{ status: 'A', path: 'target.txt' }])
+
+    const context = yield* GitContext.use((service) => service.inspect(target)).pipe(
+      Effect.provide(makeGitContextLayer(redirected)),
+    )
+
+    expect(context.root).toBe(target)
+    expect((yield* command(source, 'show-ref')).stdout).toBe(before.stdout)
+    expect((yield* command(source, 'status', '--porcelain')).stdout).toBe('')
+  }),
 )
