@@ -1,14 +1,14 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 
 import { expect, it } from '@effect/vitest'
-import { Effect } from 'effect'
+import { Effect, Fiber, Option, Schedule } from 'effect'
 
 import { GitContext, makeGitContextLayer } from '../git-context/GitContext'
-import { BranchReview, makeGitReviewLayer } from './BranchReview'
+import { BranchReview, FetchRequired, makeGitReviewLayer, ReviewRevisions } from './BranchReview'
 
 const execute = promisify(execFile)
 
@@ -147,5 +147,322 @@ it.effect('reviews the requested repository despite inherited hook repository va
     expect(context.root).toBe(target)
     expect((yield* command(source, 'show-ref')).stdout).toBe(before.stdout)
     expect((yield* command(source, 'status', '--porcelain')).stdout).toBe('')
+  }),
+)
+
+it.effect('pins both PR commits independently of HEAD, branch names, index and working files', () =>
+  Effect.gen(function* () {
+    const root = yield* repository
+    yield* write(root, 'file.txt', 'base\n')
+    yield* command(root, 'add', '.')
+    yield* command(root, 'commit', '-m', 'Base')
+    const base = (yield* command(root, 'rev-parse', 'HEAD')).stdout.trim()
+    yield* command(root, 'checkout', '-b', 'fork-topic')
+    yield* write(root, 'file.txt', 'fork revision\n')
+    yield* command(root, 'commit', '-am', 'Fork change')
+    const head = (yield* command(root, 'rev-parse', 'HEAD')).stdout.trim()
+    yield* command(root, 'checkout', 'main')
+    yield* write(root, 'unrelated.txt', 'target-only change\n')
+    yield* command(root, 'add', '.')
+    yield* command(root, 'commit', '-m', 'Target divergence')
+    const target = (yield* command(root, 'rev-parse', 'HEAD')).stdout.trim()
+    yield* write(root, 'file.txt', 'staged\n')
+    yield* command(root, 'add', 'file.txt')
+    yield* write(root, 'file.txt', 'working\n')
+    const before = yield* command(root, 'diff', '--binary', 'HEAD')
+    const index = yield* Effect.promise(() => readFile(join(root, '.git/index')))
+    const service = yield* BranchReview
+
+    const review = yield* service.prepare(
+      root,
+      ReviewRevisions.make({
+        source: { commit: head, ref: 'refs/heads/same-name', remote: Option.none() },
+        target: { commit: target, ref: 'refs/heads/same-name', remote: Option.none() },
+      }),
+      'local-only',
+    )
+
+    expect(review.baseCommit).toBe(base)
+    expect(review.headCommit).toBe(head)
+    expect(review.files).toEqual([{ status: 'M', path: 'file.txt' }])
+    expect(yield* service.read({ root, commit: head, path: 'file.txt' })).toBe('fork revision\n')
+    expect((yield* command(root, 'diff', '--binary', 'HEAD')).stdout).toBe(before.stdout)
+    expect(yield* Effect.promise(() => readFile(join(root, '.git/index')))).toEqual(index)
+    expect((yield* command(root, 'branch', '--show-current')).stdout.trim()).toBe('main')
+  }).pipe(Effect.provide(gitReviewLayer)),
+)
+
+it.effect(
+  'requires consent, fetches exact fork revisions into bounded refs and rejects moved fallback refs',
+  () =>
+    Effect.gen(function* () {
+      const source = yield* repository
+      const root = yield* repository
+      yield* write(source, 'fork.txt', 'base\n')
+      yield* command(source, 'add', '.')
+      yield* command(source, 'commit', '-m', 'Base')
+      const base = (yield* command(source, 'rev-parse', 'HEAD')).stdout.trim()
+      yield* command(root, 'fetch', source, 'main')
+      yield* command(root, 'reset', '--hard', 'FETCH_HEAD')
+      yield* command(source, 'checkout', '-b', 'topic')
+      yield* write(source, 'fork.txt', 'fork content\n')
+      yield* command(source, 'commit', '-am', 'Fork change')
+      const head = (yield* command(source, 'rev-parse', 'HEAD')).stdout.trim()
+      const ssh = join(root, 'test-ssh')
+      yield* Effect.promise(() =>
+        writeFile(ssh, '#!/bin/sh\nexec git-upload-pack "$DUFF_SOURCE"\n'),
+      )
+      yield* Effect.promise(() => chmod(ssh, 0o700))
+      yield* command(root, 'remote', 'add', 'fork', 'git@github.com:fork/repo.git')
+      yield* command(root, 'config', 'fetch.prune', 'true')
+      yield* command(root, 'config', 'fetch.pruneTags', 'true')
+      yield* command(root, 'update-ref', 'refs/remotes/fork/keep', base)
+      yield* write(root, 'fork.txt', 'staged\n')
+      yield* command(root, 'add', 'fork.txt')
+      yield* write(root, 'fork.txt', 'working\n')
+      const index = yield* Effect.promise(() => readFile(join(root, '.git/index')))
+      const fetchHead = yield* Effect.promise(() => readFile(join(root, '.git/FETCH_HEAD')))
+      const refs = (yield* command(root, 'show-ref')).stdout
+
+      const revisions = ReviewRevisions.make({
+        source: {
+          commit: head,
+          ref: 'refs/heads/topic',
+          remote: Option.some({ name: 'fork', destination: 'github.com:fork/repo.git' }),
+        },
+        target: { commit: base, ref: 'refs/heads/main', remote: Option.none() },
+      })
+
+      yield* Effect.gen(function* () {
+        const service = yield* BranchReview
+        expect(
+          yield* service.prepare(root, revisions, 'local-only').pipe(Effect.flip),
+        ).toBeInstanceOf(FetchRequired)
+        expect((yield* command(root, 'show-ref')).stdout).toBe(refs)
+        const review = yield* service.prepare(root, revisions, 'fetch')
+        expect(review.headCommit).toBe(head)
+        expect(yield* service.read({ root, commit: head, path: 'fork.txt' })).toBe('fork content\n')
+        expect(
+          (yield* command(root, 'for-each-ref', '--format=%(refname)', 'refs/duff')).stdout.trim(),
+        ).toBe('refs/duff/reviews/source')
+        expect(
+          (yield* command(root, 'show-ref')).stdout
+            .split('\n')
+            .filter((line) => !line.includes('refs/duff/'))
+            .join('\n'),
+        ).toBe(refs)
+
+        const moved = ReviewRevisions.make({
+          source: { ...revisions.source, commit: 'f'.repeat(40) },
+          target: revisions.target,
+        })
+
+        const failure = yield* service.prepare(root, moved, 'fetch').pipe(Effect.flip)
+        expect(failure._tag).toBe('ReviewError')
+
+        if (failure._tag === 'ReviewError') expect(failure.message).toContain('branch moved')
+        expect(yield* Effect.promise(() => readFile(join(root, '.git/index')))).toEqual(index)
+        expect(yield* Effect.promise(() => readFile(join(root, '.git/FETCH_HEAD')))).toEqual(
+          fetchHead,
+        )
+        expect(yield* Effect.promise(() => readFile(join(root, 'fork.txt'), 'utf8'))).toBe(
+          'working\n',
+        )
+        expect((yield* command(root, 'branch', '--show-current')).stdout.trim()).toBe('main')
+      }).pipe(
+        Effect.provide(
+          makeGitReviewLayer({
+            ...env,
+            GIT_SSH_COMMAND: ssh,
+            GIT_SSH_VARIANT: 'simple',
+            DUFF_SOURCE: source,
+          }),
+        ),
+      )
+    }),
+)
+
+it.effect(
+  'fails unavailable history and multiple merge bases without choosing an arbitrary base',
+  () =>
+    Effect.gen(function* () {
+      const root = yield* repository
+      yield* command(root, 'commit', '--allow-empty', '-m', 'Base')
+      const base = (yield* command(root, 'rev-parse', 'HEAD')).stdout.trim()
+      yield* command(root, 'checkout', '--orphan', 'unrelated')
+      yield* command(root, 'commit', '--allow-empty', '-m', 'Unrelated')
+      const unrelated = (yield* command(root, 'rev-parse', 'HEAD')).stdout.trim()
+      const service = yield* BranchReview
+
+      const revisions = (head: string, target: string) =>
+        ReviewRevisions.make({
+          source: { commit: head, ref: 'refs/heads/source', remote: Option.none() },
+          target: { commit: target, ref: 'refs/heads/target', remote: Option.none() },
+        })
+
+      const failure = yield* service
+        .prepare(root, revisions(unrelated, base), 'local-only')
+        .pipe(Effect.flip)
+
+      expect(failure._tag).toBe('ReviewError')
+      const tree = (yield* command(root, 'rev-parse', `${base}^{tree}`)).stdout.trim()
+      const a = (yield* command(root, 'commit-tree', tree, '-p', base, '-m', 'A')).stdout.trim()
+      const b = (yield* command(root, 'commit-tree', tree, '-p', base, '-m', 'B')).stdout.trim()
+
+      const left = (yield* command(
+        root,
+        'commit-tree',
+        tree,
+        '-p',
+        a,
+        '-p',
+        b,
+        '-m',
+        'Left',
+      )).stdout.trim()
+
+      const right = (yield* command(
+        root,
+        'commit-tree',
+        tree,
+        '-p',
+        b,
+        '-p',
+        a,
+        '-m',
+        'Right',
+      )).stdout.trim()
+
+      const ambiguous = yield* service
+        .prepare(root, revisions(left, right), 'local-only')
+        .pipe(Effect.flip)
+
+      expect(ambiguous._tag).toBe('ReviewError')
+
+      if (ambiguous._tag === 'ReviewError')
+        expect(ambiguous.message).toContain('unique common ancestor')
+
+      yield* write(root, '.git/shallow', `${left}\n`)
+
+      const shallow = yield* service
+        .prepare(root, revisions(left, base), 'local-only')
+        .pipe(Effect.flip)
+
+      expect(shallow._tag).toBe('ReviewError')
+
+      if (shallow._tag === 'ReviewError') expect(shallow.message).toContain('shallow')
+      expect(yield* Effect.promise(() => readFile(join(root, '.git/shallow'), 'utf8'))).toBe(
+        `${left}\n`,
+      )
+    }).pipe(Effect.provide(gitReviewLayer)),
+)
+
+it.effect('rejects shallow ancestry even when Git reports a unique but older merge base', () =>
+  Effect.gen(function* () {
+    const root = yield* repository
+    yield* command(root, 'commit', '--allow-empty', '-m', 'A')
+    const a = (yield* command(root, 'rev-parse', 'HEAD')).stdout.trim()
+    yield* write(root, 'target.txt', 'target only\n')
+    yield* command(root, 'add', '.')
+    yield* command(root, 'commit', '-m', 'B')
+    const b = (yield* command(root, 'rev-parse', 'HEAD')).stdout.trim()
+    yield* write(root, 'feature.txt', 'source change\n')
+    yield* command(root, 'add', '.')
+    yield* command(root, 'commit', '-m', 'C')
+    const c = (yield* command(root, 'rev-parse', 'HEAD')).stdout.trim()
+    const tree = (yield* command(root, 'rev-parse', 'HEAD^{tree}')).stdout.trim()
+
+    const source = (yield* command(
+      root,
+      'commit-tree',
+      tree,
+      '-p',
+      c,
+      '-p',
+      a,
+      '-m',
+      'S',
+    )).stdout.trim()
+
+    expect((yield* command(root, 'merge-base', '--all', source, b)).stdout.trim()).toBe(b)
+    yield* write(root, '.git/shallow', `${c}\n`)
+    expect((yield* command(root, 'merge-base', '--all', source, b)).stdout.trim()).toBe(a)
+    const service = yield* BranchReview
+
+    const failure = yield* service
+      .prepare(
+        root,
+        {
+          source: { commit: source, ref: 'refs/heads/topic', remote: Option.none() },
+          target: { commit: b, ref: 'refs/heads/main', remote: Option.none() },
+        },
+        'local-only',
+      )
+      .pipe(Effect.flip)
+
+    expect(failure._tag).toBe('ReviewError')
+
+    if (failure._tag === 'ReviewError') expect(failure.message).toContain('Shallow')
+  }).pipe(Effect.provide(gitReviewLayer)),
+)
+
+it.live('cancelling acquisition terminates its Git transport descendants', () =>
+  Effect.gen(function* () {
+    const root = yield* repository
+    yield* command(root, 'commit', '--allow-empty', '-m', 'Base')
+    const base = (yield* command(root, 'rev-parse', 'HEAD')).stdout.trim()
+    yield* command(root, 'remote', 'add', 'origin', 'git@github.com:fixture/repo.git')
+    const ssh = join(root, 'test-ssh')
+    const pidFile = join(root, 'transport.pid')
+    yield* Effect.promise(() =>
+      writeFile(ssh, '#!/bin/sh\nsleep 30 &\necho $! > "$DUFF_PID_FILE"\nwait\n'),
+    )
+    yield* Effect.promise(() => chmod(ssh, 0o700))
+    yield* Effect.gen(function* () {
+      const service = yield* BranchReview
+
+      const fiber = yield* service
+        .prepare(
+          root,
+          {
+            source: {
+              commit: 'f'.repeat(40),
+              ref: 'refs/heads/topic',
+              remote: Option.some({ name: 'origin', destination: 'github.com:fixture/repo.git' }),
+            },
+            target: { commit: base, ref: 'refs/heads/main', remote: Option.none() },
+          },
+          'fetch',
+        )
+        .pipe(Effect.forkChild)
+
+      const pid = Number(
+        yield* Effect.tryPromise(() => readFile(pidFile, 'utf8')).pipe(
+          Effect.retry({ times: 100, schedule: Schedule.spaced('10 millis') }),
+        ),
+      )
+
+      yield* Fiber.interrupt(fiber)
+      expect(
+        yield* Effect.sync(() => {
+          try {
+            process.kill(pid, 0)
+
+            return true
+          } catch {
+            return false
+          }
+        }),
+      ).toBe(false)
+    }).pipe(
+      Effect.provide(
+        makeGitReviewLayer({
+          ...env,
+          GIT_SSH_COMMAND: ssh,
+          GIT_SSH_VARIANT: 'simple',
+          DUFF_PID_FILE: pidFile,
+        }),
+      ),
+    )
   }),
 )

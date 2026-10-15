@@ -44,10 +44,10 @@ Local native testing may use the owner's approved `~/source/work/frontend` check
 
 ## S06: Open a discovered PR locally
 
-Status: proposed follow-up, not implementation authorization.
-Scope: normalize a selected PR into an existing local review; explain unavailable refs without mutating Git.
-Acceptance: correctly resolve repository and source/target revisions, including forks, or give an actionable missing-ref result.
-Any fetch or worktree acquisition requires a separate design and authorization decision.
+Status: implemented on the feature branch under D010. Delivery verification is recorded in the implementation log.
+Scope: fresh provider details, exact source/target revisions, matched fork identity, consent-gated bounded acquisition, unique merge-base comparison, native preparation/refresh/exit and existing immutable diffs/viewed progress.
+Acceptance: local objects need no permission; missing objects require explicit in-app consent. A moved fallback branch, unavailable source, absent SHA, missing history or ambiguous base fails without replacing the accepted review. Superseded work cannot publish stale results. Checkout, index, tags, FETCH_HEAD and remote-tracking branches remain unchanged.
+No worktree acquisition, provider writes, automatic refresh or credential changes are included.
 
 ## S07: Viewed progress
 

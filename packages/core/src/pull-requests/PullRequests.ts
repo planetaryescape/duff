@@ -12,13 +12,14 @@ import {
 } from 'effect'
 
 import { type GitContextSnapshot } from '../git-context/GitContext'
+import { ReviewError, ReviewRevision, ReviewRevisions } from '../review/BranchReview'
 import {
   type Authentication,
   type AuthenticationError,
   type DiscoveryError,
   type GitHostingProvider,
   InvalidContinuation,
-  type OpenPullRequest,
+  OpenPullRequest,
   ProviderIdentity,
   type PullRequestPage,
   type ProviderRepository,
@@ -83,6 +84,13 @@ class ProviderMatch {
   ) {}
 }
 
+class BoundRemote {
+  constructor(
+    readonly remote: Remote,
+    readonly repository: ProviderRepository,
+  ) {}
+}
+
 class Entry {
   #group: RepositoryGroup
   #cursor: Option.Option<Redacted.Redacted> = Option.none()
@@ -132,6 +140,22 @@ class Entry {
 
 export class GroupNotFound extends Schema.TaggedError<GroupNotFound>()('GroupNotFound', {}) {}
 
+export const PullRequestSelection = Schema.Struct({
+  provider: Schema.String,
+  repository: RepositoryIdentity,
+  id: Schema.String,
+  label: Schema.String,
+})
+
+export interface PullRequestSelection extends Schema.Schema.Type<typeof PullRequestSelection> {}
+
+export const ResolvedPullRequest = Schema.Struct({
+  pullRequest: OpenPullRequest,
+  revisions: ReviewRevisions,
+})
+
+export interface ResolvedPullRequest extends Schema.Schema.Type<typeof ResolvedPullRequest> {}
+
 /**
  * Owns continuation safety: same-group reads and connections queue, while different groups run
  * independently. ReviewSession owns action suppression and discovery-job cancellation.
@@ -144,6 +168,10 @@ export class PullRequests extends Context.Service<
     readonly connect: (
       id: GroupId,
     ) => Effect.Effect<Authentication, AuthenticationError | GroupNotFound>
+    readonly resolve: (
+      snapshot: GitContextSnapshot,
+      selection: PullRequestSelection,
+    ) => Effect.Effect<ResolvedPullRequest, DiscoveryError | ReviewError>
   }
 >()('duff/pull-requests/PullRequests') {}
 
@@ -301,6 +329,85 @@ export const makePullRequestsLayer = (providers: ReadonlyArray<GitHostingProvide
         }).pipe(entry.gate.withPermits(1))
       })
 
-      return PullRequests.of({ discover, loadMore, connect })
+      const resolve = Effect.fn('PullRequests.resolve')(function* (
+        snapshot: GitContextSnapshot,
+        selection: PullRequestSelection,
+      ) {
+        const provider = providers.find((provider) => provider.identity.id === selection.provider)
+
+        if (!provider)
+          return yield* new ReviewError({
+            operation: 'resolve PR',
+            message: 'The provider is no longer available. Refresh discovery.',
+          })
+
+        const matches = snapshot.remotes.flatMap((remote) => {
+          const repository = provider.recognizeRemote(remote)
+
+          return Option.isSome(repository) ? [new BoundRemote(remote, repository.value)] : []
+        })
+
+        const same = (left: RepositoryIdentity, right: RepositoryIdentity) =>
+          left.authority === right.authority && left.key === right.key
+
+        const target = matches.find((match) =>
+          same(match.repository.identity, selection.repository),
+        )
+
+        if (!target)
+          return yield* new ReviewError({
+            operation: 'resolve PR',
+            message:
+              'The selected PR no longer belongs to this repository context. Refresh discovery.',
+          })
+        const pullRequest = yield* target.repository.getPullRequest(selection.id)
+
+        if (
+          !same(pullRequest.target.repository, selection.repository) ||
+          pullRequest.id !== selection.id
+        )
+          return yield* new ReviewError({
+            operation: 'resolve PR',
+            message: 'Provider details do not match the selected PR.',
+          })
+
+        if (pullRequest.source._tag === 'Unavailable')
+          return yield* new ReviewError({
+            operation: 'resolve PR',
+            message:
+              'The PR source repository is unavailable. Check source access on the provider.',
+          })
+
+        const revision = Effect.fn('PullRequests.revision')(function* (
+          repository: RepositoryIdentity,
+          ref: OpenPullRequest['target']['ref'],
+        ) {
+          if (Option.isNone(ref.revision))
+            return yield* new ReviewError({
+              operation: 'resolve PR',
+              message:
+                'The provider has not supplied an exact source and target commit. Refresh later. Duff never substitutes HEAD or a merge commit.',
+            })
+          const match = matches.find((match) => same(match.repository.identity, repository))
+
+          return ReviewRevision.make({
+            commit: ref.revision.value.toLowerCase(),
+            ref: ref.name,
+            remote: match
+              ? Option.some({ name: match.remote.name, destination: match.remote.destination })
+              : Option.none(),
+          })
+        })
+
+        const source = yield* revision(pullRequest.source.repository, pullRequest.source.ref)
+        const base = yield* revision(pullRequest.target.repository, pullRequest.target.ref)
+
+        return ResolvedPullRequest.make({
+          pullRequest,
+          revisions: ReviewRevisions.make({ source, target: base }),
+        })
+      })
+
+      return PullRequests.of({ discover, loadMore, connect, resolve })
     }),
   )

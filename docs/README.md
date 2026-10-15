@@ -6,7 +6,7 @@ The plan describes future work. The log records observed delivery.
 | Record | Purpose | Status |
 | --- | --- | --- |
 | [Blueprint](blueprint/README.md) | Product, architecture, and decisions | Mixed, sections labelled |
-| [Capabilities and review session](blueprint/04-capabilities-and-review-session.md) | Current pull-request contract, grouped discovery and job ownership | Implemented; native cutover verification in progress |
+| [Capabilities and review session](blueprint/04-capabilities-and-review-session.md) | Discovery, exact-revision PR preparation and job ownership | Implemented; qualification and limits in the delivery log |
 | [Implementation plan](implementation-plan.md) | Ordered, usable slices | Current |
 | [Implementation log](implementation-log.md) | Results and verification | Historical |
 

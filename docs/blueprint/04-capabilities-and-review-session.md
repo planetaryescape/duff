@@ -1,6 +1,6 @@
 # Pull-request capability and review session
 
-Status: capability/session cutover and CLI-only Azure authentication implemented, 2026-10-15. Check, 48 application tests, rule tests and packaging pass. Installed-artifact Development Host verification includes real Azure reads and native CLI failure/Connect interactions. GitHub native sign-in and Windows CLI handling remain unverified. See the delivery log for evidence and limits.
+Status: discovery, CLI-only Azure authentication and exact-revision PR preparation implemented, 2026-10-15. Check, 59 application tests, rule tests and packaging pass. Native qualification distinguishes installed-artifact checks, real Azure reads and supplied-provider fixture captures. GitHub native sign-in and Windows process handling remain unverified. See the delivery log for evidence and limits.
 
 This chapter supersedes the [staged plugin design](plugins/00-problem.md) under [D007](02-decision-log.md#d007-job-shaped-capabilities-and-one-review-session). GitHub and Azure DevOps are built in. Bitbucket is deferred. There is no generic plugin lifecycle or Alchemy.
 
@@ -20,11 +20,12 @@ Core has no VS Code dependency. It owns provider implementations and their tests
 
 ## Transport-neutral adapter contract
 
-`GitHostingProvider` describes pure remote recognition. A recognized `ProviderRepository` exposes three jobs, with captured dependencies and no transport requirements on callers:
+`GitHostingProvider` describes pure remote recognition. A recognized `ProviderRepository` exposes four jobs, with captured dependencies and no transport requirements on callers:
 
 - `inspectAuthentication()` returns Authentication without prompting.
 - `connectAuthentication()` performs explicit connection and returns Authentication.
 - `listOpenPullRequests({ scope: "repository", cursor })` returns a normalized PullRequestPage or typed DiscoveryError.
+- `getPullRequest(id)` rereads and normalizes one selected PR, without invalidating list continuation state.
 
 The consumer-facing Effect service is PullRequests. It takes group IDs for connection and pagination and exposes progressive results; it does not expose HTTP URLs, request bodies, subprocess arguments or raw provider responses.
 
@@ -66,4 +67,14 @@ Acquisition has a 12-second timeout, caller interruption, and a combined 1 MiB o
 
 The extension subscribes to changes and sends group IDs from native rows. Refresh performs a fresh manual inspection; editor-session changes clear and reinspect. `duff.automaticDiscovery` controls background reads, not explicit Check Pull Requests.
 
-Executed deterministic tests cover the new capability/session boundaries, including paging during progressive discovery and interruption on failed connection. Native supplied-service verification exercises the real session, commands and views on gbfm: progressive groups, paging, retained Refreshing/Stale content, full error hover text and clearing PRs on repository replacement. This is not evidence of real API reads or native sign-in. See the [delivery log](../implementation-log.md#2026-10-10-core-owned-pull-requests-and-review-session). Opening PRs locally, polling, persistent caches and third-party plugin distribution remain outside this cutover.
+Executed deterministic tests cover the new capability/session boundaries, including paging during progressive discovery and interruption on failed connection. Native supplied-service verification exercises the real session, commands and views on gbfm: progressive groups, paging, retained Refreshing/Stale content, full error hover text and clearing PRs on repository replacement. This is not evidence of real API reads or native sign-in. See the [delivery log](../implementation-log.md#2026-10-10-core-owned-pull-requests-and-review-session). Polling, persistent provider caches and third-party plugin distribution remain outside this cutover.
+
+## Immutable PR preparation
+
+[PullRequests.resolve](../../packages/core/src/pull-requests/PullRequests.ts) owns provider routing and fresh metadata. GitHub pins `head.sha` and `base.sha`; Azure pins available `lastMergeSourceCommit.commitId` and `lastMergeTargetCommit.commitId`. Missing exact revisions fail, never fall back to HEAD or provider merge commits. Source and target remotes are matched independently by provider repository identity. Missing fork remotes do not prevent local-object review, but prevent acquisition until configured outside Duff.
+
+[BranchReview.prepare](../../packages/core/src/review/BranchReview.ts) checks both commit objects before comparing. Missing objects return FetchRequired under local-only permission. The native explicit fetch command shows consent, then resumes the already pinned revision, not another API read. Git remote names, destinations and branch refs are checked. Fetch allows only HTTPS/SSH, disables hooks, tags, pruning, FETCH_HEAD, remote-tracking refmaps, submodules and automatic maintenance. It writes at most `refs/duff/reviews/source` and `target`. Raw-SHA acquisition can fall back to the named branch, whose resulting commit must equal the pinned SHA. A moved branch fails with an explicit refresh instruction. Existing Git credentials/SSH are used; API tokens are never forwarded to Git. Unsupported/missing remotes and Git authentication failures give safe actionable messages.
+
+Comparison computes all common ancestors of the exact target/source commits and requires one. Unrelated or shallow history fails without global unshallow; criss-cross ambiguity fails without arbitrary selection. Diff and content reads use immutable commit IDs, with external diff/textconv and lazy fetch disabled. Git runs without a shell, strips inherited repository-redirection variables, bounds combined output to 16 MiB and time to 60 seconds. POSIX cancellation kills the process group and awaits close. Windows direct-child cleanup remains unqualified.
+
+[PullRequestReview](../../packages/core/src/review/PullRequestReview.ts) owns Preparing, AwaitingFetch, Failed and Idle activity plus the last accepted snapshot. Its FiberMap interrupts superseded work before a replacement starts. Repository changes clear accepted state and cancel preparation; stale root requests are ignored. Failure/cancel leave the accepted review intact. Refresh PR Review explicitly resolves new metadata. Exit restores a prior local comparison when it belongs to the selected repository. The native UI shows PR title/id, source/target, preparation state and existing viewed progress. Browser opening is secondary. Current-checkout file opening warns about revision differences. No polling, auto-checkout, worktree creation, provider write, credential change or review history is introduced.

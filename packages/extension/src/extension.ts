@@ -1,6 +1,7 @@
 import { makeAzureCliAuthenticationLayer } from '@duff/core/azure-cli-authentication'
 import { makeGitContextLayer } from '@duff/core/git-context'
 import { pullRequestsLayer } from '@duff/core/pull-request-providers'
+import { PullRequestReview } from '@duff/core/pull-request-review'
 import { makeGitReviewLayer } from '@duff/core/review'
 import { ReviewSession } from '@duff/core/review-session'
 import { Effect, Layer, ManagedRuntime } from 'effect'
@@ -33,8 +34,14 @@ export function activate(context: vscode.ExtensionContext) {
     Layer.provide(Layer.merge(gitContextLayer, providers)),
   )
 
+  const reviewLayer = makeGitReviewLayer(process.env)
+
+  const preparation = PullRequestReview.layer.pipe(
+    Layer.provide(Layer.merge(reviewLayer, providers)),
+  )
+
   const runtime = ManagedRuntime.make(
-    Layer.mergeAll(makeGitReviewLayer(process.env), gitContextLayer, sessionLayer).pipe(
+    Layer.mergeAll(reviewLayer, gitContextLayer, sessionLayer, preparation).pipe(
       Layer.provideMerge(observability),
     ),
   )

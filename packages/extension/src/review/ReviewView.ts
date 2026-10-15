@@ -65,6 +65,12 @@ export class ReviewView
     this.changes.fire()
   }
 
+  clear() {
+    this.review = undefined
+    this.viewed.clear()
+    this.changes.fire()
+  }
+
   getTreeItem(item: ReviewFile | ReviewFolder) {
     return item
   }

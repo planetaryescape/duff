@@ -11,6 +11,7 @@ export type Operation =
   | 'Duff.discoverProviders'
   | 'Duff.loadMoreProviders'
   | 'Duff.connectProvider'
+  | 'Duff.preparePullRequest'
 
 const resource = {
   serviceName: 'duff',
