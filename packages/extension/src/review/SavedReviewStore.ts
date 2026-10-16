@@ -61,11 +61,16 @@ export const makeSavedReviewStoreLayer = (directory: string | undefined) =>
 
           if (children.length !== 1 || !observed || !match || !dead(Number(match[1])))
             throw failure('busy')
-          // Never remove another contender's child, including during stale recovery races.
-          await fs.unlink(join(lock, observed)).catch(() => {
+
+          // The owner may have disposed normally between our first read and the death check.
+          const current = await fs.readdir(lock).catch(() => {
             throw failure('busy')
           })
-          await fs.rmdir(lock).catch(() => {
+
+          if (current.length !== 1 || current[0] !== observed) throw failure('busy')
+          // Keep this deterministic destination nonempty permanently. A delayed recoverer
+          // of the same lease must never rename a newer owner's lock over an empty target.
+          await fs.rename(lock, join(root ?? '', `.reviews-stale-${observed}`)).catch(() => {
             throw failure('busy')
           })
         }

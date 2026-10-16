@@ -327,6 +327,8 @@ export class ReviewSessions extends Context.Service<
       const leave = Effect.fn('ReviewSessions.leave')(
         function* () {
           const current = yield* load()
+
+          if (Option.isNone(current.active)) return
           yield* persist(
             SavedReviewCatalog.make({
               version: 1,

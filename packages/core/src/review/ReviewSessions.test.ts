@@ -1,14 +1,19 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 
 import { expect, it } from '@effect/vitest'
-import { Effect, Layer, Option, Schema } from 'effect'
+import { Effect, Layer, Option, Schema, Stream } from 'effect'
 
-import { PullRequestSelection, ResolvedPullRequest } from '../pull-requests/PullRequests'
+import {
+  PullRequests,
+  PullRequestSelection,
+  ResolvedPullRequest,
+} from '../pull-requests/PullRequests'
 import { BranchReview, makeGitReviewLayer, type Review } from './BranchReview'
+import { PullRequestReview } from './PullRequestReview'
 import { ReviewSessions } from './ReviewSessions'
 import { SavedReviewCatalog, SavedReviews, ReviewStorageError } from './SavedReviews'
 
@@ -81,6 +86,94 @@ const initialize = Effect.fn('Test.initialize')(function* (root: string) {
   yield* command(root, 'add', 'one', 'two')
   yield* command(root, 'commit', '-m', 'topic')
 })
+
+it.effect(
+  'local comparison clears disk selection after reset or failed restore, including restart',
+  () =>
+    Effect.gen(function* () {
+      const root = yield* fixture
+      yield* initialize(root)
+      const catalogPath = join(root, 'review-lifecycle.json')
+
+      const layer = () =>
+        PullRequestReview.layer.pipe(
+          Layer.provideMerge(ReviewSessions.layer),
+          Layer.provideMerge(makeGitReviewLayer(env)),
+          Layer.provide(
+            Layer.succeed(
+              SavedReviews,
+              SavedReviews.of({
+                owner,
+                load: () =>
+                  Effect.promise(() => readFile(catalogPath, 'utf8')).pipe(
+                    Effect.flatMap(Schema.decodeUnknownEffect(codec)),
+                    Effect.orDie,
+                  ),
+                save: (catalog) =>
+                  Schema.encodeEffect(codec)(catalog).pipe(
+                    Effect.orDie,
+                    Effect.flatMap((text) => Effect.promise(() => writeFile(catalogPath, text))),
+                  ),
+              }),
+            ),
+          ),
+          Layer.provide(
+            Layer.succeed(
+              PullRequests,
+              PullRequests.of({
+                discover: () => Stream.empty,
+                resolve: () => Effect.die('offline only'),
+                loadMore: () => Effect.die('offline only'),
+                connect: () => Effect.die('offline only'),
+              }),
+            ),
+          ),
+        )
+
+      for (const scenario of ['reset', 'failed restore']) {
+        const initial = yield* Schema.encodeEffect(codec)(empty)
+        yield* Effect.promise(() => writeFile(catalogPath, initial))
+        yield* Effect.gen(function* () {
+          const git = yield* BranchReview
+          const sessions = yield* ReviewSessions
+          const review = yield* git.compare(root, 'refs/heads/main')
+          yield* sessions.accept(selected('1'), resolved(review, '1'), review)
+        }).pipe(Effect.provide(layer()))
+
+        yield* Effect.gen(function* () {
+          const service = yield* PullRequestReview
+          yield* service.repositoryChanged(Option.some(root), Option.some(root))
+
+          if (scenario === 'failed restore') {
+            yield* Effect.promise(() => rename(join(root, '.git'), join(root, '.git-hidden')))
+            const restored = yield* Effect.result(service.restore(root))
+            expect(restored._tag).toBe('Failure')
+            yield* Effect.promise(() => rename(join(root, '.git-hidden'), join(root, '.git')))
+          } else {
+            yield* service.restore(root)
+            expect(Option.isSome((yield* service.current()).accepted)).toBe(true)
+            yield* service.repositoryChanged(Option.none(), Option.none())
+            yield* service.repositoryChanged(Option.some(root), Option.some(root))
+          }
+
+          expect((yield* service.current()).accepted).toEqual(Option.none())
+          const local = yield* (yield* BranchReview).compare(root, 'refs/heads/main')
+          expect(local.files.map((file) => file.path)).toEqual(['one', 'two'])
+          yield* service.exit()
+        }).pipe(Effect.provide(layer()))
+
+        yield* Effect.gen(function* () {
+          const service = yield* PullRequestReview
+          yield* service.repositoryChanged(Option.some(root), Option.some(root))
+          yield* service.restore(root)
+          expect((yield* service.current()).accepted).toEqual(Option.none())
+          const catalog = yield* (yield* ReviewSessions).list()
+          expect(catalog.active).toEqual(Option.none())
+          expect(catalog.sessions).toHaveLength(1)
+        }).pipe(Effect.provide(layer()))
+      }
+    }),
+)
 
 it.effect(
   'restarts offline with multiple sessions, transfers only full unchanged comparisons, and forgets only its own pins',

@@ -122,6 +122,9 @@ export function registerPullRequestReviewCommands(
       'Duff.preparePullRequest',
       Effect.gen(function* () {
         const service = yield* PullRequestReview
+        const latest = yield* service.current()
+
+        if (Option.getOrUndefined(latest.root) !== Option.getOrUndefined(current.root)) return
 
         if (!forget) {
           yield* service.resume(choice.saved.key)

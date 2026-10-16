@@ -60,6 +60,7 @@ const testLayer = (
   resolve: PullRequests['Service']['resolve'],
   prepare: BranchReview['Service']['prepare'],
   beforeSave: SavedReviews['Service']['save'] = () => Effect.void,
+  beforeLoad: () => Effect.Effect<void, ReviewStorageError> = () => Effect.void,
 ) =>
   PullRequestReview.layer.pipe(
     Layer.provideMerge(ReviewSessions.layer),
@@ -76,7 +77,7 @@ const testLayer = (
 
           return SavedReviews.of({
             owner: 'a'.repeat(64),
-            load: () => Effect.succeed(catalog),
+            load: () => beforeLoad().pipe(Effect.as(catalog)),
             save: (next) =>
               beforeSave(next).pipe(
                 Effect.andThen(
@@ -291,6 +292,61 @@ it.effect('leaving without an accepted PR does not require writable session stor
         () => Effect.die('no provider access needed'),
         () => Effect.die('no Git preparation needed'),
         () => Effect.fail(new ReviewStorageError({ reason: 'unavailable' })),
+        () => Effect.fail(new ReviewStorageError({ reason: 'unavailable' })),
+      ),
+    ),
+  ),
+)
+
+it.effect(
+  'a saved resume for a superseded repository cannot change the view or durable selection',
+  () =>
+    Effect.gen(function* () {
+      const service = yield* PullRequestReview
+      const sessions = yield* ReviewSessions
+      const saved = yield* sessions.accept(selection('b'), resolved('b'), review('b'.repeat(40)))
+      yield* sessions.leave()
+      yield* service.repositoryChanged(Option.some('/other'), Option.some('/other'))
+      yield* service.resume(saved.key)
+      expect((yield* service.current()).root).toEqual(Option.some('/other'))
+      expect((yield* service.current()).accepted).toEqual(Option.none())
+      expect((yield* sessions.list()).active).toEqual(Option.none())
+      yield* service.repositoryChanged(Option.some('/fixture'), Option.some('/fixture'))
+      yield* service.resume(saved.key)
+      expect(Option.map((yield* service.current()).accepted, (value) => value.saved.key)).toEqual(
+        Option.some(saved.key),
+      )
+      expect((yield* sessions.list()).active).toEqual(Option.some(saved.key))
+    }).pipe(
+      Effect.provide(
+        testLayer(
+          () => Effect.die('resume must not resolve a provider'),
+          () => Effect.die('resume must not prepare new revisions'),
+        ),
+      ),
+    ),
+)
+
+it.effect('exit clears durable selection after repository reset without an accepted view', () =>
+  Effect.gen(function* () {
+    const service = yield* PullRequestReview
+    const sessions = yield* ReviewSessions
+    const saved = yield* sessions.accept(selection('b'), resolved('b'), review('b'.repeat(40)))
+    yield* service.repositoryChanged(Option.some('/fixture'), Option.some('/fixture'))
+    yield* service.resume(saved.key)
+    yield* service.repositoryChanged(Option.none(), Option.none())
+    yield* service.repositoryChanged(Option.some('/fixture'), Option.some('/fixture'))
+    expect((yield* service.current()).accepted).toEqual(Option.none())
+    yield* service.exit()
+    expect((yield* sessions.list()).active).toEqual(Option.none())
+    expect((yield* sessions.list()).sessions).toHaveLength(1)
+    yield* service.restore('/fixture')
+    expect((yield* service.current()).accepted).toEqual(Option.none())
+  }).pipe(
+    Effect.provide(
+      testLayer(
+        () => Effect.die('exit must not resolve a provider'),
+        () => Effect.die('exit must not prepare revisions'),
       ),
     ),
   ),

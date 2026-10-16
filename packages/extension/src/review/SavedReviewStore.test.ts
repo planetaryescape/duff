@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, rm, mkdir, writeFile, readdir } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, mkdir, writeFile, readdir, rename } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -248,18 +248,24 @@ it.effect('an empty ambiguous lease fails busy and is never removed', () =>
   }),
 )
 
-it.effect('recovers a lease left by a crashed child process', () =>
-  Effect.gen(function* () {
-    const path = yield* directory
+it.effect(
+  'crash recovery retains a retirement fence against delayed contenders and survives restart',
+  () =>
+    Effect.gen(function* () {
+      const path = yield* directory
+      const initial = yield* openStore(path)
+      yield* initial.service.save(empty)
+      yield* initial.close
+      const before = yield* Effect.promise(() => readFile(join(path, 'reviews.json'), 'utf8'))
 
-    yield* Effect.promise(
-      () =>
-        new Promise<void>((resolve, reject) => {
-          const child = spawn(
-            'bun',
-            [
-              '--eval',
-              `
+      yield* Effect.promise(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            const child = spawn(
+              'bun',
+              [
+                '--eval',
+                `
       import { ManagedRuntime, Effect } from 'effect';
       import { SavedReviews } from '@duff/core/saved-reviews';
       import { makeSavedReviewStoreLayer } from './src/review/SavedReviewStore';
@@ -267,21 +273,60 @@ it.effect('recovers a lease left by a crashed child process', () =>
       await runtime.runPromise(Effect.gen(function* () { yield* (yield* SavedReviews).load() }));
       process.kill(process.pid, 'SIGKILL');
     `,
-            ],
-            { cwd: join(process.cwd(), 'packages/extension'), stdio: 'ignore' },
-          )
+              ],
+              { cwd: join(process.cwd(), 'packages/extension'), stdio: 'ignore' },
+            )
 
-          child.once('error', reject)
-          child.once('exit', (_code, signal) =>
-            signal === 'SIGKILL'
-              ? resolve()
-              : reject(new Error('Child did not reach acquired lease')),
-          )
-        }),
-    )
-    const store = yield* openStore(path)
+            child.once('error', reject)
+            child.once('exit', (_code, signal) =>
+              signal === 'SIGKILL'
+                ? resolve()
+                : reject(new Error('Child did not reach acquired lease')),
+            )
+          }),
+      )
+      const observed = yield* Effect.promise(() => readdir(join(path, 'reviews.lock')))
+      expect(observed).toHaveLength(1)
+      const contenders = yield* Effect.all(Array.from({ length: 8 }, () => openStore(path)))
 
-    yield* store.service.save(empty)
-    expect(yield* store.service.load()).toEqual(empty)
-  }),
+      const results = yield* Effect.all(
+        contenders.map((store) => Effect.result(store.service.load())),
+        { concurrency: 8 },
+      )
+
+      expect(results.filter((result) => result._tag === 'Success')).toHaveLength(1)
+      expect(results.filter((result) => result._tag === 'Failure')).toHaveLength(7)
+
+      for (const result of results) {
+        if (result._tag === 'Failure') expect(result.failure.reason).toBe('busy')
+      }
+
+      const retired = join(path, `.reviews-stale-${observed[0]}`)
+      expect(yield* Effect.promise(() => readdir(retired))).toEqual(observed)
+
+      // A contender paused after observing the dead lease must not move its successor.
+      const live = yield* Effect.promise(() => readdir(join(path, 'reviews.lock')))
+
+      const delayed = yield* Effect.result(
+        Effect.tryPromise(() => rename(join(path, 'reviews.lock'), retired)),
+      )
+
+      expect(delayed._tag).toBe('Failure')
+      expect(yield* Effect.promise(() => readdir(join(path, 'reviews.lock')))).toEqual(live)
+
+      for (const store of contenders) yield* store.close
+
+      // This is the disk state after death immediately following atomic retirement:
+      // a nonempty retired lease, with no published lease and the original catalog.
+      expect(yield* Effect.promise(() => readdir(retired))).toEqual(observed)
+
+      for (let restart = 0; restart < 2; restart++) {
+        const store = yield* openStore(path)
+        expect(yield* store.service.load()).toEqual(empty)
+        expect(yield* Effect.promise(() => readFile(join(path, 'reviews.json'), 'utf8'))).toBe(
+          before,
+        )
+        yield* store.close
+      }
+    }),
 )
