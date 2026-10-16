@@ -5,6 +5,8 @@ Source: [planetaryescape/duff](https://github.com/planetaryescape/duff).
 
 ## Run in development
 
+Requires VS Code/VSCodium 1.123+ (Node 24.15 in the extension host). The Git dependencies require Node 24.11+; a separately installed Node does not upgrade the editor's runtime.
+
 1. Run `bun install`.
 2. Open this repository in VS Code.
 3. Press F5 and select **Run Extension**. Bun watches and rebuilds the bundle in a background task.
@@ -51,7 +53,7 @@ The local pre-commit gate runs all three commands. To enable it in a fresh clone
 git config --local core.hooksPath .githooks
 ```
 
-Effect and its test integration are pinned to stable 4.0.2. There is no Alchemy in this repository.
+Effect, its Node platform and test integration are pinned to stable 4.0.5. Local Git uses `@effected/git` for matching repository probes and `@effected/commands` for bounded custom commands. Duff retains exact-revision validation, configuration provenance and restricted fetch policy. There is no Alchemy in this repository.
 
 ## Git context and pull requests
 
