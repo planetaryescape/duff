@@ -99,6 +99,32 @@ it.effect('handles detached HEAD and identical branches without inventing change
   }).pipe(Effect.provide(gitReviewLayer)),
 )
 
+it.effect('reads UTF-8 snapshots up to the capture budget and rejects larger content safely', () =>
+  Effect.gen(function* () {
+    const root = yield* repository
+    const content = 'é'.repeat(8 * 1024 * 1024)
+    yield* write(root, 'large.txt', content)
+    yield* command(root, 'add', '.')
+    yield* command(root, 'commit', '-m', 'At capture limit')
+    const atLimit = (yield* command(root, 'rev-parse', 'HEAD')).stdout.trim()
+    const service = yield* BranchReview
+    expect(yield* service.read({ root, commit: atLimit, path: 'large.txt' })).toBe(content)
+
+    yield* write(root, 'large.txt', `${content}x`)
+    yield* command(root, 'commit', '-am', 'Above capture limit')
+    const aboveLimit = (yield* command(root, 'rev-parse', 'HEAD')).stdout.trim()
+
+    const failure = yield* service
+      .read({ root, commit: aboveLimit, path: 'large.txt' })
+      .pipe(Effect.flip)
+
+    expect(failure._tag).toBe('ReviewError')
+    expect(failure.operation).toBe('show')
+    expect(failure.message).not.toContain('large.txt')
+    expect(failure.message).not.toContain('é')
+  }).pipe(Effect.provide(gitReviewLayer)),
+)
+
 it.effect('fails a missing base branch rather than returning an empty review', () =>
   Effect.gen(function* () {
     const root = yield* repository

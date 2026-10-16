@@ -10,7 +10,7 @@
     "directory": "packages/extension"
   },
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.123.0"
   },
   "categories": ["Other"],
   "activationEvents": ["onView:duff.files"],
@@ -253,6 +253,6 @@
   },
   "dependencies": {
     "@duff/core": "workspace:*",
-    "effect": "4.0.2"
+    "effect": "4.0.5"
   }
 }
