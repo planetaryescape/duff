@@ -55,3 +55,10 @@ Status: implemented and verified locally. Depends on D009.
 Scope: explicit mark/unmark actions on native file rows and the active immutable diff; accessible viewed indicators, overall count and one current-snapshot workspace record.
 Acceptance: no automatic marking; unchanged refresh, layouts and reload retain matching marks; exact root/base/head/path isolation; added/deleted/renamed files and either diff focus work; stale tabs/items and unrelated editors cannot mark another snapshot.
 Evidence: [2026-10-15 viewed progress](implementation-log.md#2026-10-15-explicit-viewed-progress). No provider writes, Git mutation, history or auto-advance.
+
+## S08: Persistent PR review sessions
+
+Status: implemented on the feature branch under D011; not merged. See the [persistent session contract](blueprint/04-capabilities-and-review-session.md#persistent-pr-review-sessions).
+Scope: multiple workspace-local PR sessions, offline exact-snapshot resume, automatic last-active/diff restoration in a single-folder workspace, durable viewed marks, unchanged full-comparison transfer, native Resume/Forget and safe Git retention.
+Acceptance: switching PRs and reopening preserves separate progress; Exit stays inactive after restart; Update retains only unchanged comparisons; Forget releases only that store/session's pins after durable deletion. Save/preparation failures preserve the prior accepted review, and stale tabs cannot mark another comparison.
+Evidence: [persistent session delivery](implementation-log.md#2026-10-15-persistent-pr-review-sessions). No expiry, cross-device sync, revision history, provider writes, implicit acquisition or checkout changes. Multi-root automatic selection and moved-workspace migration remain outside this slice.

@@ -4,6 +4,7 @@ import { pullRequestsLayer } from '@duff/core/pull-request-providers'
 import { PullRequestReview } from '@duff/core/pull-request-review'
 import { makeGitReviewLayer } from '@duff/core/review'
 import { ReviewSession } from '@duff/core/review-session'
+import { ReviewSessions } from '@duff/core/saved-review-sessions'
 import { Effect, Layer, ManagedRuntime } from 'effect'
 import { FetchHttpClient } from 'effect/http'
 import * as vscode from 'vscode'
@@ -12,6 +13,7 @@ import { registerGitContextCommands } from './git-context/GitContextCommands'
 import { authenticationLayer } from './pull-requests/ProviderAuthentication'
 import { registerPullRequestCommands } from './pull-requests/PullRequestCommands'
 import { registerReviewCommands } from './review/ReviewCommands'
+import { makeSavedReviewStoreLayer } from './review/SavedReviewStore'
 import { observabilityLayer } from './telemetry/Telemetry'
 
 let disposeRuntime: (() => Promise<void>) | undefined
@@ -36,12 +38,16 @@ export function activate(context: vscode.ExtensionContext) {
 
   const reviewLayer = makeGitReviewLayer(process.env)
 
+  const savedSessions = ReviewSessions.layer.pipe(
+    Layer.provide(Layer.merge(reviewLayer, makeSavedReviewStoreLayer(context.storageUri?.fsPath))),
+  )
+
   const preparation = PullRequestReview.layer.pipe(
-    Layer.provide(Layer.merge(reviewLayer, providers)),
+    Layer.provide(Layer.mergeAll(reviewLayer, providers, savedSessions)),
   )
 
   const runtime = ManagedRuntime.make(
-    Layer.mergeAll(reviewLayer, gitContextLayer, sessionLayer, preparation).pipe(
+    Layer.mergeAll(reviewLayer, gitContextLayer, sessionLayer, preparation, savedSessions).pipe(
       Layer.provideMerge(observability),
     ),
   )
