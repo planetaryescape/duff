@@ -3,6 +3,24 @@
 Review committed changes on your current Git branch inside VS Code.
 Source: [planetaryescape/duff](https://github.com/planetaryescape/duff).
 
+## Install the latest release
+
+With [GitHub CLI](https://cli.github.com) signed in (`gh auth login`) and your
+editor CLI on PATH, run:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/planetaryescape/duff/main/scripts/install.sh -o /tmp/duff-install.sh
+bash /tmp/duff-install.sh
+```
+
+The script downloads the latest published release, installs its VSIX, and removes
+the download. It prefers `code`, then `codium`, then `code-insiders`; pass an editor
+CLI explicitly, for example `bash /tmp/duff-install.sh codium`. Reload existing
+editor windows afterward. No source checkout, Bun, or Node is needed. Until the
+first release is published, there is no release VSIX to install. macOS and Linux
+are supported; on Windows, download the VSIX from GitHub Releases and use
+**Extensions: Install from VSIX…**.
+
 ## Run in development
 
 1. Run `bun install`.

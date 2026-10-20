@@ -34,9 +34,14 @@ Breaking changes must still explain what users need to do. Choose the move to
    builds a self-contained `duff-X.Y.Z.vsix`, checks the tag/version match, uploads
    it, and publishes the draft. If packaging fails, rerun the failed jobs; the
    release stays a draft until the upload succeeds.
-4. Download the VSIX from GitHub Releases and install it with
-   `code --install-extension /path/to/duff-X.Y.Z.vsix --force` (or `codium`), then
-   reload the editor window. There is no Marketplace or Open VSX publishing.
+4. Run `bash scripts/install.sh` from a checkout, or follow the
+   [standalone installer instructions](../README.md#install-the-latest-release).
+   The installer uses GitHub CLI to download the latest published release (not a
+   draft or prerelease) and installs its VSIX with `code`, `codium`, or
+   `code-insiders`. Pass an editor CLI path to choose explicitly. Alternatively,
+   install a downloaded VSIX with
+   `code --install-extension /path/to/duff-X.Y.Z.vsix --force`, then reload the
+   editor window. There is no Marketplace or Open VSX publishing.
 
 The root `simple` strategy updates the extension manifest through a targeted JSON
 extra-file update. It does not version the root workspace or other packages.
