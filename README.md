@@ -53,6 +53,13 @@ git config --local core.hooksPath .githooks
 
 Effect and its test integration are pinned to stable 4.0.2. There is no Alchemy in this repository.
 
+## Releases
+
+Duff uses release-please to propose one extension version and changelog from
+Conventional Commits. Merging the release PR builds and attaches a versioned VSIX
+to GitHub Releases; it does not publish to an extension marketplace. See the
+[version policy, release flow, and GitHub setup](docs/releases.md).
+
 ## Git context and pull requests
 
 Duff inspects local Git identity and safe credential configuration before discovering open PRs. Git helpers are never executed. Configured Git identity and provider API authentication are separate.
