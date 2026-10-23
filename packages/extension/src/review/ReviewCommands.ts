@@ -62,6 +62,80 @@ export function registerReviewCommands(
     return progress?.activeFile(original.value, modified.value)
   }
 
+  const openDiff = async (item: ReviewFile) => {
+    const { review: current, change } = item
+    const [base, head] = fileSnapshots(current, change)
+    await vscode.commands.executeCommand(
+      'vscode.diff',
+      snapshotUri(base),
+      snapshotUri(head),
+      `${change.path}: ${current.baseCommit.slice(0, 8)} ↔ ${current.headCommit.slice(0, 8)}`,
+    )
+  }
+
+  // The native diff editor moves its modified-side cursor between changes, whichever side has focus.
+  // Diff sides report no view column, so the snapshot URI identifies the editor.
+  const modifiedEditor = () => {
+    const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input
+
+    if (!(input instanceof vscode.TabInputTextDiff)) return
+
+    return vscode.window.visibleTextEditors.find(
+      (editor) => editor.document.uri.toString() === input.modified.toString(),
+    )
+  }
+
+  let navigating = false
+
+  const goToChange = async (direction: 'next' | 'previous') => {
+    const file = activeFile()
+    const editor = modifiedEditor()
+
+    if (navigating || !file || !editor) return
+    navigating = true
+
+    try {
+      const before = editor.selection
+      await vscode.commands.executeCommand(`workbench.action.compareEditor.${direction}Change`)
+      const line = editor.selection.active.line
+
+      // The native command wraps around within the file; not moving forward means this file is done.
+      if (direction === 'next' ? line > before.active.line : line < before.active.line) return
+      const files = provider.files()
+      const index = files.findIndex((item) => item.change.path === file.path)
+      const target = files[direction === 'next' ? index + 1 : index - 1]
+
+      if (!target) {
+        editor.selection = before
+        editor.revealRange(before, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
+        vscode.window.setStatusBarMessage(
+          `Duff: ${direction === 'next' ? 'Last' : 'First'} change in this review`,
+          3000,
+        )
+
+        return
+      }
+
+      await openDiff(target)
+
+      if (view.visible) await view.reveal(target, { select: true, focus: false })
+      const opened = modifiedEditor()
+
+      if (!opened) return
+
+      // From the last line the native command lands on the first change; from the first line, on the last.
+      const position =
+        direction === 'next'
+          ? opened.document.lineAt(opened.document.lineCount - 1).range.end
+          : new vscode.Position(0, 0)
+
+      opened.selection = new vscode.Selection(position, position)
+      await vscode.commands.executeCommand(`workbench.action.compareEditor.${direction}Change`)
+    } finally {
+      navigating = false
+    }
+  }
+
   const updateActive = async () => {
     const file = activeFile()
     const state = file ? (progress?.isViewed(file.path) ? 'viewed' : 'unviewed') : undefined
@@ -244,16 +318,10 @@ export function registerReviewCommands(
       }
     }),
     vscode.commands.registerCommand('duff.openDiff', async (item: unknown) => {
-      if (!(item instanceof ReviewFile)) return
-      const { review: current, change } = item
-      const [base, head] = fileSnapshots(current, change)
-      await vscode.commands.executeCommand(
-        'vscode.diff',
-        snapshotUri(base),
-        snapshotUri(head),
-        `${change.path}: ${current.baseCommit.slice(0, 8)} ↔ ${current.headCommit.slice(0, 8)}`,
-      )
+      if (item instanceof ReviewFile) await openDiff(item)
     }),
+    vscode.commands.registerCommand('duff.nextChange', () => goToChange('next')),
+    vscode.commands.registerCommand('duff.previousChange', () => goToChange('previous')),
     vscode.commands.registerCommand('duff.openFile', async (item: unknown) => {
       try {
         let root: string

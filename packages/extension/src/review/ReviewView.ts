@@ -106,6 +106,20 @@ export class ReviewView
     ]
   }
 
+  getParent(item: ReviewFile | ReviewFolder) {
+    const path = item instanceof ReviewFile ? item.change.path : item.path
+    const separator = path.lastIndexOf('/')
+
+    if (this.mode === 'tree' && separator > 0) return new ReviewFolder(path.slice(0, separator))
+  }
+
+  /** Changed files in the order the view displays them. */
+  files(parent?: ReviewFolder): ReviewFile[] {
+    return this.getChildren(parent).flatMap((item) =>
+      item instanceof ReviewFile ? [item] : this.files(item),
+    )
+  }
+
   dispose() {
     this.changes.dispose()
   }

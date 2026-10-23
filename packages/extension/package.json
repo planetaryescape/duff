@@ -74,6 +74,8 @@
         "icon": "$(go-to-file)",
         "category": "Duff"
       },
+      { "command": "duff.nextChange", "title": "Go to Next Change in Review", "category": "Duff" },
+      { "command": "duff.previousChange", "title": "Go to Previous Change in Review", "category": "Duff" },
       {
         "command": "duff.markViewed",
         "title": "Mark as Viewed",
@@ -86,6 +88,10 @@
         "icon": "$(discard)",
         "category": "Duff"
       }
+    ],
+    "keybindings": [
+      { "command": "duff.nextChange", "key": "alt+f5", "when": "textCompareEditorActive && duff.activeFileState" },
+      { "command": "duff.previousChange", "key": "shift+alt+f5", "when": "textCompareEditorActive && duff.activeFileState" }
     ],
     "viewsContainers": {
       "activitybar": [{ "id": "duff", "title": "Duff Review", "icon": "resources/review.svg" }]
@@ -201,6 +207,8 @@
         { "command": "duff.fetchReviewRevisions", "when": "duff.prPreparation == AwaitingFetch" },
         { "command": "duff.cancelPullRequestReview", "when": "duff.prPreparation == Preparing || duff.prPreparation == AwaitingFetch" },
         { "command": "duff.refresh", "when": "!duff.prReview && duff.prPreparation != Preparing && duff.prPreparation != AwaitingFetch" },
+        { "command": "duff.nextChange", "when": "duff.activeFileState" },
+        { "command": "duff.previousChange", "when": "duff.activeFileState" },
         {
           "command": "duff.markViewed",
           "when": "duff.activeFileState == unviewed"
