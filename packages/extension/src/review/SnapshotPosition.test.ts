@@ -15,4 +15,11 @@ it('maps unchanged and uniquely shifted lines without guessing changed or duplic
   expect(workspaceLine(snapshot, snapshot.replaceAll('\n', '\r\n'), 2)).toBe(2)
   expect(workspaceLine('same\nsame', 'same\nsame', 1)).toBe(1)
   expect(workspaceLine(snapshot, '', 1)).toBeUndefined()
+
+  const repeated =
+    'function removed() {\n  return product.name\n}\nfunction kept() {\n  return product.name\n}'
+
+  const remaining = 'function kept() {\n  return product.name\n}'
+  expect(workspaceLine(repeated, remaining, 1)).toBeUndefined()
+  expect(workspaceLine(repeated, remaining, 4)).toBeUndefined()
 })

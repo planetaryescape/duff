@@ -10,6 +10,8 @@ export function workspaceLine(
   if (text === undefined) return undefined
 
   if (snapshot === workspace) return line
+
+  if (source.filter((candidate) => candidate === text).length !== 1) return undefined
   const lines = workspace.split(/\r?\n/)
   const matches = lines.flatMap((candidate, index) => (candidate === text ? [index] : []))
 
