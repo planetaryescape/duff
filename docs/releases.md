@@ -22,7 +22,9 @@ Breaking changes must still explain what users need to do. Choose the move to
 ## Release flow
 
 1. Every PR and `main` push runs locked installation, checks, tests, and VSIX
-   packaging on Node 22.18 and the Bun version pinned in the root manifest.
+   packaging on Node 24.15.0 and the Bun version pinned in the root manifest.
+   Release packaging uses the same Node version, matching the minimum supported
+   editor runtime and satisfying the Git dependencies' Node 24.11+ requirement.
 2. After a successful `main` push, release-please opens or updates a release PR
    with the next extension version and root `CHANGELOG.md`. Changes anywhere in
    the repo contribute to this single release. The initial history boundary is
