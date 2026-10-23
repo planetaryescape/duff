@@ -3,6 +3,24 @@
 Review committed changes on your current Git branch inside VS Code.
 Source: [planetaryescape/duff](https://github.com/planetaryescape/duff).
 
+## Install the latest release
+
+With [GitHub CLI](https://cli.github.com) signed in (`gh auth login`) and your
+editor CLI on PATH, run:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/planetaryescape/duff/main/scripts/install.sh -o /tmp/duff-install.sh
+bash /tmp/duff-install.sh
+```
+
+The script downloads the latest published release, installs its VSIX, and removes
+the download. It prefers `code`, then `codium`, then `code-insiders`; pass an editor
+CLI explicitly, for example `bash /tmp/duff-install.sh codium`. Reload existing
+editor windows afterward. No source checkout, Bun, or Node is needed. Until the
+first release is published, there is no release VSIX to install. macOS and Linux
+are supported; on Windows, download the VSIX from GitHub Releases and use
+**Extensions: Install from VSIX…**.
+
 ## Run in development
 
 1. Run `bun install`.
@@ -53,6 +71,13 @@ git config --local core.hooksPath .githooks
 
 Effect and its test integration are pinned to stable 4.0.2. There is no Alchemy in this repository.
 
+## Releases
+
+Duff uses release-please to propose one extension version and changelog from
+Conventional Commits. Merging the release PR builds and attaches a versioned VSIX
+to GitHub Releases; it does not publish to an extension marketplace. See the
+[version policy, release flow, and GitHub setup](docs/releases.md).
+
 ## Git context and pull requests
 
 Duff inspects local Git identity and safe credential configuration before discovering open PRs. Git helpers are never executed. Configured Git identity and provider API authentication are separate.
@@ -61,7 +86,7 @@ The built-in GitHub and Azure DevOps adapters share one job-shaped contract and 
 
 Duff rereads the selected PR's details and pins the exact source and target commit IDs. It compares their unique common ancestor to the source commit, never your checkout's HEAD or a synthetic provider merge commit. Forks are matched by repository identity, not branch name. Available local objects need no fetch permission. If objects are missing, **Fetch PR Revisions…** asks before downloading through an existing matched Git remote. It uses your Git credentials, not the provider API token. Without a matching source remote, add one outside Duff or obtain the objects yourself, refresh Git context, and retry.
 
-An approved fetch updates only two bounded acquisition refs under `refs/duff/reviews/`, without tags, FETCH_HEAD, remote-tracking updates, submodule recursion or checkout changes. Accepting a saved PR review also creates session retention refs, described below. If a fallback branch moved from the pinned SHA, preparation fails rather than silently changing the snapshot. Missing/shallow history and ambiguous common ancestors fail explicitly; Duff does not unshallow repositories. **Cancel PR Preparation** and failures retain the prior review. **Refresh PR Review** explicitly rereads and prepares a new snapshot; **Exit PR Review** restores the previous local comparison when available. **Open Workspace File** warns that the current checkout can differ from the reviewed revision.
+An approved fetch updates only two bounded acquisition refs under `refs/duff/reviews/`, without tags, FETCH_HEAD, remote-tracking updates, submodule recursion or checkout changes. Accepting a saved PR review also creates session retention refs, described below. If a fallback branch moved from the pinned SHA, preparation fails rather than silently changing the snapshot. Missing/shallow history and ambiguous common ancestors fail explicitly; Duff does not unshallow repositories. **Cancel PR Preparation** and failures retain the prior review. **Refresh PR Review** explicitly rereads and prepares a new snapshot; **Exit PR Review** restores the previous local comparison when available. **Open Workspace File** opens the current checkout directly, without confirmation; its content can differ from the reviewed revision.
 
 ### Saved PR reviews
 
