@@ -74,35 +74,65 @@ export function registerReviewCommands(
   }
 
   // The native diff editor moves its modified-side cursor between changes, whichever side has focus.
-  // Diff sides report no view column, so the snapshot URI identifies the editor.
-  const modifiedEditor = () => {
-    const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input
+  // Diff sides have no view column; duplicate snapshot URIs need the active editor, not the first match.
+  const modifiedEditor = async () => {
+    const tab = vscode.window.tabGroups.activeTabGroup.activeTab
+    const input = tab?.input
 
     if (!(input instanceof vscode.TabInputTextDiff)) return
+    const active = vscode.window.activeTextEditor
 
-    return vscode.window.visibleTextEditors.find(
+    const matches = vscode.window.visibleTextEditors.filter(
       (editor) => editor.document.uri.toString() === input.modified.toString(),
     )
+
+    if (active && matches.includes(active)) return active
+
+    if (matches.length < 2) return matches[0]
+
+    await vscode.commands.executeCommand('workbench.action.compareEditor.focusPrimarySide')
+
+    if (vscode.window.tabGroups.activeTabGroup.activeTab !== tab) return
+    const modified = vscode.window.activeTextEditor
+
+    if (active?.document.uri.toString() === input.original.toString())
+      await vscode.commands.executeCommand('workbench.action.compareEditor.focusSecondarySide')
+
+    if (
+      vscode.window.tabGroups.activeTabGroup.activeTab === tab &&
+      modified &&
+      matches.includes(modified)
+    )
+      return modified
   }
 
   let navigating = false
 
   const goToChange = async (direction: 'next' | 'previous') => {
     const file = activeFile()
-    const editor = modifiedEditor()
+    const current = review
+    const tab = vscode.window.tabGroups.activeTabGroup.activeTab
 
-    if (navigating || !file || !editor) return
+    if (navigating || !file || !current || !tab) return
     navigating = true
 
     try {
+      const editor = await modifiedEditor()
+
+      if (!editor || review !== current || vscode.window.tabGroups.activeTabGroup.activeTab !== tab)
+        return
       const before = editor.selection
       await vscode.commands.executeCommand(`workbench.action.compareEditor.${direction}Change`)
+
+      if (review !== current || vscode.window.tabGroups.activeTabGroup.activeTab !== tab) return
       const line = editor.selection.active.line
 
       // The native command wraps around within the file; not moving forward means this file is done.
       if (direction === 'next' ? line > before.active.line : line < before.active.line) return
       const files = provider.files()
       const index = files.findIndex((item) => item.change.path === file.path)
+
+      if (index < 0) return
       const target = files[direction === 'next' ? index + 1 : index - 1]
 
       if (!target) {
@@ -118,10 +148,21 @@ export function registerReviewCommands(
 
       await openDiff(target)
 
-      if (view.visible) await view.reveal(target, { select: true, focus: false })
-      const opened = modifiedEditor()
+      if (review !== current || activeFile()?.path !== target.change.path) return
+      const openedTab = vscode.window.tabGroups.activeTabGroup.activeTab
 
-      if (!opened) return
+      if (view.visible) await view.reveal(target, { select: true, focus: false })
+
+      if (review !== current || vscode.window.tabGroups.activeTabGroup.activeTab !== openedTab)
+        return
+      const opened = await modifiedEditor()
+
+      if (
+        !opened ||
+        review !== current ||
+        vscode.window.tabGroups.activeTabGroup.activeTab !== openedTab
+      )
+        return
 
       // From the last line the native command lands on the first change; from the first line, on the last.
       const position =
