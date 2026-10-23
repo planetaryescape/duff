@@ -14,7 +14,8 @@ import { registerPullRequestReviewCommands } from '../pull-requests/PullRequestR
 import { providerError } from '../pull-requests/PullRequestView'
 import { chooseDirectory } from '../Repository'
 import { observeOperation } from '../telemetry/Telemetry'
-import { ReviewFile, ReviewView, snapshotUri } from './ReviewView'
+import { ReviewFile, ReviewFolder, ReviewView, snapshotUri } from './ReviewView'
+import { registerSnapshotNavigation } from './SnapshotNavigation'
 
 class BranchChoice implements vscode.QuickPickItem {
   readonly label: string
@@ -37,7 +38,12 @@ export function registerReviewCommands(
 ) {
   const savedLayout = context.workspaceState.get<unknown>('reviewLayout')
   const provider = new ReviewView(savedLayout === 'tree' ? 'tree' : 'list')
-  const view = vscode.window.createTreeView('duff.files', { treeDataProvider: provider })
+
+  const view = vscode.window.createTreeView('duff.files', {
+    treeDataProvider: provider,
+    manageCheckboxStateManually: true,
+  })
+
   let review: Review | undefined
   let progress: ReviewProgress | undefined
   let localReview: Review | undefined
@@ -130,22 +136,40 @@ export function registerReviewCommands(
 
   const mark = async (item: unknown, viewed: boolean) => {
     if (!progress) return
-    const path = item instanceof ReviewFile ? item.change.path : activeFile()?.path
-    const target = item instanceof ReviewFile ? item.review : review
+
+    const path =
+      item instanceof ReviewFolder
+        ? item.path
+        : item instanceof ReviewFile
+          ? item.change.path
+          : activeFile()?.path
+
+    const target = item instanceof ReviewFile || item instanceof ReviewFolder ? item.review : review
 
     if (!target || !path) return
 
     if (prepared) {
+      const paths =
+        item instanceof ReviewFolder
+          ? target.files.filter((file) => file.path.startsWith(`${path}/`)).map((file) => file.path)
+          : [path]
+
       await runOperation(
         runtime,
         'Duff.preparePullRequest',
-        PullRequestReview.use((service) => service.mark(target, path, viewed)),
+        PullRequestReview.use((service) => service.mark(target, paths, viewed)),
+        renderProgress,
       )
 
       return
     }
 
-    if (!progress.setViewed(target, path, viewed)) return
+    const changed =
+      item instanceof ReviewFolder
+        ? progress.setFolderViewed(target, path, viewed)
+        : progress.setViewed(target, path, viewed)
+
+    if (!changed) return
     renderProgress()
     await context.workspaceState.update('viewedFiles', progress.saved())
     await updateActive()
@@ -232,6 +256,7 @@ export function registerReviewCommands(
               snapshotUri(base),
               snapshotUri(head),
               `${change.path}: ${accepted.review.baseCommit.slice(0, 8)} ↔ ${accepted.review.headCommit.slice(0, 8)}`,
+              { preview: false, preserveFocus: true },
             )
           }
         }
@@ -265,10 +290,18 @@ export function registerReviewCommands(
   }
 
   registerPullRequestReviewCommands(context, runtime, renderPreparation)
+  registerSnapshotNavigation(context)
 
   context.subscriptions.push(
     provider,
     view,
+    view.onDidChangeCheckboxState((event) =>
+      runtime.runFork(
+        Effect.forEach(event.items, ([item, state]) =>
+          Effect.promise(() => mark(item, state === vscode.TreeItemCheckboxState.Checked)),
+        ),
+      ),
+    ),
     vscode.window.tabGroups.onDidChangeTabs(() => runtime.runFork(Effect.promise(updateActive))),
     vscode.window.tabGroups.onDidChangeTabGroups(() =>
       runtime.runFork(Effect.promise(updateActive)),
@@ -276,6 +309,12 @@ export function registerReviewCommands(
     vscode.window.onDidChangeActiveTextEditor(() => runtime.runFork(Effect.promise(updateActive))),
     vscode.commands.registerCommand('duff.markViewed', (item: unknown) => mark(item, true)),
     vscode.commands.registerCommand('duff.markUnviewed', (item: unknown) => mark(item, false)),
+    vscode.commands.registerCommand('duff.openSelectedFile', () => {
+      const selected = view.selection[0]
+
+      if (selected instanceof ReviewFile)
+        return vscode.commands.executeCommand('duff.openFile', selected)
+    }),
     vscode.commands.registerCommand('duff.compare', compare),
     vscode.commands.registerCommand('duff.toggleLayout', async () => {
       await context.workspaceState.update('reviewLayout', provider.toggleLayout())
@@ -310,6 +349,7 @@ export function registerReviewCommands(
         snapshotUri(base),
         snapshotUri(head),
         `${change.path}: ${current.baseCommit.slice(0, 8)} ↔ ${current.headCommit.slice(0, 8)}`,
+        { preview: false, preserveFocus: true },
       )
     }),
     vscode.commands.registerCommand('duff.openFile', async (item: unknown) => {

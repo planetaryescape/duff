@@ -50,6 +50,38 @@ it('restores explicit marks only for the current comparison and supports undo', 
   }
 })
 
+it('marks folders recursively without touching sibling prefixes and rejects stale folder actions', () => {
+  const nested = Review.make({
+    ...review,
+    files: [
+      ...review.files,
+      { status: 'M', path: 'src/nested/file.ts' },
+      { status: 'M', path: 'src-other/file.ts' },
+    ],
+  })
+
+  const progress = new ReviewProgress(nested)
+  progress.setViewed(nested, 'other-added.ts', true)
+  expect(progress.setFolderViewed(nested, 'src', true)).toBe(true)
+  expect(new Set(progress.saved().paths)).toEqual(
+    new Set([
+      'other-added.ts',
+      'src/changed.ts',
+      'src/added.ts',
+      'src/deleted.ts',
+      'src/renamed.ts',
+      'src/nested/file.ts',
+    ]),
+  )
+  expect(
+    progress.setFolderViewed(Review.make({ ...nested, headCommit: 'c'.repeat(40) }), 'src', false),
+  ).toBe(false)
+  expect(progress.isViewed('src/nested/file.ts')).toBe(true)
+  expect(progress.setFolderViewed(nested, 'missing', true)).toBe(false)
+  expect(progress.setFolderViewed(nested, 'src', false)).toBe(true)
+  expect(progress.saved().paths).toEqual(['other-added.ts'])
+})
+
 it('targets both immutable diff sides, including empty and renamed sides, without marking on open', () => {
   const progress = new ReviewProgress(review)
 

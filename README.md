@@ -40,17 +40,17 @@ Alternatively, run `bun run watch` and launch the development host yourself.
 
 - Choose a local or remote-tracking base branch. Duff does not fetch or switch branches.
 - The changed-file list uses the common ancestor of the base and current committed HEAD, like `git diff base...HEAD`.
-- Click a file for an immutable, side-by-side diff. Additions, deletions, and renames are supported.
-- Use the inline **Open Workspace File** action, or its context-menu entry, for editing and full workspace navigation.
+- Click a file for an immutable, side-by-side diff in a pinned tab. Opening another diff leaves existing tabs in place. Additions, deletions, and renames are supported.
+- Use the inline **Open Workspace File** action, its context-menu entry, or **Cmd+Enter** (**Ctrl+Enter** on Linux/Windows) with a file selected in Duff's tree. Workspace files also open in pinned tabs. VS Code does not expose Cmd-click modifiers to custom tree commands.
 - Click **Toggle File List / Tree** in the view toolbar to switch layouts. The workspace remembers your choice; list mode shows directories to distinguish matching filenames.
 - Click **Refresh Comparison** after commits or branch changes.
 
-Use **Mark as Viewed** or **Mark as Unviewed** on a file row (inline or context menu), or in the active Duff diff's toolbar or command palette. Opening a diff never marks it. Hollow circles mean unviewed; checked circles mean viewed. The Changed Files pane shows viewed/total progress in both layouts.
+Click the checkbox beside a file to mark it viewed or unviewed. In tree mode, a folder checkbox marks or unmarks every changed file beneath it, including nested and deleted files. A folder is checked only when all its reviewed files are viewed; partially viewed folders remain unchecked. Folder actions work even when children are collapsed. **Mark as Viewed** and **Mark as Unviewed** remain available in context menus and the active Duff diff's toolbar or command palette. Opening a diff never marks it. The Changed Files pane shows viewed/total progress in both layouts.
 
 Local branch-comparison marks stay in this editor workspace and belong to the exact repository root, base commit, head commit and changed path. They survive unchanged refreshes, layout changes and editor reloads: choose the same comparison again after reload. Selecting different revisions or another repository replaces those local-comparison marks. PR reviews use separate saved sessions, described below. Old diff tabs cannot mark a different comparison. Workspace files and unrelated editors do not offer diff-marking commands. No provider viewed state is changed.
 
 Uncommitted edits are excluded from the review. A workspace file can therefore differ from its committed diff.
-Historical virtual documents can have limited language intelligence. Open the real workspace file for deeper navigation.
+TypeScript and JavaScript diffs support definitions, type definitions, implementations, references and hover information through the current workspace's language service. Navigation opens workspace files; it does not claim to resolve a historical TypeScript project. If the workspace differs, Duff forwards only positions on an identical, uniquely matching line. Changed or ambiguous lines and missing workspace files have no bridged result. Hover information is labelled **Current workspace TypeScript project**. Snapshot contents remain immutable; edits, rename and refactoring still belong in workspace files.
 This first slice targets text-file review, not binary-file rendering.
 
 ## Checks
@@ -85,6 +85,8 @@ to GitHub Releases; it does not publish to an extension marketplace. See the
 Duff inspects local Git identity and safe credential configuration before discovering open PRs. Git helpers are never executed. Configured Git identity and provider API authentication are separate.
 
 The built-in GitHub and Azure DevOps adapters share one job-shaped contract and read open PRs, including drafts and forks, in the native **Pull Requests** view. Equivalent recognized remotes share a repository group. Groups update progressively as their reads finish. Use each group's **Connect Provider** and **Load More** actions, or **Check Pull Requests** to restart. Same-repository refresh retains previous PRs as Refreshing; failed refreshes and pages mark retained results Stale. Hover a status row for its full message. Clicking a PR prepares its immutable local review. **Open Pull Request in Browser** is a separate row action.
+
+Use the Pull Requests toolbar's search button or **Duff: Search Pull Requests…** in the command palette to find open PRs by title, number, repository or source/target branch. Search filters loaded pages across the selected repository's remote groups, not all PRs on the hosting service. **Load More Pull Requests** stays visible even when nothing matches; it adds the next page without clearing your query. **Check Pull Requests** refreshes discovery, and selecting a PR uses the same immutable local review flow as the tree.
 
 Duff rereads the selected PR's details and pins the exact source and target commit IDs. It compares their unique common ancestor to the source commit, never your checkout's HEAD or a synthetic provider merge commit. Forks are matched by repository identity, not branch name. Available local objects need no fetch permission. If objects are missing, **Fetch PR Revisions…** asks before downloading through an existing matched Git remote. It uses your Git credentials, not the provider API token. Without a matching source remote, add one outside Duff or obtain the objects yourself, refresh Git context, and retry.
 

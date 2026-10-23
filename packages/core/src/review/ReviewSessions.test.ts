@@ -212,11 +212,17 @@ it.effect(
         const saved = yield* sessions.accept(selected('1'), resolved(review, '1'), review)
         yield* Effect.all(
           [
-            sessions.progress(saved.key, review, 'one', true),
-            sessions.progress(saved.key, review, 'two', true),
+            sessions.progress(saved.key, review, ['one'], true),
+            sessions.progress(saved.key, review, ['two'], true),
           ],
           { concurrency: 2 },
         )
+        expect((yield* sessions.progress(saved.key, review, ['one', 'two'], false)).viewed).toEqual(
+          [],
+        )
+        expect(
+          (yield* sessions.progress(saved.key, review, ['one', 'two', 'missing'], true)).viewed,
+        ).toEqual(['one', 'two'])
         yield* sessions.opened(saved.key, review, 'two')
         const other = yield* sessions.accept(selected('2'), resolved(review, '2'), review)
 
@@ -247,7 +253,7 @@ it.effect(
         expect(updated.viewed).toEqual(['one'])
         expect(
           (yield* sessions
-            .progress(updated.key, first.saved.review, 'one', false)
+            .progress(updated.key, first.saved.review, ['one', 'two'], false)
             .pipe(Effect.flip))._tag,
         ).toBe('ReviewError')
         expect((yield* sessions.resume(updated.key)).viewed).toEqual(['one'])
@@ -279,6 +285,7 @@ it.effect(
       yield* initialize(root)
       let durable = empty
       let fail = false
+      let failProgress = false
 
       const store = Layer.succeed(
         SavedReviews,
@@ -287,6 +294,9 @@ it.effect(
           load: () => Effect.succeed(durable),
           save: (next) =>
             Effect.gen(function* () {
+              if (failProgress && next.sessions.some((session) => session.viewed.length > 0))
+                return yield* new ReviewStorageError({ reason: 'write-failed' })
+
               if (
                 fail &&
                 next.sessions.some(
@@ -307,6 +317,13 @@ it.effect(
         const sessions = yield* ReviewSessions
         const review = yield* git.compare(root, 'refs/heads/main')
         const saved = yield* sessions.accept(selected('1'), resolved(review, '1'), review)
+        failProgress = true
+        expect(
+          yield* sessions.progress(saved.key, review, ['one', 'two'], true).pipe(Effect.flip),
+        ).toEqual(new ReviewStorageError({ reason: 'write-failed' }))
+        expect((yield* sessions.list()).sessions).toEqual([saved])
+        expect(durable.sessions).toEqual([saved])
+        failProgress = false
         yield* write(root, 'two', 'new revision\n')
         yield* command(root, 'add', 'two')
         yield* command(root, 'commit', '-m', 'update')
@@ -366,8 +383,7 @@ it.effect('does not transfer viewed when only the base blob or executable mode c
       const git = yield* BranchReview
       const review = yield* git.compare(root, 'refs/heads/main')
       const first = yield* sessions.accept(selected('1'), resolved(review, '1'), review)
-      yield* sessions.progress(first.key, review, 'one', true)
-      yield* sessions.progress(first.key, review, 'two', true)
+      yield* sessions.progress(first.key, review, ['one', 'two'], true)
       yield* command(root, 'checkout', 'main')
       yield* write(root, 'one', 'different base\n')
       yield* command(root, 'add', 'one')

@@ -43,7 +43,7 @@ export class ReviewSessions extends Context.Service<
     readonly progress: (
       key: string,
       review: Review,
-      path: string,
+      changedPaths: ReadonlyArray<string>,
       viewed: boolean,
     ) => Effect.Effect<SavedReview, ReviewStorageError | ReviewError>
     readonly opened: (
@@ -283,15 +283,24 @@ export class ReviewSessions extends Context.Service<
       )
 
       const progress = Effect.fn('ReviewSessions.progress')(
-        function* (key: string, review: Review, path: string, viewed: boolean) {
+        function* (
+          key: string,
+          review: Review,
+          changedPaths: ReadonlyArray<string>,
+          viewed: boolean,
+        ) {
           const current = yield* load()
           const session = yield* matching(current, key, review)
 
-          if (!session.review.files.some((file) => file.path === path)) return session
+          const changes = session.review.files.filter((file) => changedPaths.includes(file.path))
+
+          if (changes.length === 0) return session
           const paths = new Set(session.viewed)
 
-          if (viewed) paths.add(path)
-          else paths.delete(path)
+          for (const file of changes) {
+            if (viewed) paths.add(file.path)
+            else paths.delete(file.path)
+          }
 
           return yield* replace(
             current,

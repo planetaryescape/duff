@@ -66,6 +66,19 @@ export class ReviewProgress {
     return true
   }
 
+  /** Mark every changed file beneath a folder, rejecting stale comparisons. */
+  setFolderViewed(target: Review, path: string, viewed: boolean): boolean {
+    if (!sameComparison(target, this.review)) return false
+    const files = this.review.files.filter((file) => file.path.startsWith(`${path}/`))
+
+    for (const file of files) {
+      if (viewed) this.viewed.add(file.path)
+      else this.viewed.delete(file.path)
+    }
+
+    return files.length > 0
+  }
+
   activeFile(original: Snapshot, modified: Snapshot): FileChange | undefined {
     return this.review.files.find((file) => {
       const [base, head] = fileSnapshots(this.review, file)

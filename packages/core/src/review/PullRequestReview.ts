@@ -68,7 +68,7 @@ export class PullRequestReview extends Context.Service<
     readonly resume: (key: string) => Effect.Effect<void, ReviewStorageError | ReviewError>
     readonly mark: (
       review: Review,
-      path: string,
+      paths: ReadonlyArray<string>,
       viewed: boolean,
     ) => Effect.Effect<void, ReviewStorageError | ReviewError>
   }
@@ -300,7 +300,7 @@ export class PullRequestReview extends Context.Service<
       )
 
       const mark = Effect.fn('PullRequestReview.mark')(
-        function* (review: Review, path: string, viewed: boolean) {
+        function* (review: Review, paths: ReadonlyArray<string>, viewed: boolean) {
           const current = yield* SubscriptionRef.get(state)
 
           if (Option.isNone(current.accepted)) return
@@ -308,7 +308,7 @@ export class PullRequestReview extends Context.Service<
           const saved = yield* sessions.progress(
             current.accepted.value.saved.key,
             review,
-            path,
+            paths,
             viewed,
           )
 
