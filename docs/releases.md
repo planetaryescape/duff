@@ -63,8 +63,6 @@ not automatically run PR checks with the default token. Before merging it,
 manually run **CI and Release** using the release PR branch in the Actions tab
 (or `gh workflow run ci-release.yml --ref <release-pr-branch>`).
 
-For automatic checks on release PRs, optionally configure the repository secret
-`RELEASE_PLEASE_TOKEN` with a fine-grained PAT that can write repository contents,
-issues, and pull requests. The workflow prefers that token when present. Do not
-put tokens in tracked files. Token provisioning and changes to repository settings
-are separate setup actions, not performed by this PR.
+The workflow explicitly uses `github.token`. It does not select an inherited
+organization `RELEASE_PLEASE_TOKEN`: an invalid shared override blocked the first
+release-planning run. No shared secret or repository permission change is needed.
