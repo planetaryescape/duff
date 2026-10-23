@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "b9784a95bbb7d9eb505afab8c534be716d74ee0e",
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "package-name": "duff",
+      "include-component-in-tag": false,
+      "include-v-in-tag": true,
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": false,
+      "draft": true,
+      "force-tag-creation": true,
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "packages/extension/package.json",
+          "jsonpath": "$.version"
+        }
+      ]
+    }
+  }
+}

@@ -287,12 +287,6 @@ export function registerReviewCommands(
           path = snapshot.path
         }
 
-        const choice = await vscode.window.showWarningMessage(
-          'Open the current checkout file? Its content may differ from the immutable revision you are reviewing.',
-          'Open Current Checkout',
-        )
-
-        if (choice !== 'Open Current Checkout') return
         await vscode.window.showTextDocument(vscode.Uri.joinPath(vscode.Uri.file(root), path), {
           preview: false,
         })
