@@ -1,11 +1,9 @@
-import { execFile } from 'node:child_process'
-import { Readable } from 'node:stream'
-import { pipeline } from 'node:stream/promises'
-import { promisify } from 'node:util'
-
+import { Run } from '@effected/commands'
+import { Git } from '@effected/git'
 import { Context, Effect, Layer, Match, Redacted, Schema } from 'effect'
+import { ChildProcessSpawner } from 'effect/process'
 
-import { repositoryEnvironment } from './RepositoryEnvironment'
+import { gitCommand, makeGitProcessLayer } from './GitProcess'
 
 export const ConfigValue = Schema.Struct({
   scope: Schema.Literals(['system', 'global', 'local', 'worktree', 'command', 'unknown']),
@@ -63,8 +61,6 @@ export class GitContext extends Context.Service<
     readonly inspect: (directory: string) => Effect.Effect<GitContextSnapshot, GitContextError>
   }
 >()('duff/GitContext') {}
-
-const execute = promisify(execFile)
 
 const safeFailure = (operation: string) =>
   new GitContextError({
@@ -143,7 +139,8 @@ export const makeGitContextLayer = (environment: NodeJS.ProcessEnv) =>
   Layer.effect(
     GitContext,
     Effect.gen(function* () {
-      const env = repositoryEnvironment(environment)
+      const upstream = yield* Git
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
 
       const git = Effect.fn('GitContext.git')(function* (
         root: string,
@@ -152,43 +149,18 @@ export const makeGitContextLayer = (environment: NodeJS.ProcessEnv) =>
         emptyExit?: number,
         input?: string,
       ) {
-        const output = yield* Effect.tryPromise({
-          try: async (signal) => {
-            try {
-              const pending = execute('git', ['--no-pager', '-C', root, ...args], {
-                encoding: 'utf8',
-                maxBuffer: 16 * 1024 * 1024,
-                signal,
-                env,
-              })
+        const output = yield* Run.collect(gitCommand(root, args, input), {
+          timeout: '60 seconds',
+        }).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.mapError(() => safeFailure(operation)),
+        )
 
-              const [result] = await Promise.all([
-                pending,
-                pending.child.stdin
-                  ? pipeline(
-                      Readable.from(input === undefined ? [] : [input]),
-                      pending.child.stdin,
-                      { signal },
-                    )
-                  : Promise.resolve(),
-              ])
+        if (output.exitCode === emptyExit) return Redacted.make('')
 
-              return Redacted.make(result.stdout)
-            } catch (cause) {
-              if (
-                emptyExit !== undefined &&
-                cause instanceof Error &&
-                'code' in cause &&
-                cause.code === emptyExit
-              )
-                return Redacted.make('')
-              throw safeFailure(operation)
-            }
-          },
-          catch: () => safeFailure(operation),
-        })
+        if (!output.succeeded) return yield* safeFailure(operation)
 
-        return output
+        return Redacted.make(output.stdout)
       })
 
       const config = Effect.fn('GitContext.config')(function* (root: string, key: string) {
@@ -224,9 +196,9 @@ export const makeGitContextLayer = (environment: NodeJS.ProcessEnv) =>
       })
 
       const inspect = Effect.fn('GitContext.inspect')(function* (directory: string) {
-        const root = Redacted.value(
-          yield* git(directory, ['rev-parse', '--show-toplevel'], 'locate repository'),
-        ).trim()
+        const root = yield* upstream
+          .repoRoot(directory)
+          .pipe(Effect.mapError(() => safeFailure('locate repository')))
 
         const name = yield* config(root, 'user.name')
         const email = yield* config(root, 'user.email')
@@ -415,7 +387,7 @@ export const makeGitContextLayer = (environment: NodeJS.ProcessEnv) =>
           remotes,
           helpers,
           sshCommandConfigured: Boolean(
-            Redacted.value(sshCommand) || env.GIT_SSH_COMMAND || env.GIT_SSH,
+            Redacted.value(sshCommand) || environment.GIT_SSH_COMMAND || environment.GIT_SSH,
           ),
         }
 
@@ -432,4 +404,4 @@ export const makeGitContextLayer = (environment: NodeJS.ProcessEnv) =>
 
       return GitContext.of({ inspect })
     }),
-  )
+  ).pipe(Layer.provide(makeGitProcessLayer(environment)))

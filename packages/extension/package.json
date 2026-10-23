@@ -3,17 +3,17 @@
   "private": true,
   "displayName": "Duff",
   "description": "Review local branch changes with native diffs and workspace files",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/planetaryescape/duff.git",
     "directory": "packages/extension"
   },
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.123.0"
   },
   "categories": ["Other"],
-  "activationEvents": ["onView:duff.files"],
+  "activationEvents": ["onStartupFinished", "onView:duff.files"],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -64,6 +64,8 @@
       { "command": "duff.cancelPullRequestReview", "title": "Cancel PR Preparation", "icon": "$(close)", "category": "Duff" },
       { "command": "duff.refreshPullRequestReview", "title": "Refresh PR Review", "icon": "$(refresh)", "category": "Duff" },
       { "command": "duff.exitPullRequestReview", "title": "Exit PR Review", "icon": "$(sign-out)", "category": "Duff" },
+      { "command": "duff.resumeReview", "title": "Resume Review…", "icon": "$(history)", "category": "Duff" },
+      { "command": "duff.forgetReview", "title": "Forget Saved Review…", "category": "Duff" },
       {
         "command": "duff.loadMoreProviders",
         "title": "Load More Pull Requests",
@@ -105,19 +107,29 @@
       "when": "focusedView == duff.files && listFocus"
     }],
     "viewsContainers": {
-      "activitybar": [{ "id": "duff", "title": "Duff Review", "icon": "resources/review.svg" }]
+      "activitybar": [
+        {
+          "id": "duff",
+          "title": "Duff Review",
+          "icon": "resources/review.svg"
+        }
+      ]
     },
     "views": {
-      "duff": [{
-        "id": "duff.files",
-        "name": "Changed Files"
-      }, {
-        "id": "duff.context",
-        "name": "Git Context"
-      }, {
-        "id": "duff.providers",
-        "name": "Pull Requests"
-      }]
+      "duff": [
+        {
+          "id": "duff.files",
+          "name": "Changed Files"
+        },
+        {
+          "id": "duff.context",
+          "name": "Git Context"
+        },
+        {
+          "id": "duff.providers",
+          "name": "Pull Requests"
+        }
+      ]
     },
     "configuration": {
       "title": "Duff",
@@ -131,7 +143,7 @@
     },
     "viewsWelcome": [{
       "view": "duff.files",
-      "contents": "Review committed changes on your current branch.\n[Compare Against Branch](command:duff.compare)\nClick a changed file to open its diff. Use Open Workspace File to edit and navigate."
+      "contents": "Review committed changes on your current branch.\n[Compare Against Branch](command:duff.compare)\n[Resume Review…](command:duff.resumeReview)\nClick a changed file to open its diff. Use Open Workspace File to edit and navigate."
     }, {
       "view": "duff.context",
       "contents": "Inspect local identity and credential configuration without authenticating.\n[Inspect Git Context](command:duff.inspectContext)"
@@ -158,6 +170,8 @@
         },
         { "command": "duff.refreshPullRequestReview", "when": "view == duff.files && duff.prReview && duff.prPreparation != Preparing && duff.prPreparation != AwaitingFetch", "group": "navigation@2" },
         { "command": "duff.exitPullRequestReview", "when": "view == duff.files && duff.prReview", "group": "navigation@5" },
+        { "command": "duff.resumeReview", "when": "view == duff.files", "group": "navigation@4" },
+        { "command": "duff.forgetReview", "when": "view == duff.files", "group": "review@1" },
         { "command": "duff.fetchReviewRevisions", "when": "view == duff.files && duff.prPreparation == AwaitingFetch", "group": "navigation@2" },
         { "command": "duff.cancelPullRequestReview", "when": "view == duff.files && (duff.prPreparation == AwaitingFetch || duff.prPreparation == Preparing)", "group": "navigation@4" },
         {
@@ -182,8 +196,16 @@
         }
       ],
       "view/item/context": [
-        { "command": "duff.openPullRequestBrowser", "when": "view == duff.providers && viewItem == pullRequest", "group": "inline@1" },
-        { "command": "duff.openPullRequestBrowser", "when": "view == duff.providers && viewItem == pullRequest", "group": "navigation@1" },
+        {
+          "command": "duff.openPullRequestBrowser",
+          "when": "view == duff.providers && viewItem == pullRequest",
+          "group": "inline@1"
+        },
+        {
+          "command": "duff.openPullRequestBrowser",
+          "when": "view == duff.providers && viewItem == pullRequest",
+          "group": "navigation@1"
+        },
         {
           "command": "duff.markViewed",
           "when": "view == duff.files && viewItem =~ /^(deletedReviewFile|reviewFile|reviewFolder)\\.unviewed$/",
@@ -207,13 +229,34 @@
       ],
       "commandPalette": [
         { "command": "duff.openSelectedFile", "when": "false" },
-        { "command": "duff.reviewPullRequest", "when": "false" },
-        { "command": "duff.openPullRequestBrowser", "when": "false" },
-        { "command": "duff.refreshPullRequestReview", "when": "duff.prReview && duff.prPreparation != Preparing && duff.prPreparation != AwaitingFetch" },
-        { "command": "duff.exitPullRequestReview", "when": "duff.prReview" },
-        { "command": "duff.fetchReviewRevisions", "when": "duff.prPreparation == AwaitingFetch" },
-        { "command": "duff.cancelPullRequestReview", "when": "duff.prPreparation == Preparing || duff.prPreparation == AwaitingFetch" },
-        { "command": "duff.refresh", "when": "!duff.prReview && duff.prPreparation != Preparing && duff.prPreparation != AwaitingFetch" },
+        {
+          "command": "duff.reviewPullRequest",
+          "when": "false"
+        },
+        {
+          "command": "duff.openPullRequestBrowser",
+          "when": "false"
+        },
+        {
+          "command": "duff.refreshPullRequestReview",
+          "when": "duff.prReview && duff.prPreparation != Preparing && duff.prPreparation != AwaitingFetch"
+        },
+        {
+          "command": "duff.exitPullRequestReview",
+          "when": "duff.prReview"
+        },
+        {
+          "command": "duff.fetchReviewRevisions",
+          "when": "duff.prPreparation == AwaitingFetch"
+        },
+        {
+          "command": "duff.cancelPullRequestReview",
+          "when": "duff.prPreparation == Preparing || duff.prPreparation == AwaitingFetch"
+        },
+        {
+          "command": "duff.refresh",
+          "when": "!duff.prReview && duff.prPreparation != Preparing && duff.prPreparation != AwaitingFetch"
+        },
         {
           "command": "duff.markViewed",
           "when": "duff.activeFileState == unviewed"
@@ -266,6 +309,6 @@
   },
   "dependencies": {
     "@duff/core": "workspace:*",
-    "effect": "4.0.2"
+    "effect": "4.0.5"
   }
 }
