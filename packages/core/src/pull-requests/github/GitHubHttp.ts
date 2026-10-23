@@ -4,6 +4,7 @@ import { Clock, DateTime, Effect, Option, Redacted, Schema } from 'effect'
 
 import {
   Authentication,
+  AuthenticationRequired,
   InvalidContinuation,
   InvalidProviderResponse,
   OpenPullRequest,
@@ -189,6 +190,11 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
           },
         )
         .pipe(
+          Effect.mapError((error) =>
+            error._tag === 'RepositoryUnavailable' && Option.isNone(current)
+              ? new AuthenticationRequired()
+              : error,
+          ),
           Effect.catchTag(
             'RateLimited',
             Effect.fn('GitHub.rateLimited')(function* (error) {
