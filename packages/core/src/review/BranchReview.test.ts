@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 
 import { expect, it } from '@effect/vitest'
-import { Effect, Fiber, Option, Schedule } from 'effect'
+import { Effect, Fiber, Option, Schedule, Schema } from 'effect'
 
 import { GitContext, makeGitContextLayer } from '../git-context/GitContext'
 import { BranchReview, FetchRequired, makeGitReviewLayer, ReviewRevisions } from './BranchReview'
@@ -414,8 +414,12 @@ it.live('cancelling acquisition terminates its Git transport descendants', () =>
     yield* command(root, 'remote', 'add', 'origin', 'git@github.com:fixture/repo.git')
     const ssh = join(root, 'test-ssh')
     const pidFile = join(root, 'transport.pid')
+    // Publish only a complete PID: reading between shell redirection and echo yields "" (PID 0).
     yield* Effect.promise(() =>
-      writeFile(ssh, '#!/bin/sh\nsleep 30 &\necho $! > "$DUFF_PID_FILE"\nwait\n'),
+      writeFile(
+        ssh,
+        '#!/bin/sh\nsleep 30 &\necho $! > "$DUFF_PID_FILE.tmp"\nmv "$DUFF_PID_FILE.tmp" "$DUFF_PID_FILE"\nwait\n',
+      ),
     )
     yield* Effect.promise(() => chmod(ssh, 0o700))
     yield* Effect.gen(function* () {
@@ -436,24 +440,33 @@ it.live('cancelling acquisition terminates its Git transport descendants', () =>
         )
         .pipe(Effect.forkChild)
 
-      const pid = Number(
-        yield* Effect.tryPromise(() => readFile(pidFile, 'utf8')).pipe(
-          Effect.retry({ times: 100, schedule: Schedule.spaced('10 millis') }),
+      const pid = yield* Effect.tryPromise(() => readFile(pidFile, 'utf8')).pipe(
+        Effect.retry({ times: 100, schedule: Schedule.spaced('10 millis') }),
+        Effect.flatMap(
+          Schema.decodeUnknownEffect(
+            Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThan(0)),
+          ),
         ),
       )
 
+      expect(() => process.kill(pid, 0)).not.toThrow()
       yield* Fiber.interrupt(fiber)
-      expect(
-        yield* Effect.sync(() => {
-          try {
-            process.kill(pid, 0)
-
-            return true
-          } catch {
-            return false
-          }
-        }),
-      ).toBe(false)
+      // Git's close event can precede the kernel finishing/reaping its killed descendants.
+      // Require ESRCH within one second, well before the fixture's natural 30-second exit.
+      yield* Effect.promise(() =>
+        expect
+          .poll(
+            () => {
+              try {
+                process.kill(pid, 0)
+              } catch (error) {
+                return error
+              }
+            },
+            { interval: 10, timeout: 1000 },
+          )
+          .toMatchObject({ code: 'ESRCH' }),
+      )
     }).pipe(
       Effect.provide(
         makeGitReviewLayer({
