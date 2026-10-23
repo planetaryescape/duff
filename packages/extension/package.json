@@ -283,6 +283,16 @@
         {
           "command": "duff.markViewed",
           "when": "view == duff.files && viewItem =~ /^(deletedReviewFile|reviewFile|reviewFolder)\\.unviewed$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "duff.markUnviewed",
+          "when": "view == duff.files && viewItem =~ /^(deletedReviewFile|reviewFile|reviewFolder)\\.viewed$/",
+          "group": "inline@1"
+        },
+        {
+          "command": "duff.markViewed",
+          "when": "view == duff.files && viewItem =~ /^(deletedReviewFile|reviewFile|reviewFolder)\\.unviewed$/",
           "group": "navigation@1"
         },
         {
