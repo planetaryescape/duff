@@ -29,6 +29,13 @@ export class ReviewFile extends vscode.TreeItem {
         : change.status
     this.tooltip = `${change.previousPath ? `${change.previousPath} → ` : ''}${change.path} (${change.status}) · ${viewed ? 'Viewed' : 'Unviewed'}`
     this.contextValue = `${change.status === 'D' ? 'deletedReviewFile' : 'reviewFile'}.${viewed ? 'viewed' : 'unviewed'}`
+    this.checkboxState = {
+      state: viewed ? vscode.TreeItemCheckboxState.Checked : vscode.TreeItemCheckboxState.Unchecked,
+      tooltip: viewed ? 'Mark as Unviewed' : 'Mark as Viewed',
+      accessibilityInformation: {
+        label: `${viewed ? 'Mark as unviewed' : 'Mark as viewed'}: ${change.path}`,
+      },
+    }
     this.accessibilityInformation = {
       label: `${change.path}, ${change.status}, ${viewed ? 'viewed' : 'unviewed'}`,
     }
@@ -45,9 +52,13 @@ export class ReviewFolder extends vscode.TreeItem {
     super(path.slice(path.lastIndexOf('/') + 1), vscode.TreeItemCollapsibleState.Expanded)
     this.id = `folder:${path}`
     this.iconPath = new vscode.ThemeIcon('folder')
-    this.tooltip = `${path} · ${viewed ? 'All viewed' : 'Not all viewed'}`
-    this.accessibilityInformation = {
-      label: `${path}, ${viewed ? 'all viewed' : 'not all viewed'}`,
+    this.tooltip = path
+    this.checkboxState = {
+      state: viewed ? vscode.TreeItemCheckboxState.Checked : vscode.TreeItemCheckboxState.Unchecked,
+      tooltip: `${viewed ? 'Mark as Unviewed' : 'Mark as Viewed'}: all changed files in ${path}`,
+      accessibilityInformation: {
+        label: `${viewed ? 'Mark as unviewed' : 'Mark as viewed'}: all changed files in ${path}`,
+      },
     }
     this.contextValue = `reviewFolder.${viewed ? 'viewed' : 'unviewed'}`
   }

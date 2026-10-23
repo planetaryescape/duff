@@ -41,6 +41,7 @@ export function registerReviewCommands(
 
   const view = vscode.window.createTreeView('duff.files', {
     treeDataProvider: provider,
+    manageCheckboxStateManually: true,
   })
 
   let review: Review | undefined
@@ -294,6 +295,13 @@ export function registerReviewCommands(
   context.subscriptions.push(
     provider,
     view,
+    view.onDidChangeCheckboxState((event) =>
+      runtime.runFork(
+        Effect.forEach(event.items, ([item, state]) =>
+          Effect.promise(() => mark(item, state === vscode.TreeItemCheckboxState.Checked)),
+        ),
+      ),
+    ),
     vscode.window.tabGroups.onDidChangeTabs(() => runtime.runFork(Effect.promise(updateActive))),
     vscode.window.tabGroups.onDidChangeTabGroups(() =>
       runtime.runFork(Effect.promise(updateActive)),
