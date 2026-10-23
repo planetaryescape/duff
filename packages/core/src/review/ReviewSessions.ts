@@ -122,7 +122,7 @@ export class ReviewSessions extends Context.Service<
         yield* persist(
           SavedReviewCatalog.make({
             version: 1,
-            active: Option.some(session.key),
+            active: current.active,
             pendingRelease: current.pendingRelease,
             sessions: [session, ...current.sessions.filter((item) => item.key !== session.key)],
           }),
@@ -233,7 +233,7 @@ export class ReviewSessions extends Context.Service<
           yield* replace(
             SavedReviewCatalog.make({
               version: 1,
-              active: staged.active,
+              active: Option.some(session.key),
               sessions: staged.sessions,
               pendingRelease,
             }),
@@ -269,7 +269,12 @@ export class ReviewSessions extends Context.Service<
             })
 
           return yield* replace(
-            current,
+            SavedReviewCatalog.make({
+              version: 1,
+              active: Option.some(session.key),
+              sessions: current.sessions,
+              pendingRelease: current.pendingRelease,
+            }),
             SavedReview.make({ ...session, updatedAt: yield* Clock.currentTimeMillis }),
           )
         },

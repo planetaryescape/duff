@@ -220,6 +220,13 @@ it.effect(
         yield* sessions.opened(saved.key, review, 'two')
         const other = yield* sessions.accept(selected('2'), resolved(review, '2'), review)
 
+        // An already queued tab callback must not select its old PR again.
+        yield* sessions.opened(saved.key, review, 'one')
+        expect((yield* sessions.list()).active).toEqual(Option.some(other.key))
+        yield* sessions.leave()
+        yield* sessions.opened(saved.key, review, 'two')
+        expect((yield* sessions.list()).active).toEqual(Option.none())
+
         return { saved, other }
       }).pipe(Effect.provide(layer()))
 
@@ -227,7 +234,9 @@ it.effect(
         const sessions = yield* ReviewSessions
         const git = yield* BranchReview
         expect((yield* sessions.list()).sessions).toHaveLength(2)
+        expect((yield* sessions.list()).active).toEqual(Option.none())
         const resumed = yield* sessions.resume(first.saved.key)
+        expect((yield* sessions.list()).active).toEqual(Option.some(first.saved.key))
         expect(resumed.viewed).toEqual(['one', 'two'])
         expect(resumed.lastFile).toEqual(Option.some('two'))
         yield* write(root, 'two', 'changed again\n')
