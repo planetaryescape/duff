@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.0](https://github.com/planetaryescape/duff/compare/v0.1.0...v0.2.0) (2026-10-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **git:** editors older than 1.123 are no longer supported.
+
+### Features
+
+* **review:** persist independent PR review sessions ([e78782f](https://github.com/planetaryescape/duff/commit/e78782fd84518175337235f2c9abfa2ef6cc6bd3))
+* **review:** search PRs, bulk mark folders, and navigate TypeScript diffs ([#8](https://github.com/planetaryescape/duff/issues/8)) ([eba4cc8](https://github.com/planetaryescape/duff/commit/eba4cc8d9f93f54ab82c902d8b6d8ab7154efb7d))
+
+
+### Code Refactoring
+
+* **git:** replace custom process runners with effected ([d742929](https://github.com/planetaryescape/duff/commit/d74292970b4e33e0762c593621057897f2bda806))
+
 ## [0.1.0](https://github.com/planetaryescape/duff/compare/v0.0.1...v0.1.0) (2026-10-23)
 
 
