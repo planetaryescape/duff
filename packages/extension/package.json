@@ -74,8 +74,8 @@
         "icon": "$(go-to-file)",
         "category": "Duff"
       },
-      { "command": "duff.nextChange", "title": "Go to Next Change in Review", "category": "Duff" },
-      { "command": "duff.previousChange", "title": "Go to Previous Change in Review", "category": "Duff" },
+      { "command": "duff.nextChange", "title": "Go to Next Change in Review", "icon": "$(arrow-circle-down)", "category": "Duff" },
+      { "command": "duff.previousChange", "title": "Go to Previous Change in Review", "icon": "$(arrow-circle-up)", "category": "Duff" },
       {
         "command": "duff.markViewed",
         "title": "Mark as Viewed",
@@ -88,10 +88,6 @@
         "icon": "$(discard)",
         "category": "Duff"
       }
-    ],
-    "keybindings": [
-      { "command": "duff.nextChange", "key": "n", "when": "editorTextFocus && editorReadonly && textCompareEditorActive && duff.activeFileState" },
-      { "command": "duff.previousChange", "key": "p", "when": "editorTextFocus && editorReadonly && textCompareEditorActive && duff.activeFileState" }
     ],
     "viewsContainers": {
       "activitybar": [{ "id": "duff", "title": "Duff Review", "icon": "resources/review.svg" }]
@@ -120,7 +116,7 @@
     },
     "viewsWelcome": [{
       "view": "duff.files",
-      "contents": "Review committed changes on your current branch.\n[Compare Against Branch](command:duff.compare)\nClick a changed file to open its diff. In a diff, press N for the next change, which continues into the next file, and P for the previous one. Use Open Workspace File to edit and navigate."
+      "contents": "Review committed changes on your current branch.\n[Compare Against Branch](command:duff.compare)\nClick a changed file to open its diff. In a diff, the circled arrow buttons step through every change and continue into the adjacent file. Use Open Workspace File to edit and navigate."
     }, {
       "view": "duff.context",
       "contents": "Inspect local identity and credential configuration without authenticating.\n[Inspect Git Context](command:duff.inspectContext)"
@@ -235,6 +231,8 @@
         }
       ],
       "editor/title": [
+        { "command": "duff.previousChange", "when": "resourceScheme == duff-snapshot && duff.activeFileState", "group": "navigation@3" },
+        { "command": "duff.nextChange", "when": "resourceScheme == duff-snapshot && duff.activeFileState", "group": "navigation@4" },
         {
           "command": "duff.markViewed",
           "when": "resourceScheme == duff-snapshot && duff.activeFileState == unviewed",

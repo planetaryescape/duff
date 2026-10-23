@@ -187,11 +187,27 @@ export function registerReviewCommands(
     }
   }
 
-  // A persistent reminder of the review-wide navigation keys while a Duff diff is active.
+  // Review position while a Duff diff is active. Navigation has no default keys, so the hover links to them.
   const hint = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100)
   hint.command = 'duff.nextChange'
-  hint.tooltip =
-    'Duff: in the diff, N goes to the next change and P to the previous one, continuing into the next or previous changed file. Click for the next change.'
+  const shortcuts = encodeURIComponent(JSON.stringify(['Change in Review']))
+
+  const hintTooltip = (position: string) => {
+    const tooltip = new vscode.MarkdownString(
+      `Duff review · ${position}\n\n[$(arrow-circle-up) Previous change](command:duff.previousChange) · [$(arrow-circle-down) Next change](command:duff.nextChange)\n\nChanges continue into the adjacent file. [$(keyboard) Set keyboard shortcuts…](command:workbench.action.openGlobalKeybindings?${shortcuts})`,
+      true,
+    )
+
+    tooltip.isTrusted = {
+      enabledCommands: [
+        'duff.previousChange',
+        'duff.nextChange',
+        'workbench.action.openGlobalKeybindings',
+      ],
+    }
+
+    return tooltip
+  }
 
   const updateActive = async () => {
     const file = activeFile()
@@ -201,7 +217,8 @@ export function registerReviewCommands(
 
     if (index === -1) hint.hide()
     else {
-      hint.text = `$(arrow-down) File ${index + 1}/${files.length} · N next · P previous`
+      hint.text = `$(arrow-circle-down) File ${index + 1}/${files.length}`
+      hint.tooltip = hintTooltip(`file ${index + 1} of ${files.length}`)
       hint.show()
     }
 
