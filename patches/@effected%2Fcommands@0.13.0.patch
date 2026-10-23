@@ -1,0 +1,15 @@
+diff --git a/internal/capture.js b/internal/capture.js
+index 293d0d7761d6209f0df71eb7a319a1ae6cbc4a28..0b52e421b94cf67dfd0d29f7390b7eeae304dc7c 100644
+--- a/internal/capture.js
++++ b/internal/capture.js
+@@ -24,7 +24,9 @@ var OutputTooLarge = class extends Data.TaggedError("OutputTooLarge") {};
+ const collectBounded = (stream, limit) => Effect.gen(function* () {
+ 	const seen = yield* Ref.make(0);
+ 	const bounded = Stream.mapEffect(stream, (chunk) => Effect.flatMap(Ref.updateAndGet(seen, (total) => total + chunk.length), (total) => total > limit ? Effect.fail(new OutputTooLarge({ limit })) : Effect.succeed(chunk)));
+-	return yield* Stream.mkString(Stream.decodeText(bounded));
++	const decoder = new TextDecoder("utf-8", { ignoreBOM: true });
++	const output = yield* Stream.mkString(Stream.map(bounded, (chunk) => decoder.decode(chunk, { stream: true })));
++	return output + decoder.decode();
+ });
+ 
+ //#endregion

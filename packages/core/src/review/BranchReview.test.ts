@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 
 import { expect, it } from '@effect/vitest'
-import { Effect, Fiber, Option, Schedule } from 'effect'
+import { Effect, Fiber, Option, Schedule, Schema } from 'effect'
 
 import { GitContext, makeGitContextLayer } from '../git-context/GitContext'
 import { BranchReview, FetchRequired, makeGitReviewLayer, ReviewRevisions } from './BranchReview'
@@ -96,6 +96,47 @@ it.effect('handles detached HEAD and identical branches without inventing change
     const service = yield* BranchReview
     expect((yield* service.branches(root)).current).toBe('HEAD')
     expect((yield* service.compare(root, 'refs/heads/main')).files).toEqual([])
+  }).pipe(Effect.provide(gitReviewLayer)),
+)
+
+it.effect('preserves snapshot BOMs and decodes incomplete trailing UTF-8 as replacement text', () =>
+  Effect.gen(function* () {
+    const root = yield* repository
+    yield* Effect.promise(() =>
+      writeFile(join(root, 'encoded.txt'), Buffer.from([0xef, 0xbb, 0xbf, 0x61, 0xc3])),
+    )
+    yield* command(root, 'add', '.')
+    yield* command(root, 'commit', '-m', 'Encoded snapshot')
+    const commit = (yield* command(root, 'rev-parse', 'HEAD')).stdout.trim()
+    const service = yield* BranchReview
+
+    expect(yield* service.read({ root, commit, path: 'encoded.txt' })).toBe('\uFEFFa\uFFFD')
+  }).pipe(Effect.provide(gitReviewLayer)),
+)
+
+it.effect('reads UTF-8 snapshots up to the capture budget and rejects larger content safely', () =>
+  Effect.gen(function* () {
+    const root = yield* repository
+    const content = 'é'.repeat(8 * 1024 * 1024)
+    yield* write(root, 'large.txt', content)
+    yield* command(root, 'add', '.')
+    yield* command(root, 'commit', '-m', 'At capture limit')
+    const atLimit = (yield* command(root, 'rev-parse', 'HEAD')).stdout.trim()
+    const service = yield* BranchReview
+    expect(yield* service.read({ root, commit: atLimit, path: 'large.txt' })).toBe(content)
+
+    yield* write(root, 'large.txt', `${content}x`)
+    yield* command(root, 'commit', '-am', 'Above capture limit')
+    const aboveLimit = (yield* command(root, 'rev-parse', 'HEAD')).stdout.trim()
+
+    const failure = yield* service
+      .read({ root, commit: aboveLimit, path: 'large.txt' })
+      .pipe(Effect.flip)
+
+    expect(failure._tag).toBe('ReviewError')
+    expect(failure.operation).toBe('show')
+    expect(failure.message).not.toContain('large.txt')
+    expect(failure.message).not.toContain('é')
   }).pipe(Effect.provide(gitReviewLayer)),
 )
 
@@ -414,8 +455,12 @@ it.live('cancelling acquisition terminates its Git transport descendants', () =>
     yield* command(root, 'remote', 'add', 'origin', 'git@github.com:fixture/repo.git')
     const ssh = join(root, 'test-ssh')
     const pidFile = join(root, 'transport.pid')
+    // Publish only a complete PID: reading between shell redirection and echo yields "" (PID 0).
     yield* Effect.promise(() =>
-      writeFile(ssh, '#!/bin/sh\nsleep 30 &\necho $! > "$DUFF_PID_FILE"\nwait\n'),
+      writeFile(
+        ssh,
+        '#!/bin/sh\nsleep 30 &\necho $! > "$DUFF_PID_FILE.tmp"\nmv "$DUFF_PID_FILE.tmp" "$DUFF_PID_FILE"\nwait\n',
+      ),
     )
     yield* Effect.promise(() => chmod(ssh, 0o700))
     yield* Effect.gen(function* () {
@@ -436,24 +481,33 @@ it.live('cancelling acquisition terminates its Git transport descendants', () =>
         )
         .pipe(Effect.forkChild)
 
-      const pid = Number(
-        yield* Effect.tryPromise(() => readFile(pidFile, 'utf8')).pipe(
-          Effect.retry({ times: 100, schedule: Schedule.spaced('10 millis') }),
+      const pid = yield* Effect.tryPromise(() => readFile(pidFile, 'utf8')).pipe(
+        Effect.retry({ times: 100, schedule: Schedule.spaced('10 millis') }),
+        Effect.flatMap(
+          Schema.decodeUnknownEffect(
+            Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThan(0)),
+          ),
         ),
       )
 
+      expect(() => process.kill(pid, 0)).not.toThrow()
       yield* Fiber.interrupt(fiber)
-      expect(
-        yield* Effect.sync(() => {
-          try {
-            process.kill(pid, 0)
-
-            return true
-          } catch {
-            return false
-          }
-        }),
-      ).toBe(false)
+      // Git's close event can precede the kernel finishing/reaping its killed descendants.
+      // Require ESRCH within one second, well before the fixture's natural 30-second exit.
+      yield* Effect.promise(() =>
+        expect
+          .poll(
+            () => {
+              try {
+                process.kill(pid, 0)
+              } catch (error) {
+                return error
+              }
+            },
+            { interval: 10, timeout: 1000 },
+          )
+          .toMatchObject({ code: 'ESRCH' }),
+      )
     }).pipe(
       Effect.provide(
         makeGitReviewLayer({

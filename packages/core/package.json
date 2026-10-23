@@ -16,6 +16,13 @@
     "./azure-cli-authentication": "./src/pull-requests/azure-devops/AzureCliAuthentication.ts",
     "./review-session": "./src/review-session/ReviewSession.ts"
   },
-  "scripts": { "typecheck": "tsc --noEmit" },
-  "dependencies": { "effect": "4.0.2" }
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@effect/platform-node": "4.0.5",
+    "@effected/commands": "0.13.0",
+    "@effected/git": "0.22.0",
+    "effect": "4.0.5"
+  }
 }
