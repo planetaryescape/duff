@@ -1,8 +1,9 @@
-import { spawn } from 'node:child_process'
-
+import { Run } from '@effected/commands'
+import { Git } from '@effected/git'
 import { Context, Effect, Layer, Option, Schema } from 'effect'
+import { ChildProcessSpawner } from 'effect/process'
 
-import { repositoryEnvironment } from '../git-context/RepositoryEnvironment'
+import { gitCommand, makeGitProcessLayer } from '../git-context/GitProcess'
 
 export const Commit = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40,64}$/))
 
@@ -101,72 +102,12 @@ function fetchDestination(raw: string): Option.Option<string> {
 }
 
 export const makeGitReviewLayer = (environment: NodeJS.ProcessEnv) => {
-  const env = {
-    ...repositoryEnvironment(environment),
-    GIT_NO_LAZY_FETCH: '1',
-    GIT_TERMINAL_PROMPT: '0',
-    GIT_NO_REPLACE_OBJECTS: '1',
-  }
-
-  const git = Effect.fn('GitReview.git')(function* (root: string, args: ReadonlyArray<string>) {
-    const failure = () =>
-      new ReviewError({
-        operation: args[0] ?? 'git',
-        message:
-          'Git operation failed. Check that Git is installed, the repository has commits, and the selected branch is available locally. Raw diagnostics are hidden because they may contain private data.',
-      })
-
-    return yield* Effect.callback<string, ReviewError>((resume) => {
-      const child = spawn('git', ['-C', root, ...args], {
-        env,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        detached: process.platform !== 'win32',
-      })
-
-      let stdout = ''
-      let bytes = 0
-
-      const stop = () => {
-        if (child.pid !== undefined) {
-          try {
-            if (process.platform === 'win32') child.kill('SIGKILL')
-            else process.kill(-child.pid, 'SIGKILL')
-          } catch {
-            child.kill('SIGKILL')
-          }
-        }
-      }
-
-      child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
-        bytes += Buffer.byteLength(chunk)
-
-        if (bytes > 16 * 1024 * 1024) stop()
-        else stdout += chunk
-      })
-      child.stderr.on('data', (chunk: Buffer) => {
-        bytes += chunk.length
-
-        if (bytes > 16 * 1024 * 1024) stop()
-      })
-      child.once('error', () => {})
-
-      const closed = new Promise<void>((resolve) =>
-        child.once('close', (code) => {
-          resolve()
-          resume(
-            code === 0 && bytes <= 16 * 1024 * 1024
-              ? Effect.succeed(stdout)
-              : Effect.fail(failure()),
-          )
-        }),
-      )
-
-      return Effect.promise(async () => {
-        stop()
-        await closed
-      })
-    }).pipe(Effect.timeoutOrElse({ duration: '60 seconds', orElse: failure }))
-  })
+  const failure = (operation: string) =>
+    new ReviewError({
+      operation,
+      message:
+        'Git operation failed. Check that Git is installed, the repository has commits, and the selected branch is available locally. Raw diagnostics are hidden because they may contain private data.',
+    })
 
   const decodeFiles = Effect.fn('GitReview.decodeFiles')(function* (output: string) {
     const tokens = output.split('\0')
@@ -197,31 +138,53 @@ export const makeGitReviewLayer = (environment: NodeJS.ProcessEnv) => {
     return files
   })
 
-  const commit = Effect.fn('GitReview.commit')(function* (root: string, ref: string) {
-    const output = yield* git(root, [
-      'rev-parse',
-      '--verify',
-      '--end-of-options',
-      `${ref}^{commit}`,
-    ])
-
-    return yield* Schema.decodeUnknownEffect(Commit)(output.trim()).pipe(
-      Effect.mapError(
-        () =>
-          new ReviewError({
-            operation: 'resolve commit',
-            message: 'Git returned an invalid commit ID.',
-          }),
-      ),
-    )
-  })
-
   return Layer.effect(
     BranchReview,
     Effect.gen(function* () {
+      const upstream = yield* Git
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+
+      const git = Effect.fn('GitReview.git')(function* (root: string, args: ReadonlyArray<string>) {
+        const output = yield* Run.collect(gitCommand(root, args), {
+          timeout: '60 seconds',
+        }).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.mapError(() => failure(args[0] ?? 'git')),
+        )
+
+        if (!output.succeeded) return yield* failure(args[0] ?? 'git')
+
+        return output.stdout
+      })
+
+      const commit = Effect.fn('GitReview.commit')(function* (root: string, ref: string) {
+        const output = yield* git(root, [
+          'rev-parse',
+          '--verify',
+          '--end-of-options',
+          `${ref}^{commit}`,
+        ])
+
+        return yield* Schema.decodeUnknownEffect(Commit)(output.trim()).pipe(
+          Effect.mapError(
+            () =>
+              new ReviewError({
+                operation: 'resolve commit',
+                message: 'Git returned an invalid commit ID.',
+              }),
+          ),
+        )
+      })
+
       const branches = Effect.fn('BranchReview.branches')(function* (directory: string) {
-        const root = (yield* git(directory, ['rev-parse', '--show-toplevel'])).trim()
-        const current = (yield* git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
+        const root = yield* upstream
+          .repoRoot(directory)
+          .pipe(Effect.mapError(() => failure('rev-parse')))
+
+        const current = Option.getOrElse(
+          yield* upstream.currentBranch(root).pipe(Effect.mapError(() => failure('rev-parse'))),
+          () => 'HEAD',
+        )
 
         const output = yield* git(root, [
           'for-each-ref',
@@ -246,7 +209,11 @@ export const makeGitReviewLayer = (environment: NodeJS.ProcessEnv) => {
       ) {
         const headCommit = yield* commit(root, 'HEAD')
         const targetCommit = yield* commit(root, baseBranch)
-        const headBranch = (yield* git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
+
+        const headBranch = Option.getOrElse(
+          yield* upstream.currentBranch(root).pipe(Effect.mapError(() => failure('rev-parse'))),
+          () => 'HEAD',
+        )
 
         return yield* compareCommits(root, baseBranch, headBranch, targetCommit, headCommit)
       })
@@ -258,7 +225,7 @@ export const makeGitReviewLayer = (environment: NodeJS.ProcessEnv) => {
         targetCommit: string,
         headCommit: string,
       ) {
-        if ((yield* git(root, ['rev-parse', '--is-shallow-repository'])).trim() !== 'false')
+        if (yield* upstream.isShallow(root).pipe(Effect.mapError(() => failure('rev-parse'))))
           return yield* new ReviewError({
             operation: 'merge-base',
             message:
@@ -435,5 +402,5 @@ export const makeGitReviewLayer = (environment: NodeJS.ProcessEnv) => {
 
       return BranchReview.of({ branches, compare, prepare, read })
     }),
-  )
+  ).pipe(Layer.provide(makeGitProcessLayer(environment)))
 }
