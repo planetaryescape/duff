@@ -187,9 +187,24 @@ export function registerReviewCommands(
     }
   }
 
+  // A persistent reminder of the review-wide navigation keys while a Duff diff is active.
+  const keys = process.platform === 'darwin' ? ['⌥F5', '⇧⌥F5'] : ['Alt+F5', 'Shift+Alt+F5']
+  const hint = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100)
+  hint.command = 'duff.nextChange'
+  hint.tooltip = `Duff: ${keys[0]} goes to the next change and ${keys[1]} to the previous one, continuing into the next or previous changed file. Click for the next change.`
+
   const updateActive = async () => {
     const file = activeFile()
     const state = file ? (progress?.isViewed(file.path) ? 'viewed' : 'unviewed') : undefined
+    const files = provider.files()
+    const index = files.findIndex((item) => item.change.path === file?.path)
+
+    if (index === -1) hint.hide()
+    else {
+      hint.text = `$(arrow-down) File ${index + 1}/${files.length} · ${keys[0]} next change`
+      hint.show()
+    }
+
     await vscode.commands.executeCommand('setContext', 'duff.activeFileState', state)
   }
 
@@ -334,6 +349,7 @@ export function registerReviewCommands(
   registerPullRequestReviewCommands(context, runtime, renderPreparation)
 
   context.subscriptions.push(
+    hint,
     provider,
     view,
     vscode.window.tabGroups.onDidChangeTabs(() => runtime.runFork(Effect.promise(updateActive))),
@@ -346,6 +362,7 @@ export function registerReviewCommands(
     vscode.commands.registerCommand('duff.compare', compare),
     vscode.commands.registerCommand('duff.toggleLayout', async () => {
       await context.workspaceState.update('reviewLayout', provider.toggleLayout())
+      await updateActive()
     }),
     vscode.commands.registerCommand('duff.refresh', async () => {
       if (prepared) return vscode.commands.executeCommand('duff.refreshPullRequestReview')
