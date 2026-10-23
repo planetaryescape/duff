@@ -5,6 +5,8 @@
   "exports": {
     "./review": "./src/review/BranchReview.ts",
     "./review-progress": "./src/review/ReviewProgress.ts",
+    "./saved-reviews": "./src/review/SavedReviews.ts",
+    "./saved-review-sessions": "./src/review/ReviewSessions.ts",
     "./pull-request-review": "./src/review/PullRequestReview.ts",
     "./git-context": "./src/git-context/GitContext.ts",
     "./git-hosting-provider": "./src/pull-requests/GitHostingProvider.ts",

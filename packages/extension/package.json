@@ -12,12 +12,8 @@
   "engines": {
     "vscode": "^1.123.0"
   },
-  "categories": [
-    "Other"
-  ],
-  "activationEvents": [
-    "onView:duff.files"
-  ],
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished", "onView:duff.files"],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -56,41 +52,14 @@
         "icon": "$(refresh)",
         "category": "Duff"
       },
-      {
-        "command": "duff.reviewPullRequest",
-        "title": "Review Pull Request Locally",
-        "category": "Duff"
-      },
-      {
-        "command": "duff.openPullRequestBrowser",
-        "title": "Open Pull Request in Browser",
-        "icon": "$(link-external)",
-        "category": "Duff"
-      },
-      {
-        "command": "duff.fetchReviewRevisions",
-        "title": "Fetch PR Revisions…",
-        "icon": "$(cloud-download)",
-        "category": "Duff"
-      },
-      {
-        "command": "duff.cancelPullRequestReview",
-        "title": "Cancel PR Preparation",
-        "icon": "$(close)",
-        "category": "Duff"
-      },
-      {
-        "command": "duff.refreshPullRequestReview",
-        "title": "Refresh PR Review",
-        "icon": "$(refresh)",
-        "category": "Duff"
-      },
-      {
-        "command": "duff.exitPullRequestReview",
-        "title": "Exit PR Review",
-        "icon": "$(sign-out)",
-        "category": "Duff"
-      },
+      { "command": "duff.reviewPullRequest", "title": "Review Pull Request Locally", "category": "Duff" },
+      { "command": "duff.openPullRequestBrowser", "title": "Open Pull Request in Browser", "icon": "$(link-external)", "category": "Duff" },
+      { "command": "duff.fetchReviewRevisions", "title": "Fetch PR Revisions…", "icon": "$(cloud-download)", "category": "Duff" },
+      { "command": "duff.cancelPullRequestReview", "title": "Cancel PR Preparation", "icon": "$(close)", "category": "Duff" },
+      { "command": "duff.refreshPullRequestReview", "title": "Refresh PR Review", "icon": "$(refresh)", "category": "Duff" },
+      { "command": "duff.exitPullRequestReview", "title": "Exit PR Review", "icon": "$(sign-out)", "category": "Duff" },
+      { "command": "duff.resumeReview", "title": "Resume Review…", "icon": "$(history)", "category": "Duff" },
+      { "command": "duff.forgetReview", "title": "Forget Saved Review…", "category": "Duff" },
       {
         "command": "duff.loadMoreProviders",
         "title": "Load More Pull Requests",
@@ -155,26 +124,21 @@
         }
       }
     },
-    "viewsWelcome": [
-      {
-        "view": "duff.files",
-        "contents": "Review committed changes on your current branch.\n[Compare Against Branch](command:duff.compare)\nClick a changed file to open its diff. Use Open Workspace File to edit and navigate."
-      },
-      {
-        "view": "duff.context",
-        "contents": "Inspect local identity and credential configuration without authenticating.\n[Inspect Git Context](command:duff.inspectContext)"
-      },
-      {
-        "view": "duff.providers",
-        "contents": "Discover open pull requests for GitHub and Azure DevOps remotes.\n[Check Pull Requests](command:duff.refreshProviders)",
-        "when": "config.duff.automaticDiscovery != false"
-      },
-      {
-        "view": "duff.providers",
-        "contents": "Automatic discovery is off. Check pull requests when you need them, without enabling background discovery.\n[Check Pull Requests](command:duff.refreshProviders)",
-        "when": "config.duff.automaticDiscovery == false"
-      }
-    ],
+    "viewsWelcome": [{
+      "view": "duff.files",
+      "contents": "Review committed changes on your current branch.\n[Compare Against Branch](command:duff.compare)\n[Resume Review…](command:duff.resumeReview)\nClick a changed file to open its diff. Use Open Workspace File to edit and navigate."
+    }, {
+      "view": "duff.context",
+      "contents": "Inspect local identity and credential configuration without authenticating.\n[Inspect Git Context](command:duff.inspectContext)"
+    }, {
+      "view": "duff.providers",
+      "contents": "Discover open pull requests for GitHub and Azure DevOps remotes.\n[Check Pull Requests](command:duff.refreshProviders)",
+      "when": "config.duff.automaticDiscovery != false"
+    }, {
+      "view": "duff.providers",
+      "contents": "Automatic discovery is off. Check pull requests when you need them, without enabling background discovery.\n[Check Pull Requests](command:duff.refreshProviders)",
+      "when": "config.duff.automaticDiscovery == false"
+    }],
     "menus": {
       "view/title": [
         {
@@ -187,26 +151,12 @@
           "when": "view == duff.files && !duff.prReview && duff.prPreparation != Preparing && duff.prPreparation != AwaitingFetch",
           "group": "navigation@2"
         },
-        {
-          "command": "duff.refreshPullRequestReview",
-          "when": "view == duff.files && duff.prReview && duff.prPreparation != Preparing && duff.prPreparation != AwaitingFetch",
-          "group": "navigation@2"
-        },
-        {
-          "command": "duff.exitPullRequestReview",
-          "when": "view == duff.files && duff.prReview",
-          "group": "navigation@5"
-        },
-        {
-          "command": "duff.fetchReviewRevisions",
-          "when": "view == duff.files && duff.prPreparation == AwaitingFetch",
-          "group": "navigation@2"
-        },
-        {
-          "command": "duff.cancelPullRequestReview",
-          "when": "view == duff.files && (duff.prPreparation == AwaitingFetch || duff.prPreparation == Preparing)",
-          "group": "navigation@4"
-        },
+        { "command": "duff.refreshPullRequestReview", "when": "view == duff.files && duff.prReview && duff.prPreparation != Preparing && duff.prPreparation != AwaitingFetch", "group": "navigation@2" },
+        { "command": "duff.exitPullRequestReview", "when": "view == duff.files && duff.prReview", "group": "navigation@5" },
+        { "command": "duff.resumeReview", "when": "view == duff.files", "group": "navigation@4" },
+        { "command": "duff.forgetReview", "when": "view == duff.files", "group": "review@1" },
+        { "command": "duff.fetchReviewRevisions", "when": "view == duff.files && duff.prPreparation == AwaitingFetch", "group": "navigation@2" },
+        { "command": "duff.cancelPullRequestReview", "when": "view == duff.files && (duff.prPreparation == AwaitingFetch || duff.prPreparation == Preparing)", "group": "navigation@4" },
         {
           "command": "duff.toggleLayout",
           "when": "view == duff.files",

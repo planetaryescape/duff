@@ -64,6 +64,20 @@ export const ReviewRevisions = Schema.Struct({ source: ReviewRevision, target: R
 
 export interface ReviewRevisions extends Schema.Schema.Type<typeof ReviewRevisions> {}
 
+export const FileObject = Schema.Struct({ id: Commit, mode: Schema.String })
+
+export const FileComparison = Schema.Struct({
+  change: FileChange,
+  base: Schema.Option(FileObject),
+  head: Schema.Option(FileObject),
+})
+
+export interface FileComparison extends Schema.Schema.Type<typeof FileComparison> {}
+
+export const RetentionPrefix = Schema.String.check(
+  Schema.isPattern(/^refs\/duff\/sessions\/[a-f0-9]{64}\/[a-f0-9]{64}\/[a-f0-9]{64}$/),
+)
+
 export class FetchRequired extends Schema.TaggedError<FetchRequired>()('FetchRequired', {}) {}
 
 export class BranchReview extends Context.Service<
@@ -77,6 +91,15 @@ export class BranchReview extends Context.Service<
       permission: 'local-only' | 'fetch',
     ) => Effect.Effect<Review, ReviewError | FetchRequired>
     readonly read: (snapshot: Snapshot) => Effect.Effect<string, ReviewError>
+    readonly comparisons: (
+      review: Review,
+    ) => Effect.Effect<ReadonlyArray<FileComparison>, ReviewError>
+    readonly retain: (
+      root: string,
+      prefix: string,
+      commits: ReadonlyArray<string>,
+    ) => Effect.Effect<void, ReviewError>
+    readonly release: (root: string, prefix: string) => Effect.Effect<void, ReviewError>
   }
 >()('duff/BranchReview') {}
 
@@ -400,7 +423,97 @@ export const makeGitReviewLayer = (environment: NodeJS.ProcessEnv) => {
         return yield* git(snapshot.root, ['show', `${snapshot.commit}:${snapshot.path}`])
       })
 
-      return BranchReview.of({ branches, compare, prepare, read })
+      const object = Effect.fn('BranchReview.object')(function* (
+        root: string,
+        revision: string,
+        path: string,
+      ) {
+        const output = yield* git(root, ['ls-tree', '-z', revision, '--', `:(literal)${path}`])
+        const match = /^([0-7]{6}) (?:blob|commit) ([a-f0-9]{40,64})\t([^\0]+)\0$/.exec(output)
+
+        if (!match || match[3] !== path)
+          return yield* new ReviewError({
+            operation: 'read comparison',
+            message: 'The saved comparison is unavailable. Its Git objects may be missing.',
+          })
+
+        return yield* Schema.decodeUnknownEffect(FileObject)({ mode: match[1], id: match[2] }).pipe(
+          Effect.mapError(
+            () =>
+              new ReviewError({
+                operation: 'read comparison',
+                message: 'Git returned invalid file metadata.',
+              }),
+          ),
+        )
+      })
+
+      const comparisons = Effect.fn('BranchReview.comparisons')(function* (review: Review) {
+        return yield* Effect.forEach(
+          review.files,
+          Effect.fn('BranchReview.fileComparison')(function* (change) {
+            const base =
+              change.status === 'A'
+                ? Option.none()
+                : Option.some(
+                    yield* object(
+                      review.root,
+                      review.baseCommit,
+                      change.previousPath ?? change.path,
+                    ),
+                  )
+
+            const head =
+              change.status === 'D'
+                ? Option.none()
+                : Option.some(yield* object(review.root, review.headCommit, change.path))
+
+            return FileComparison.make({ change, base, head })
+          }),
+        )
+      })
+
+      const prefix = (value: string) =>
+        Schema.decodeUnknownEffect(RetentionPrefix)(value).pipe(
+          Effect.mapError(
+            () =>
+              new ReviewError({
+                operation: 'retention',
+                message: 'Invalid Duff retention namespace.',
+              }),
+          ),
+        )
+
+      const retain = Effect.fn('BranchReview.retain')(function* (
+        root: string,
+        input: string,
+        commits: ReadonlyArray<string>,
+      ) {
+        const namespace = yield* prefix(input)
+
+        for (const [index, value] of commits.entries()) {
+          const verified = yield* commit(root, value)
+          yield* git(root, [
+            '-c',
+            'core.hooksPath=/dev/null',
+            'update-ref',
+            `${namespace}/${index}`,
+            verified,
+          ])
+        }
+      })
+
+      const release = Effect.fn('BranchReview.release')(function* (root: string, input: string) {
+        const namespace = yield* prefix(input)
+        const output = yield* git(root, ['for-each-ref', '--format=%(refname)', `${namespace}/`])
+
+        for (const ref of output.trim().split('\n')) {
+          if (ref.startsWith(`${namespace}/`))
+            yield* git(root, ['-c', 'core.hooksPath=/dev/null', 'update-ref', '-d', ref])
+        }
+      })
+
+      return BranchReview.of({ branches, compare, prepare, read, comparisons, retain, release })
     }),
   ).pipe(Layer.provide(makeGitProcessLayer(environment)))
 }

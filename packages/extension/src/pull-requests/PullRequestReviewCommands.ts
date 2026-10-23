@@ -1,16 +1,32 @@
 import { PullRequestReview, type PreparationState } from '@duff/core/pull-request-review'
 import { ReviewSession } from '@duff/core/review-session'
+import { ReviewSessions } from '@duff/core/saved-review-sessions'
+import { type SavedReview } from '@duff/core/saved-reviews'
 import { Effect, Fiber, Option, Stream } from 'effect'
 import * as vscode from 'vscode'
 
 import { type CommandRuntime, runOperation } from '../Operations'
 import { PullRequestItem } from './PullRequestView'
 
+class SavedReviewChoice implements vscode.QuickPickItem {
+  readonly label: string
+  readonly description: string
+  readonly detail: string
+
+  constructor(readonly saved: SavedReview) {
+    this.label = `PR #${saved.selection.id}: ${saved.resolved.pullRequest.title}`
+    this.description = `${saved.selection.provider} · ${saved.viewed.length}/${saved.review.files.length} viewed`
+    this.detail = saved.selection.repository.key
+  }
+}
+
 export function registerPullRequestReviewCommands(
   context: vscode.ExtensionContext,
   runtime: CommandRuntime,
   render: (state: PreparationState) => Promise<void>,
 ) {
+  let restored = false
+
   const subscription = runtime.runFork(
     PullRequestReview.use((service) =>
       service.changes.pipe(
@@ -38,19 +54,97 @@ export function registerPullRequestReviewCommands(
       session.changes.pipe(
         Stream.runForEach((state) =>
           PullRequestReview.use((service) =>
-            service.repositoryChanged(
-              state._tag === 'Active' ? Option.some(state.directory) : Option.none(),
-              state._tag === 'Active'
-                ? Option.map(state.snapshot, (snapshot) => snapshot.root)
-                : Option.none(),
-            ),
+            Effect.gen(function* () {
+              yield* service.repositoryChanged(
+                state._tag === 'Active' ? Option.some(state.directory) : Option.none(),
+                state._tag === 'Active'
+                  ? Option.map(state.snapshot, (snapshot) => snapshot.root)
+                  : Option.none(),
+              )
+
+              if (!restored && state._tag === 'Active' && Option.isSome(state.snapshot)) {
+                restored = true
+                const root = state.snapshot.value.root
+                yield* Effect.promise(() =>
+                  runOperation(runtime, 'Duff.preparePullRequest', service.restore(root)),
+                )
+              }
+            }),
           ),
         ),
       ),
     ),
   )
 
+  const chooseSaved = async (forget: boolean) => {
+    const catalog = await runOperation(
+      runtime,
+      'Duff.preparePullRequest',
+      ReviewSessions.use((service) => service.list()),
+    )
+
+    if (!catalog) return
+    const current = await runtime.runPromise(PullRequestReview.use((service) => service.current()))
+
+    const choices = catalog.sessions
+      .filter((saved) => saved.review.root === Option.getOrUndefined(current.root))
+      .map((saved) => new SavedReviewChoice(saved))
+
+    if (choices.length === 0) {
+      await vscode.window.showInformationMessage(
+        'Duff: No saved PR reviews for this repository yet. Select a pull request to start one.',
+      )
+
+      return
+    }
+
+    const choice = await vscode.window.showQuickPick(choices, {
+      title: forget ? 'Forget Saved Review' : 'Resume Saved Review',
+      placeHolder: forget
+        ? 'Choose saved progress to remove · your checkout and provider are unchanged'
+        : 'Most recently reviewed first · resumes without contacting the provider',
+    })
+
+    if (!choice) return
+
+    if (forget) {
+      const confirmed = await vscode.window.showWarningMessage(
+        `Forget saved progress for PR #${choice.saved.selection.id}? Its Duff-owned Git pins will be released. No provider state or checkout files will change.`,
+        { modal: true },
+        'Forget Review',
+      )
+
+      if (confirmed !== 'Forget Review') return
+    }
+
+    await runOperation(
+      runtime,
+      'Duff.preparePullRequest',
+      Effect.gen(function* () {
+        const service = yield* PullRequestReview
+        const latest = yield* service.current()
+
+        if (Option.getOrUndefined(latest.root) !== Option.getOrUndefined(current.root)) return
+
+        if (!forget) {
+          yield* service.resume(choice.saved.key)
+
+          return
+        }
+
+        yield* service.cancel()
+        const state = yield* service.current()
+
+        if (Option.isSome(state.accepted) && state.accepted.value.saved.key === choice.saved.key)
+          yield* service.exit()
+        yield* ReviewSessions.use((sessions) => sessions.forget(choice.saved.key))
+      }),
+    )
+  }
+
   context.subscriptions.push(
+    vscode.commands.registerCommand('duff.resumeReview', () => chooseSaved(false)),
+    vscode.commands.registerCommand('duff.forgetReview', () => chooseSaved(true)),
     {
       dispose: () => {
         runtime.runFork(Fiber.interrupt(subscription))
@@ -140,7 +234,7 @@ export function registerPullRequestReviewCommands(
             state.snapshot.value.root !== current.accepted.value.review.root
           )
             return
-          yield* service.start(state.snapshot.value, current.accepted.value.selection)
+          yield* service.start(state.snapshot.value, current.accepted.value.selection, 'update')
         }),
       ),
     ),
