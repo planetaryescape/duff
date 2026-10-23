@@ -52,6 +52,12 @@
         "icon": "$(refresh)",
         "category": "Duff"
       },
+      {
+        "command": "duff.searchPullRequests",
+        "title": "Search Pull Requests…",
+        "icon": "$(search)",
+        "category": "Duff"
+      },
       { "command": "duff.reviewPullRequest", "title": "Review Pull Request Locally", "category": "Duff" },
       { "command": "duff.openPullRequestBrowser", "title": "Open Pull Request in Browser", "icon": "$(link-external)", "category": "Duff" },
       { "command": "duff.fetchReviewRevisions", "title": "Fetch PR Revisions…", "icon": "$(cloud-download)", "category": "Duff" },
@@ -66,6 +72,11 @@
       {
         "command": "duff.connectProvider",
         "title": "Connect Provider",
+        "category": "Duff"
+      },
+      {
+        "command": "duff.openSelectedFile",
+        "title": "Open Selected Workspace File",
         "category": "Duff"
       },
       {
@@ -87,6 +98,12 @@
         "category": "Duff"
       }
     ],
+    "keybindings": [{
+      "command": "duff.openSelectedFile",
+      "key": "ctrl+enter",
+      "mac": "cmd+enter",
+      "when": "focusedView == duff.files && listFocus"
+    }],
     "viewsContainers": {
       "activitybar": [{ "id": "duff", "title": "Duff Review", "icon": "resources/review.svg" }]
     },
@@ -154,9 +171,14 @@
           "group": "navigation@1"
         },
         {
-          "command": "duff.refreshProviders",
+          "command": "duff.searchPullRequests",
           "when": "view == duff.providers",
           "group": "navigation@1"
+        },
+        {
+          "command": "duff.refreshProviders",
+          "when": "view == duff.providers",
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
@@ -164,22 +186,12 @@
         { "command": "duff.openPullRequestBrowser", "when": "view == duff.providers && viewItem == pullRequest", "group": "navigation@1" },
         {
           "command": "duff.markViewed",
-          "when": "view == duff.files && viewItem =~ /^(deletedReviewFile|reviewFile)\\.unviewed$/",
-          "group": "inline@1"
-        },
-        {
-          "command": "duff.markUnviewed",
-          "when": "view == duff.files && viewItem =~ /^(deletedReviewFile|reviewFile)\\.viewed$/",
-          "group": "inline@1"
-        },
-        {
-          "command": "duff.markViewed",
-          "when": "view == duff.files && viewItem =~ /^(deletedReviewFile|reviewFile)\\.unviewed$/",
+          "when": "view == duff.files && viewItem =~ /^(deletedReviewFile|reviewFile|reviewFolder)\\.unviewed$/",
           "group": "navigation@1"
         },
         {
           "command": "duff.markUnviewed",
-          "when": "view == duff.files && viewItem =~ /^(deletedReviewFile|reviewFile)\\.viewed$/",
+          "when": "view == duff.files && viewItem =~ /^(deletedReviewFile|reviewFile|reviewFolder)\\.viewed$/",
           "group": "navigation@1"
         },
         {
@@ -194,6 +206,7 @@
         }
       ],
       "commandPalette": [
+        { "command": "duff.openSelectedFile", "when": "false" },
         { "command": "duff.reviewPullRequest", "when": "false" },
         { "command": "duff.openPullRequestBrowser", "when": "false" },
         { "command": "duff.refreshPullRequestReview", "when": "duff.prReview && duff.prPreparation != Preparing && duff.prPreparation != AwaitingFetch" },
