@@ -86,7 +86,17 @@ export function registerReviewCommands(
       (editor) => editor.document.uri.toString() === input.modified.toString(),
     )
 
-    if (active && matches.includes(active)) return active
+    const visibleCopies = vscode.window.tabGroups.all.filter((group) => {
+      const visible = group.activeTab?.input
+
+      return (
+        visible instanceof vscode.TabInputTextDiff &&
+        visible.modified.toString() === input.modified.toString()
+      )
+    }).length
+
+    // Splitting activates the new tab before its editor exists. Do not navigate the old copy meanwhile.
+    if (matches.length < visibleCopies) return
 
     if (matches.length < 2) return matches[0]
 
