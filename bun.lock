@@ -44,6 +44,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "@effected/commands@0.13.0": "patches/@effected%2Fcommands@0.13.0.patch",
+  },
   "packages": {
     "@duff/anti-slop": ["@duff/anti-slop@workspace:packages/anti-slop"],
 

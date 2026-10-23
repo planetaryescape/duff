@@ -99,6 +99,21 @@ it.effect('handles detached HEAD and identical branches without inventing change
   }).pipe(Effect.provide(gitReviewLayer)),
 )
 
+it.effect('preserves snapshot BOMs and decodes incomplete trailing UTF-8 as replacement text', () =>
+  Effect.gen(function* () {
+    const root = yield* repository
+    yield* Effect.promise(() =>
+      writeFile(join(root, 'encoded.txt'), Buffer.from([0xef, 0xbb, 0xbf, 0x61, 0xc3])),
+    )
+    yield* command(root, 'add', '.')
+    yield* command(root, 'commit', '-m', 'Encoded snapshot')
+    const commit = (yield* command(root, 'rev-parse', 'HEAD')).stdout.trim()
+    const service = yield* BranchReview
+
+    expect(yield* service.read({ root, commit, path: 'encoded.txt' })).toBe('\uFEFFa\uFFFD')
+  }).pipe(Effect.provide(gitReviewLayer)),
+)
+
 it.effect('reads UTF-8 snapshots up to the capture budget and rejects larger content safely', () =>
   Effect.gen(function* () {
     const root = yield* repository
