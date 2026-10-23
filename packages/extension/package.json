@@ -90,8 +90,8 @@
       }
     ],
     "keybindings": [
-      { "command": "duff.nextChange", "key": "alt+f5", "when": "textCompareEditorActive && duff.activeFileState" },
-      { "command": "duff.previousChange", "key": "shift+alt+f5", "when": "textCompareEditorActive && duff.activeFileState" }
+      { "command": "duff.nextChange", "key": "n", "when": "editorTextFocus && editorReadonly && textCompareEditorActive && duff.activeFileState" },
+      { "command": "duff.previousChange", "key": "p", "when": "editorTextFocus && editorReadonly && textCompareEditorActive && duff.activeFileState" }
     ],
     "viewsContainers": {
       "activitybar": [{ "id": "duff", "title": "Duff Review", "icon": "resources/review.svg" }]
@@ -120,7 +120,7 @@
     },
     "viewsWelcome": [{
       "view": "duff.files",
-      "contents": "Review committed changes on your current branch.\n[Compare Against Branch](command:duff.compare)\nClick a changed file to open its diff. In a diff, Alt+F5 (⌥F5 on macOS) goes to the next change and continues into the next file; add Shift to go back. Use Open Workspace File to edit and navigate."
+      "contents": "Review committed changes on your current branch.\n[Compare Against Branch](command:duff.compare)\nClick a changed file to open its diff. In a diff, press N for the next change, which continues into the next file, and P for the previous one. Use Open Workspace File to edit and navigate."
     }, {
       "view": "duff.context",
       "contents": "Inspect local identity and credential configuration without authenticating.\n[Inspect Git Context](command:duff.inspectContext)"

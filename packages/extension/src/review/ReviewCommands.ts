@@ -188,10 +188,10 @@ export function registerReviewCommands(
   }
 
   // A persistent reminder of the review-wide navigation keys while a Duff diff is active.
-  const keys = process.platform === 'darwin' ? ['⌥F5', '⇧⌥F5'] : ['Alt+F5', 'Shift+Alt+F5']
   const hint = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100)
   hint.command = 'duff.nextChange'
-  hint.tooltip = `Duff: ${keys[0]} goes to the next change and ${keys[1]} to the previous one, continuing into the next or previous changed file. Click for the next change.`
+  hint.tooltip =
+    'Duff: in the diff, N goes to the next change and P to the previous one, continuing into the next or previous changed file. Click for the next change.'
 
   const updateActive = async () => {
     const file = activeFile()
@@ -201,7 +201,7 @@ export function registerReviewCommands(
 
     if (index === -1) hint.hide()
     else {
-      hint.text = `$(arrow-down) File ${index + 1}/${files.length} · ${keys[0]} next change`
+      hint.text = `$(arrow-down) File ${index + 1}/${files.length} · N next · P previous`
       hint.show()
     }
 

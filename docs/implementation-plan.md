@@ -59,6 +59,6 @@ Evidence: [2026-10-15 viewed progress](implementation-log.md#2026-10-15-explicit
 ## S08: Change navigation across files
 
 Status: implemented and verified locally.
-Scope: Duff: Go to Next/Previous Change in Review, bound to Alt+F5 / Shift+Alt+F5 only while a current-review Duff diff is active.
-Acceptance: inside a file, move exactly like the native diff editor. Past the last or first change, open the adjacent file in the displayed list or tree order on its first or last change and select its row. Stop at the review ends with a status message. While a Duff diff is active, a clickable status-bar hint shows the file position and the key; the empty Changed Files view explains the keys. Ordinary editors and other diffs keep the native bindings. No skipping, marking or wrapping across the review.
+Scope: Duff: Go to Next/Previous Change in Review, bound to N / P only while a current-review, read-only Duff diff editor has text focus.
+Acceptance: inside a file, move exactly like the native diff editor. Past the last or first change, open the adjacent file in the displayed list or tree order on its first or last change and select its row. Stop at the review ends with a status message. While a Duff diff is active, a clickable status-bar hint shows the file position and the keys; the empty Changed Files view explains the keys. Ordinary editors, other diffs, the tree and input boxes keep normal typing. No skipping, marking or wrapping across the review.
 Evidence: [2026-10-23 change navigation](implementation-log.md#2026-10-23-change-navigation-across-files).
