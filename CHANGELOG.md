@@ -6,7 +6,6 @@
 ### Bug Fixes
 
 * **github:** explain anonymous repository failures ([#15](https://github.com/planetaryescape/duff/issues/15)) ([84268ec](https://github.com/planetaryescape/duff/commit/84268ec428c096ff63b3eac0f1aa3a12c38cc48b))
-* **review:** reveal viewed actions on row hover ([f086706](https://github.com/planetaryescape/duff/commit/f08670696627ee4bef5fac3062966418720459fe))
 
 ## [0.2.0](https://github.com/planetaryescape/duff/compare/v0.1.0...v0.2.0) (2026-10-23)
 
