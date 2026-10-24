@@ -19,6 +19,8 @@ it.effect('built-ins discover both providers without host HTTP wiring and reject
             number: 17,
             title: 'GitHub change',
             draft: true,
+            state: 'open',
+            merged_at: null,
             head: {
               ref: 'feature',
               sha: 'a'.repeat(40),
@@ -134,6 +136,8 @@ it.effect(
             number: 17,
             title: 'Fresh GitHub',
             draft: false,
+            state: 'open',
+            merged_at: null,
             head: { ref: 'topic', sha: head, repo: { owner: { login: 'fork' }, name: 'repo' } },
             base: {
               ref: 'topic',

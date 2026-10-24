@@ -1,3 +1,4 @@
+import { type PullRequestState } from '@duff/core/git-hosting-provider'
 import { GroupId } from '@duff/core/pull-requests'
 import { ReviewSession, type ReviewState } from '@duff/core/review-session'
 import { Effect, Fiber, Option, Schema, Stream } from 'effect'
@@ -8,6 +9,8 @@ import {
   canConnectProvider,
   providerError,
   PullRequestItem,
+  pullRequestLabel,
+  pullRequestStateLabels,
   PullRequestView,
 } from './PullRequestView'
 
@@ -51,7 +54,7 @@ export function registerPullRequestCommands(
             const item = new PullRequestItem(root, row, pr)
             items.push({
               label: `#${pr.id} ${pr.title}`,
-              description: `${row.group.repository.displayName} · ${pr.draft ? 'Draft' : 'Open'}`,
+              description: `${row.group.repository.displayName} · ${pullRequestLabel(pr)}`,
               detail: `${pr.source._tag === 'Available' ? pr.source.ref.name.replace('refs/heads/', '') : 'Source unavailable'} → ${pr.target.ref.name.replace('refs/heads/', '')}${row.content._tag === 'Ready' ? '' : ' · Previous results'}`,
               command: ready
                 ? {
@@ -72,7 +75,7 @@ export function registerPullRequestCommands(
             items.push({
               label: '$(list-unordered) Load More Pull Requests',
               description: row.group.repository.displayName,
-              detail: 'Search covers loaded open PRs. Load the next page to search more.',
+              detail: `Search covers loaded ${state.pullRequestState} PRs. Load the next page to search more.`,
               alwaysShow: true,
               command: {
                 command: 'duff.loadMoreProviders',
@@ -107,6 +110,15 @@ export function registerPullRequestCommands(
     }
 
     items.push({
+      label: '$(filter) Show Open / Merged / Closed…',
+      detail: 'Choose which pull requests to browse.',
+      alwaysShow: true,
+      command: {
+        command: 'duff.filterPullRequests',
+        title: 'Filter Pull Requests',
+      },
+    })
+    items.push({
       label: '$(refresh) Check Pull Requests',
       detail: 'Refresh discovery for the selected local repository.',
       alwaysShow: true,
@@ -126,6 +138,11 @@ export function registerPullRequestCommands(
           Effect.sync(() => {
             provider.setState(state)
             updateSearch(state)
+            view.description =
+              state._tag === 'Active' ? pullRequestStateLabels[state.pullRequestState] : 'Open'
+
+            if (search)
+              search.placeholder = `Search loaded ${state._tag === 'Active' ? state.pullRequestState : 'open'} PRs by title, #number, repository, or branch`
             view.message =
               state._tag === 'Idle'
                 ? undefined
@@ -134,10 +151,8 @@ export function registerPullRequestCommands(
                   : state.inspection === 'Failed'
                     ? 'Local inspection failed. Refresh to retry.'
                     : state.discovering
-                      ? 'Discovering open pull requests…'
-                      : state.rows.length || state.notices.length
-                        ? 'Explicit refresh · no Git changes'
-                        : undefined
+                      ? `Loading ${state.pullRequestState} pull requests…`
+                      : undefined
           }),
         ),
       ),
@@ -163,7 +178,7 @@ export function registerPullRequestCommands(
       const picker = vscode.window.createQuickPick<SearchItem>()
       search = picker
       picker.title = 'Search Pull Requests'
-      picker.placeholder = 'Search loaded open PRs by title, #number, repository, or branch'
+      picker.placeholder = 'Search loaded PRs by title, #number, repository, or branch'
       picker.matchOnDescription = true
       picker.matchOnDetail = true
 
@@ -173,7 +188,11 @@ export function registerPullRequestCommands(
         if (!selected?.command) return
         const command = selected.command
 
-        if (command.command === 'duff.reviewPullRequest') picker.hide()
+        if (
+          command.command === 'duff.reviewPullRequest' ||
+          command.command === 'duff.filterPullRequests'
+        )
+          picker.hide()
         await vscode.commands.executeCommand(command.command, ...(command.arguments ?? []))
       })
 
@@ -193,6 +212,37 @@ export function registerPullRequestCommands(
     }),
     vscode.commands.registerCommand('duff.refreshProviders', async () => {
       await vscode.commands.executeCommand('duff.inspectContext', 'manual')
+      await vscode.commands.executeCommand('duff.providers.focus')
+    }),
+    vscode.commands.registerCommand('duff.filterPullRequests', async () => {
+      const selected = await vscode.window.showQuickPick<
+        vscode.QuickPickItem & { readonly state: PullRequestState }
+      >(
+        [
+          { label: 'Open', state: 'open' },
+          { label: 'Merged', state: 'merged' },
+          { label: 'Closed', description: 'Closed without merging', state: 'closed' },
+        ],
+        { title: 'Show Pull Requests', placeHolder: 'Open, merged, or closed without merging' },
+      )
+
+      if (!selected) return
+      let state = await runtime.runPromise(ReviewSession.use((session) => session.current()))
+
+      if (state._tag === 'Idle') {
+        await vscode.commands.executeCommand('duff.inspectContext', 'manual')
+        state = await runtime.runPromise(ReviewSession.use((session) => session.current()))
+      }
+
+      if (state._tag !== 'Active') return
+      const directory = state.directory
+      await runOperation(
+        runtime,
+        'Duff.discoverProviders',
+        ReviewSession.use((session) =>
+          session.selectRepository(directory, { discover: true, state: selected.state }),
+        ),
+      )
       await vscode.commands.executeCommand('duff.providers.focus')
     }),
     vscode.commands.registerCommand('duff.loadMoreProviders', (value: unknown) => {

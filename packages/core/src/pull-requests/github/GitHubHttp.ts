@@ -10,6 +10,7 @@ import {
   InvalidProviderResponse,
   OpenPullRequest,
   PullRequestPage,
+  type PullRequestState,
   RateLimited,
   GitHostingProvider,
   ProviderIdentity,
@@ -22,6 +23,7 @@ import { ProviderHttp } from '../ProviderHttp'
 const Segment = Schema.String.check(Schema.isPattern(/^(?!\.{1,2}$)[a-zA-Z0-9_.-]+$/))
 
 const Repository = Schema.Struct({
+  id: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
   owner: Schema.Struct({ login: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9_-]+$/)) }),
   name: Segment,
 })
@@ -35,7 +37,11 @@ const Ref = Schema.Struct({
 const Cursor = Schema.fromJsonString(
   Schema.Struct({
     repository: Schema.String,
-    query: Schema.Literal('open/created/desc/30'),
+    query: Schema.Literals([
+      'open/created/desc/30',
+      'merged/created/desc/30',
+      'closed/created/desc/30',
+    ]),
     binding: Schema.String,
     page: Schema.Number.check(
       Schema.isInt(),
@@ -54,6 +60,8 @@ const PullRequests = Schema.Array(
     ),
     title: Schema.String,
     draft: Schema.Boolean,
+    state: Schema.Literals(['open', 'closed']),
+    merged_at: Schema.NullOr(Schema.NonEmptyString),
     head: Ref,
     base: Ref,
   }),
@@ -81,14 +89,16 @@ function recognize(destination: string): Option.Option<RepositoryIdentity> {
     : Option.none()
 }
 
-function requestUrl(repository: RepositoryIdentity, page: number): string {
-  return `https://api.github.com/repos/${repository.key}/pulls?state=open&sort=created&direction=desc&per_page=30&page=${page}`
+function requestUrl(repository: RepositoryIdentity, page: number, state: PullRequestState): string {
+  return `https://api.github.com/repos/${repository.key}/pulls?state=${state === 'open' ? 'open' : 'closed'}&sort=created&direction=desc&per_page=30&page=${page}`
 }
 
 const nextPage = Effect.fn('GitHub.nextPage')(function* (
   link: string | undefined,
   repository: RepositoryIdentity,
   page: number,
+  state: PullRequestState,
+  repositoryId: number | undefined,
 ) {
   if (link === undefined) return Option.none<number>()
   let next = Option.none<number>()
@@ -111,7 +121,10 @@ const nextPage = Effect.fn('GitHub.nextPage')(function* (
     const value = rawPage && /^[1-9][0-9]*$/.test(rawPage) ? Number(rawPage) : NaN
 
     if (!Number.isSafeInteger(value) || value <= page) return yield* new InvalidProviderResponse()
-    const expected = new URL(requestUrl(repository, value))
+    const expected = new URL(requestUrl(repository, value, state))
+
+    if (repositoryId !== undefined && url.pathname === `/repositories/${repositoryId}/pulls`)
+      expected.pathname = url.pathname
     url.searchParams.sort()
     expected.searchParams.sort()
 
@@ -190,7 +203,7 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
 
   const bind = (repository: RepositoryIdentity): ProviderRepository => {
     const read = Effect.fn('GitHub.readPullRequests')(function* (
-      input: Parameters<ProviderRepository['listOpenPullRequests']>[0],
+      input: Parameters<ProviderRepository['listPullRequests']>[0],
       id?: string,
     ) {
       if (id !== undefined && !/^[1-9][0-9]*$/.test(id)) return yield* new InvalidProviderResponse()
@@ -211,7 +224,11 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
           Redacted.value(input.cursor.value),
         ).pipe(Effect.mapError(() => new InvalidContinuation()))
 
-        if (cursor.repository !== repository.key || cursor.binding !== binding)
+        if (
+          cursor.repository !== repository.key ||
+          cursor.binding !== binding ||
+          cursor.query !== `${input.state}/created/desc/30`
+        )
           return yield* new InvalidContinuation()
         page = cursor.page
       }
@@ -224,7 +241,7 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
       const response = yield* http
         .get(
           id === undefined
-            ? requestUrl(repository, page)
+            ? requestUrl(repository, page, input.state)
             : `https://api.github.com/repos/${repository.key}/pulls/${id}`,
           token,
           {
@@ -290,6 +307,9 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
           if (id !== undefined && String(pull.number) !== id)
             return yield* new InvalidProviderResponse()
 
+          if (pull.state === 'open' && pull.merged_at !== null)
+            return yield* new InvalidProviderResponse()
+
           if (
             !pull.base.repo ||
             `${pull.base.repo.owner.login}/${pull.base.repo.name}`.toLowerCase() !==
@@ -302,6 +322,7 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
             id: String(pull.number),
             title: pull.title,
             draft: pull.draft,
+            state: pull.merged_at !== null ? 'merged' : pull.state,
             url: `https://github.com/${repository.key}/pull/${pull.number}`,
             source: pull.head.repo
               ? {
@@ -323,15 +344,21 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
 
       const next =
         id === undefined
-          ? yield* nextPage(response.headers.link, repository, page)
+          ? yield* nextPage(
+              response.headers.link,
+              repository,
+              page,
+              input.state,
+              decoded[0]?.base.repo?.id,
+            )
           : Option.none<number>()
 
       return yield* Schema.decodeUnknownEffect(PullRequestPage)({
-        items,
+        items: id === undefined ? items.filter((pull) => pull.state === input.state) : items,
         next: Option.map(next, (value) => {
           const cursor = JSON.stringify({
             repository: repository.key,
-            query: 'open/created/desc/30',
+            query: `${input.state}/created/desc/30`,
             binding,
             page: value,
           })
@@ -345,9 +372,9 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
       identity: repository,
       inspectAuthentication: () => authentication('silent'),
       connectAuthentication: () => authentication('connect'),
-      listOpenPullRequests: (input) => read(input),
+      listPullRequests: (input) => read(input),
       getPullRequest: Effect.fn('GitHub.getPullRequest')(function* (id) {
-        const page = yield* read({ scope: 'repository', cursor: Option.none() }, id)
+        const page = yield* read({ scope: 'repository', state: 'open', cursor: Option.none() }, id)
         const pull = page.items[0]
 
         if (!pull) return yield* new InvalidProviderResponse()

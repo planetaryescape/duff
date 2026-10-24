@@ -62,3 +62,9 @@ Status: implemented on the feature branch under D011; not merged. See the [persi
 Scope: multiple workspace-local PR sessions, offline exact-snapshot resume, automatic last-active/diff restoration in a single-folder workspace, durable viewed marks, unchanged full-comparison transfer, native Resume/Forget and safe Git retention.
 Acceptance: switching PRs and reopening preserves separate progress; Exit stays inactive after restart; Update retains only unchanged comparisons; Forget releases only that store/session's pins after durable deletion. Save/preparation failures preserve the prior accepted review, and stale tabs cannot mark another comparison.
 Evidence: [persistent session delivery](implementation-log.md#2026-10-15-persistent-pr-review-sessions). No expiry, cross-device sync, revision history, provider writes, implicit acquisition or checkout changes. Multi-root automatic selection and moved-workspace migration remain outside this slice.
+
+## S09: Review-first sidebar and historical PR browsing
+
+Status: implemented on the feature branch under D012; delivery evidence is recorded in the implementation log.
+Scope: on-demand Git Diagnostics, PR rows without routine authentication metadata, native Open/Merged/Closed filter, state-bound provider pagination and existing immutable review for historical selections.
+Acceptance: both providers distinguish merged from closed without merging; switching filters cancels pending reads and clears old rows; refresh and pagination keep the filter; past PRs open without checkout or worktree creation. Missing revisions retain the existing explicit acquisition consent and typed failures.

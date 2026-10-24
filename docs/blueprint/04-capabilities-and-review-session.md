@@ -8,7 +8,7 @@ This chapter supersedes the [staged plugin design](plugins/00-problem.md) under 
 
 | Owner | Contract |
 | --- | --- |
-| [GitHostingProvider.ts](../../packages/core/src/pull-requests/GitHostingProvider.ts) | One job-shaped adapter: pure remote recognition returns a bound repository with silent authentication inspection, explicit connection, and paginated repository-wide open-PR reads |
+| [GitHostingProvider.ts](../../packages/core/src/pull-requests/GitHostingProvider.ts) | One job-shaped adapter: pure remote recognition returns a bound repository with silent authentication inspection, explicit connection, and paginated repository-wide PR reads by state |
 | [PullRequests.ts](../../packages/core/src/pull-requests/PullRequests.ts) | Provider routing, equivalent-remote grouping, progressive discovery, private continuation state, group-based connect and loadMore |
 | [ReviewSession.ts](../../packages/core/src/review-session/ReviewSession.ts) | One selected local repository, local inspection, owned background jobs, retained PR content, observable state |
 | [Providers.ts](../../packages/core/src/pull-requests/Providers.ts) | Constructs built-in HTTP adapters, supplies their HTTP transport and composes PullRequests; native authentication is the remaining host dependency |
@@ -24,7 +24,7 @@ Core has no VS Code dependency. It owns provider implementations and their tests
 
 - `inspectAuthentication()` returns Authentication without prompting.
 - `connectAuthentication()` performs explicit connection and returns Authentication.
-- `listOpenPullRequests({ scope: "repository", cursor })` returns a normalized PullRequestPage or typed DiscoveryError.
+- `listPullRequests({ scope: "repository", state, cursor })` returns a normalized PullRequestPage or typed DiscoveryError. State is open, merged or closed without merging; adapters emit the normalized state on each PR.
 - `getPullRequest(id)` rereads and normalizes one selected PR, without invalidating list continuation state.
 
 The consumer-facing Effect service is PullRequests. It takes group IDs for connection and pagination and exposes progressive results; it does not expose HTTP URLs, request bodies, subprocess arguments or raw provider responses.
@@ -47,6 +47,10 @@ Updated events arrive as groups finish, with at most four concurrent reads and n
 
 Continuation tokens remain private to PullRequests and the adapters. Consumers pass only GroupId to `loadMore` or `connect`. Repeated continuations fail explicitly; adapters validate repository/session bindings. PR identity includes target repository and PR ID, not a branch name alone. Source repository can be unavailable; revisions are optional.
 
+Under [D012](02-decision-log.md#d012-review-first-ui-and-past-pull-requests), discovery defaults to Open and accepts an explicit Merged or Closed filter. ReviewSession owns the selected filter; refresh, connection and pagination keep it. Switching state cancels owned jobs and clears old results, including their continuation. GitHub reads closed API pages for both historical states and filters by merged_at; an empty filtered page can still have more pages. Azure reads completed or abandoned PRs respectively. Cursors bind to the selected state. Detail reads accept all states independently of list pagination, and historical selections use the same immutable preparation and saved-session contracts.
+
+The native sidebar starts with Changed Files and Pull Requests. Git Diagnostics is revealed only by its explicit command. PR groups show their provider, with host/remotes in hover text rather than child metadata rows. Expected failures, connection and paging actions remain visible.
+
 ## Session transitions and ownership
 
 ReviewSession exposes `current()` and a SubscriptionRef-backed `changes` Stream. Effect FiberMap owns inspection, connection and group page jobs. Selection and clear interrupt owned work; scoped runtime disposal closes its lifetime. Commands do not own separate discovery generations.
@@ -61,7 +65,7 @@ Explicit connect cancels other session jobs, connects the chosen group and redis
 
 GitHub credential precedence is now `GH_TOKEN`, `GITHUB_TOKEN`, the active github.com CLI login, then an authorized editor session. [GitHubCredentials](../../packages/core/src/pull-requests/github/GitHubCredentials.ts) captures the activation environment, ignores empty overrides, and uses `gh auth token --hostname github.com` outside the workspace. Missing executable or the CLI's explicit no-token result permits fallback; malformed credentials, unknown CLI failures and rejected API credentials do not. Acquisition has a 12-second timeout, combined 1 MiB output bound, redacted output and POSIX process-group cancellation. No CLI login or account switching occurs. Windows descendant cleanup remains unqualified.
 
-Successful GitHub discovery shows credential source and host. `/user` verifies account identity when available; a 403/404 there leaves identity unverified and does not prevent installation-token repository reads. Credentials are reread on each operation rather than cached by Duff. Existing cursor fingerprints continue to reject changed tokens. HTTP reads remain in GitHubHttp; this is credential resolution, not a CLI transport or Enterprise-host implementation. The [README](../../README.md#git-context-and-pull-requests) describes startup-environment constraints and explicit editor fallback.
+Successful GitHub discovery retains credential source and optional verified identity in core state, not routine PR-list rows. `/user` verifies account identity when available; a 403/404 there leaves identity unverified and does not prevent installation-token repository reads. Credentials are reread on each operation rather than cached by Duff. Existing cursor fingerprints continue to reject changed tokens. HTTP reads remain in GitHubHttp; this is credential resolution, not a CLI transport or Enterprise-host implementation. The [README](../../README.md#git-context-and-pull-requests) describes startup-environment constraints and explicit editor fallback.
 
 Only explicit GitHub Connect can prompt for editor sign-in, after a broad-permission warning. Silent inspection and discovery never prompt. Git credential configuration does not establish API authentication. GitHub can read public repositories without a session; a rejected session is not retried anonymously. Azure exclusively uses an existing Azure CLI login under [D008](02-decision-log.md#d008-azure-cli-authentication-with-existing-rest-reads). Connect explains and rechecks that login without running login or changing defaults. Tokens remain inside adapters.
 

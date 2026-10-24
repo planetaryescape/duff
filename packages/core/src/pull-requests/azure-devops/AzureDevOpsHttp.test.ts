@@ -45,8 +45,9 @@ const fullPage = {
 
 const first = {
   scope: 'repository',
+  state: 'open',
   cursor: Option.none<Redacted.Redacted>(),
-} satisfies Parameters<ProviderRepository['listOpenPullRequests']>[0]
+} satisfies Parameters<ProviderRepository['listPullRequests']>[0]
 
 const make = Effect.fn('AzureDevOps.Test.make')(function* (
   auth: ProviderAuthentication['Service'] = {
@@ -154,7 +155,7 @@ describe('AzureDevOps', () => {
         const repository = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
         expect(yield* repository.inspectAuthentication()).toEqual({ _tag: 'Unauthenticated' })
         expect((yield* repository.connectAuthentication())._tag).toBe('Authenticated')
-        expect(yield* repository.listOpenPullRequests(first).pipe(Effect.flip)).toBeInstanceOf(
+        expect(yield* repository.listPullRequests(first).pipe(Effect.flip)).toBeInstanceOf(
           AuthenticationRequired,
         )
         expect(requests).toEqual(
@@ -205,12 +206,13 @@ describe('AzureDevOps', () => {
       })
 
       const repository = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
-      const page = yield* repository.listOpenPullRequests(first)
+      const page = yield* repository.listPullRequests(first)
       expect(urls).toEqual([
         'https://dev.azure.com/acme/Target%20Project/_apis/git/repositories/TargetRepo/pullrequests?searchCriteria.status=active&$top=50&$skip=0&api-version=7.1',
       ])
       expect(page.items[0]).toMatchObject({
         id: '1',
+        state: 'open',
         draft: true,
         url: `${destination}/pullrequest/1`,
         source: {
@@ -258,7 +260,7 @@ describe('AzureDevOps', () => {
           })
 
           const repository = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
-          const page = yield* repository.listOpenPullRequests(first)
+          const page = yield* repository.listPullRequests(first)
           expect(page.items[0]?.source).toEqual({ _tag: 'Unavailable' })
           expect(page.items[0]?.target.repository).toEqual(repository.identity)
         }
@@ -284,7 +286,7 @@ describe('AzureDevOps', () => {
         })
 
         const repository = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
-        const page = yield* repository.listOpenPullRequests(first)
+        const page = yield* repository.listPullRequests(first)
         expect(Option.isSome(page.next)).toBe(true)
 
         const other = Option.getOrThrow(
@@ -292,19 +294,17 @@ describe('AzureDevOps', () => {
         )
 
         expect(
-          (yield* other
-            .listOpenPullRequests({ scope: 'repository', cursor: page.next })
-            .pipe(Effect.flip))._tag,
+          (yield* other.listPullRequests({ ...first, cursor: page.next }).pipe(Effect.flip))._tag,
         ).toBe('InvalidContinuation')
         expect(
           (yield* repository
-            .listOpenPullRequests({ scope: 'repository', cursor: Option.some(Redacted.make('50')) })
+            .listPullRequests({ ...first, cursor: Option.some(Redacted.make('50')) })
             .pipe(Effect.flip))._tag,
         ).toBe('InvalidContinuation')
         const recognizedAgain = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
 
-        const last = yield* recognizedAgain.listOpenPullRequests({
-          scope: 'repository',
+        const last = yield* recognizedAgain.listPullRequests({
+          ...first,
           cursor: page.next,
         })
 
@@ -312,9 +312,8 @@ describe('AzureDevOps', () => {
         expect(Option.isNone(last.next)).toBe(true)
         expect(urls[1]).toContain('&$skip=50&api-version=7.1')
         expect(
-          (yield* repository
-            .listOpenPullRequests({ scope: 'repository', cursor: page.next })
-            .pipe(Effect.flip))._tag,
+          (yield* repository.listPullRequests({ ...first, cursor: page.next }).pipe(Effect.flip))
+            ._tag,
         ).toBe('InvalidContinuation')
         expect(urls).toHaveLength(2)
       }),
@@ -340,7 +339,7 @@ describe('AzureDevOps', () => {
         )
 
         const repository = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
-        const page = yield* repository.listOpenPullRequests(first)
+        const page = yield* repository.listPullRequests(first)
 
         for (const replacement of [
           session('replacement'),
@@ -348,9 +347,8 @@ describe('AzureDevOps', () => {
         ]) {
           current = replacement
           expect(
-            (yield* repository
-              .listOpenPullRequests({ scope: 'repository', cursor: page.next })
-              .pipe(Effect.flip))._tag,
+            (yield* repository.listPullRequests({ ...first, cursor: page.next }).pipe(Effect.flip))
+              ._tag,
           ).toBe('InvalidContinuation')
         }
 
@@ -372,13 +370,13 @@ describe('AzureDevOps', () => {
       })
 
       const repository = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
-      yield* repository.listOpenPullRequests(first)
-      expect(yield* repository.listOpenPullRequests(first).pipe(Effect.flip)).toEqual(
+      yield* repository.listPullRequests(first)
+      expect(yield* repository.listPullRequests(first).pipe(Effect.flip)).toEqual(
         new RateLimited({ retryAfterSeconds: Option.some(10) }),
       )
       expect(calls).toBe(1)
       yield* TestClock.adjust('10 seconds')
-      yield* repository.listOpenPullRequests(first)
+      yield* repository.listPullRequests(first)
       expect(calls).toBe(2)
     }),
   )
@@ -405,23 +403,117 @@ describe('AzureDevOps', () => {
         })
 
         const repository = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
-        const page = yield* repository.listOpenPullRequests(first)
+        const page = yield* repository.listPullRequests(first)
 
-        const next = { scope: 'repository', cursor: page.next } satisfies Parameters<
-          typeof repository.listOpenPullRequests
+        const next = { ...first, cursor: page.next } satisfies Parameters<
+          typeof repository.listPullRequests
         >[0]
 
-        expect((yield* repository.listOpenPullRequests(next).pipe(Effect.flip))._tag).toBe(
+        expect((yield* repository.listPullRequests(next).pipe(Effect.flip))._tag).toBe(
           'RateLimited',
         )
-        expect((yield* repository.listOpenPullRequests(next).pipe(Effect.flip))._tag).toBe(
+        expect((yield* repository.listPullRequests(next).pipe(Effect.flip))._tag).toBe(
           'RateLimited',
         )
         expect(calls).toBe(2)
         yield* TestClock.adjust('5 seconds')
-        expect(Option.isNone((yield* repository.listOpenPullRequests(next)).next)).toBe(true)
+        expect(Option.isNone((yield* repository.listPullRequests(next)).next)).toBe(true)
         expect(calls).toBe(3)
       }),
+  )
+
+  it.effect(
+    'normalizes completed and abandoned PRs, binds paging state, and preserves exact SHAs',
+    () =>
+      Effect.gen(function* () {
+        for (const state of ['merged', 'closed'] satisfies ReadonlyArray<'merged' | 'closed'>) {
+          const status = state === 'merged' ? 'completed' : 'abandoned'
+
+          const historicalPull = {
+            ...pullRequest(),
+            status,
+            lastMergeSourceCommit: { commitId: 'a'.repeat(40) },
+            lastMergeTargetCommit: { commitId: 'b'.repeat(40) },
+            lastMergeCommit: { commitId: 'c'.repeat(40) },
+          }
+
+          const urls: string[] = []
+
+          const contribution = yield* make(undefined, {
+            get: (url) =>
+              Effect.sync(() => {
+                urls.push(url)
+
+                return {
+                  headers: {},
+                  body: url.includes('/pullrequests/1?')
+                    ? historicalPull
+                    : url.includes('$skip=0')
+                      ? { count: 50, value: Array.from({ length: 50 }, () => historicalPull) }
+                      : { count: 1, value: [historicalPull] },
+                }
+              }),
+          })
+
+          const repository = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
+          const page = yield* repository.listPullRequests({ ...first, state })
+          expect(page.items).toHaveLength(50)
+          expect(page.items[0]).toMatchObject({
+            state,
+            source: { ref: { revision: Option.some('a'.repeat(40)) } },
+            target: { ref: { revision: Option.some('b'.repeat(40)) } },
+          })
+          expect(Option.isSome(page.next)).toBe(true)
+
+          for (const changed of [
+            'open',
+            state === 'merged' ? 'closed' : 'merged',
+          ] satisfies ReadonlyArray<'open' | 'merged' | 'closed'>) {
+            expect(
+              (yield* repository
+                .listPullRequests({ ...first, state: changed, cursor: page.next })
+                .pipe(Effect.flip))._tag,
+            ).toBe('InvalidContinuation')
+          }
+
+          expect((yield* repository.getPullRequest('1')).state).toBe(state)
+          const last = yield* repository.listPullRequests({ ...first, state, cursor: page.next })
+          expect(last.items.map((item) => item.state)).toEqual([state])
+          expect(Option.isNone(last.next)).toBe(true)
+          expect(urls).toHaveLength(3)
+          expect(urls[0]).toContain(`searchCriteria.status=${status}&$top=50&$skip=0`)
+          expect(urls[1]).toBe(
+            'https://dev.azure.com/acme/Target%20Project/_apis/git/repositories/TargetRepo/pullrequests/1?api-version=7.1',
+          )
+          expect(urls[2]).toContain(`searchCriteria.status=${status}&$top=50&$skip=50`)
+        }
+      }),
+  )
+
+  it.effect('rereads active PRs independently of completed list continuations', () =>
+    Effect.gen(function* () {
+      const contribution = yield* make(undefined, {
+        get: (url) =>
+          Effect.succeed({
+            headers: {},
+            body: url.includes('/pullrequests/1?')
+              ? pullRequest()
+              : url.includes('$skip=0')
+                ? { count: 50, value: fullPage.value.map((pr) => ({ ...pr, status: 'completed' })) }
+                : { count: 0, value: [] },
+          }),
+      })
+
+      const repository = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
+      const page = yield* repository.listPullRequests({ ...first, state: 'merged' })
+      expect((yield* repository.getPullRequest('1')).state).toBe('open')
+      expect(
+        Option.isNone(
+          (yield* repository.listPullRequests({ ...first, state: 'merged', cursor: page.next }))
+            .next,
+        ),
+      ).toBe(true)
+    }),
   )
 
   it.effect('rejects malformed provider values', () =>
@@ -440,7 +532,7 @@ describe('AzureDevOps', () => {
         })
 
         const repository = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
-        expect((yield* repository.listOpenPullRequests(first).pipe(Effect.flip))._tag).toBe(
+        expect((yield* repository.listPullRequests(first).pipe(Effect.flip))._tag).toBe(
           'InvalidProviderResponse',
         )
       }
@@ -468,7 +560,7 @@ describe('AzureDevOps', () => {
           })
 
           const repository = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
-          expect(yield* repository.listOpenPullRequests(first).pipe(Effect.flip)).toEqual(error)
+          expect(yield* repository.listPullRequests(first).pipe(Effect.flip)).toEqual(error)
           expect(calls).toBe(1)
         }
 
@@ -489,7 +581,7 @@ describe('AzureDevOps', () => {
         expect(yield* repository.inspectAuthentication().pipe(Effect.flip)).toBeInstanceOf(
           ProviderUnavailable,
         )
-        expect(yield* repository.listOpenPullRequests(first).pipe(Effect.flip)).toBeInstanceOf(
+        expect(yield* repository.listPullRequests(first).pipe(Effect.flip)).toBeInstanceOf(
           ProviderUnavailable,
         )
         expect(calls).toBe(0)
@@ -501,7 +593,7 @@ describe('AzureDevOps', () => {
 
         expect(
           Exit.hasInterrupts(
-            yield* interruptedRepository.listOpenPullRequests(first).pipe(Effect.exit),
+            yield* interruptedRepository.listPullRequests(first).pipe(Effect.exit),
           ),
         ).toBe(true)
       }),

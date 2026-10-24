@@ -16,7 +16,7 @@ import {
   type GitContextError,
   type GitContextSnapshot,
 } from '../git-context/GitContext'
-import { type DiscoveryError } from '../pull-requests/GitHostingProvider'
+import { type DiscoveryError, type PullRequestState } from '../pull-requests/GitHostingProvider'
 import {
   type DiscoveryNotice,
   type GroupId,
@@ -53,6 +53,7 @@ export type ReviewState =
   | {
       readonly _tag: 'Active'
       readonly directory: string
+      readonly pullRequestState: PullRequestState
       readonly inspection: 'Inspecting' | 'Ready' | 'Failed'
       readonly snapshot: Option.Option<GitContextSnapshot>
       readonly inspectionError: Option.Option<GitContextError>
@@ -72,7 +73,7 @@ export class ReviewSession extends Context.Service<
     readonly current: () => Effect.Effect<ReviewState>
     readonly selectRepository: (
       directory: string,
-      options: { readonly discover: boolean },
+      options: { readonly discover: boolean; readonly state?: PullRequestState },
     ) => Effect.Effect<void>
     readonly clear: () => Effect.Effect<void>
     readonly loadMore: (id: GroupId) => Effect.Effect<void>
@@ -189,8 +190,9 @@ export class ReviewSession extends Context.Service<
 
       const discover = Effect.fn('ReviewSession.discover')(function* (
         snapshot: GitContextSnapshot,
+        filter: PullRequestState,
       ) {
-        yield* prs.discover(snapshot).pipe(
+        yield* prs.discover(snapshot, filter).pipe(
           Stream.runForEach((event) =>
             SubscriptionRef.update(state, (state) => {
               if (state._tag !== 'Active') return state
@@ -238,14 +240,20 @@ export class ReviewSession extends Context.Service<
       )
 
       const selectRepository = Effect.fn('ReviewSession.selectRepository')(
-        function* (directory: string, options: { readonly discover: boolean }) {
+        function* (
+          directory: string,
+          options: { readonly discover: boolean; readonly state?: PullRequestState },
+        ) {
           yield* FiberMap.clear(work)
           const old = yield* SubscriptionRef.get(state)
-          const retain = old._tag === 'Active' && old.directory === directory && options.discover
+          const sameRepository = old._tag === 'Active' && old.directory === directory
+          const filter = options.state ?? (sameRepository ? old.pullRequestState : 'open')
+          const retain = sameRepository && old.pullRequestState === filter && options.discover
           yield* SubscriptionRef.set(
             state,
             ReviewState.Active({
               directory,
+              pullRequestState: filter,
               inspection: 'Inspecting',
               snapshot: Option.none(),
               inspectionError: Option.none(),
@@ -301,7 +309,7 @@ export class ReviewSession extends Context.Service<
                     : state,
                 )
 
-                if (options.discover) yield* discover(inspected.success)
+                if (options.discover) yield* discover(inspected.success, filter)
               }),
             ),
           )
@@ -403,7 +411,7 @@ export class ReviewSession extends Context.Service<
                   return
                 }
 
-                yield* discover(snapshot)
+                yield* discover(snapshot, current.pullRequestState)
               }),
             ),
           )

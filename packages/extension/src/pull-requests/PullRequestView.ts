@@ -1,4 +1,4 @@
-import { type OpenPullRequest } from '@duff/core/git-hosting-provider'
+import { type OpenPullRequest, type PullRequestState } from '@duff/core/git-hosting-provider'
 import { PullRequestSelection } from '@duff/core/pull-requests'
 import { type GroupRow, type ReviewState, type SessionProblem } from '@duff/core/review-session'
 import { Match, Option } from 'effect'
@@ -9,6 +9,18 @@ const credentialLabels = {
   editor: 'VS Code',
   GH_TOKEN: 'GH_TOKEN',
   GITHUB_TOKEN: 'GITHUB_TOKEN',
+}
+
+export const pullRequestStateLabels: Readonly<Record<PullRequestState, string>> = {
+  open: 'Open',
+  merged: 'Merged',
+  closed: 'Closed',
+}
+
+export function pullRequestLabel(pr: OpenPullRequest): string {
+  return (pr.state ?? 'open') === 'open' && pr.draft
+    ? 'Draft'
+    : pullRequestStateLabels[pr.state ?? 'open']
 }
 
 export function providerError(error: SessionProblem): string {
@@ -86,9 +98,15 @@ export class PullRequestItem extends vscode.TreeItem {
       id: pullRequest.id,
       label: `#${pullRequest.id} ${pullRequest.title} · ${pullRequest.source._tag === 'Available' ? pullRequest.source.ref.name.replace('refs/heads/', '') : 'Unavailable'} → ${pullRequest.target.ref.name.replace('refs/heads/', '')}`,
     })
-    this.description = pullRequest.draft ? 'Draft' : 'Open'
+    this.description = pullRequestLabel(pullRequest)
     this.iconPath = new vscode.ThemeIcon(
-      pullRequest.draft ? 'git-pull-request-draft' : 'git-pull-request',
+      pullRequest.state === 'merged'
+        ? 'git-merge'
+        : pullRequest.state === 'closed'
+          ? 'git-pull-request-closed'
+          : pullRequest.draft
+            ? 'git-pull-request-draft'
+            : 'git-pull-request',
     )
     this.contextValue = 'pullRequest'
     this.command = {
@@ -117,47 +135,17 @@ export function canConnectProvider(row: GroupRow, busy: boolean): boolean {
   )
 }
 
-function groupChildren(row: GroupRow, busy: boolean, root: string): vscode.TreeItem[] {
+function groupChildren(
+  row: GroupRow,
+  busy: boolean,
+  root: string,
+  filter: PullRequestState,
+): vscode.TreeItem[] {
   const content = row.content
-  const authentication = 'data' in content ? content.data.authentication : undefined
-
-  const source = Match.value(content).pipe(
-    Match.when({ error: { _tag: 'GitHubAuthenticationError' } }, ({ error }) => error.source),
-    Match.when(
-      { data: { authentication: { _tag: 'Authenticated' } } },
-      ({ data }) => data.authentication.source,
-    ),
-    Match.orElse(() => undefined),
-  )
-
-  const children = [
-    item('Remotes', row.group.remoteNames.join(', ')),
-    item('Host', row.group.repository.authority),
-    item(
-      'Authentication source',
-      source
-        ? credentialLabels[source]
-        : row.group.provider.authenticationSource === 'azure-cli'
-          ? 'Azure CLI'
-          : authentication?._tag === 'Unauthenticated'
-            ? 'Anonymous'
-            : 'GH_TOKEN → GITHUB_TOKEN → GitHub CLI → VS Code',
-    ),
-  ]
+  const children: vscode.TreeItem[] = []
 
   if ('data' in content) {
     const data = content.data
-    children.push(
-      item(
-        'API authentication',
-        data.authentication._tag === 'Authenticated'
-          ? Option.match(data.authentication.account, {
-              onSome: (account) => account.displayName,
-              onNone: () => 'Account identity not verified',
-            })
-          : data.authentication._tag,
-      ),
-    )
 
     for (const pr of data.items) {
       children.push(new PullRequestItem(root, row, pr))
@@ -178,7 +166,9 @@ function groupChildren(row: GroupRow, busy: boolean, root: string): vscode.TreeI
         }),
       )
     else if (content._tag === 'Ready' && !data.hasMore)
-      children.push(item(data.items.length ? 'All pages loaded.' : 'No open pull requests found.'))
+      children.push(
+        item(data.items.length ? 'All pages loaded.' : `No ${filter} pull requests found.`),
+      )
   } else if (content._tag === 'Loading') children.push(item('Loading pull requests…'))
   else children.push(item(providerError(content.error)))
 
@@ -224,11 +214,9 @@ export class PullRequestView
       state._tag === 'Idle'
         ? []
         : state.rows.map((row) => {
-            const root = item(
-              row.group.repository.displayName,
-              `${row.group.provider.displayName} · ${row.group.provider.authenticationSource === 'azure-cli' ? 'Azure CLI · ' : ''}${row.content._tag}`,
-            )
+            const root = item(row.group.repository.displayName, row.group.provider.displayName)
 
+            root.tooltip = `${row.group.repository.authority}\nRemotes: ${row.group.remoteNames.join(', ')}`
             root.id = row.group.key
             root.collapsibleState = vscode.TreeItemCollapsibleState.Expanded
             this.children.set(
@@ -243,6 +231,7 @@ export class PullRequestView
                   Option.map(state.snapshot, (snapshot) => snapshot.root),
                   () => state.directory,
                 ),
+                state.pullRequestState,
               ),
             )
 

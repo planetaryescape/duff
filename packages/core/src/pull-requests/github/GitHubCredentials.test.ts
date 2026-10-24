@@ -170,7 +170,7 @@ it.effect(
           })
 
           const readError = yield* repository
-            .listOpenPullRequests({ scope: 'repository', cursor: Option.none() })
+            .listPullRequests({ scope: 'repository', cursor: Option.none(), state: 'open' })
             .pipe(Effect.flip)
 
           expect(readError).toMatchObject({
@@ -188,8 +188,11 @@ it.effect(
                 : Option.some({ id: '42', displayName: 'verified-user' }),
           })
           expect(
-            (yield* repository.listOpenPullRequests({ scope: 'repository', cursor: Option.none() }))
-              .items,
+            (yield* repository.listPullRequests({
+              scope: 'repository',
+              cursor: Option.none(),
+              state: 'open',
+            })).items,
           ).toEqual([])
         }
       }

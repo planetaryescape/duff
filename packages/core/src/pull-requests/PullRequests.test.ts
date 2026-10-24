@@ -26,7 +26,7 @@ const snapshot = (names: string[]): GitContextSnapshot => ({
 
 const repository = (
   key: string,
-  list: ProviderRepository['listOpenPullRequests'],
+  list: ProviderRepository['listPullRequests'],
 ): ProviderRepository => ({
   identity: { authority: 'example.invalid', key, displayName: key },
   inspectAuthentication: () => Effect.succeed({ _tag: 'Unauthenticated' }),
@@ -35,7 +35,7 @@ const repository = (
       _tag: 'Authenticated',
       account: Option.some({ id: 'fixture', displayName: 'Fixture' }),
     }),
-  listOpenPullRequests: list,
+  listPullRequests: list,
   getPullRequest: () => new ProviderUnavailable(),
 })
 

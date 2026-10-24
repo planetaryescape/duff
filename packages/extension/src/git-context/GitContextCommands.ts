@@ -81,9 +81,11 @@ export function registerGitContextCommands(
         runtime.runFork(Fiber.interrupt(subscription))
       },
     },
-    vscode.commands.registerCommand('duff.inspectContext', (mode: unknown) =>
-      inspect(undefined, mode !== 'manual', mode === 'manual' ? 'manual' : 'automatic'),
-    ),
+    vscode.commands.registerCommand('duff.inspectContext', async (mode: unknown) => {
+      if (mode !== 'manual')
+        await vscode.commands.executeCommand('setContext', 'duff.gitDiagnostics', true)
+      await inspect(undefined, mode !== 'manual', mode === 'manual' ? 'manual' : 'automatic')
+    }),
   )
 
   return new GitContextCommands(inspect)

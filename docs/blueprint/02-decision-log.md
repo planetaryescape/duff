@@ -112,3 +112,13 @@ Alternatives: one global mark record loses other PR progress; resolving latest o
 Consequences: serialized, atomic saves precede acknowledgment. A per-workspace writer lease prevents last-writer-wins loss. Acceptance and deletion journal pin work for recovery; Update/Forget release only obsolete owned refs, with no GC commands. Sessions do not expire automatically, so their reachable Git objects consume space until explicitly forgotten or updated. Multi-root automatic selection and workspace/repository migration are not included. Existing fetch acquisition still uses two bounded refs; session retention adds separate per-session refs and supersedes D010's two-ref limit for accepted-session retention only.
 Revisit when: a demonstrated storage-size problem needs an owner-approved retention policy, or the owner requests multi-window sharing, migration or synchronization.
 References: [persistent session contract](04-capabilities-and-review-session.md#persistent-pr-review-sessions), [design discussion](../../.specs/pr-review-sessions/PROGRESS.md).
+
+## D012: Review-first UI and past pull requests
+
+Status: owner-confirmed behavior implemented on the feature branch. Date: 2026-10-24.
+
+Chosen: show Changed Files and Pull Requests by default. Reveal Git Diagnostics only through its explicit command. Remove identity, host and authentication metadata rows from the PR list while retaining actionable failures and connection actions. Add Open, Merged and Closed filters for both providers, with Closed meaning closed without merging. Historical PR selection uses the existing exact-revision review and saved-session flow.
+Reason: reviewers need to find and read changes, including already-merged work; Git configuration is troubleshooting information, not the review task.
+Alternatives: removing local inspection would break remote routing and diagnostics; checkout or a separate worktree is unnecessary for immutable diffs and was explicitly excluded by the owner.
+Consequences: startup defaults to Open. Refresh, connection and pagination keep the selected state. Changing state cancels pending jobs and clears old rows rather than labelling another state's results as stale. Provider continuations bind to the selected state. GitHub filters its closed pages into merged and unmerged results, preserving continuation even when a filtered page is empty. Azure maps active/completed/abandoned to Open/Merged/Closed. No checkout, provider write, implicit acquisition or new credential flow is added. Existing revision-availability and deleted-fork limits still apply.
+Revisit when: reviewers need a provider-wide search rather than filtering loaded repository pages.

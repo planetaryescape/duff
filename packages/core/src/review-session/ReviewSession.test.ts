@@ -39,7 +39,7 @@ const context = (root: string): GitContextSnapshot => ({
 })
 
 const testLayer = (
-  list: ProviderRepository['listOpenPullRequests'],
+  list: ProviderRepository['listPullRequests'],
   inspect: GitContext['Service']['inspect'] = (root) => Effect.succeed(context(root)),
 ) => {
   const provider: GitHostingProvider = {
@@ -53,7 +53,7 @@ const testLayer = (
             _tag: 'Authenticated',
             account: Option.some({ id: 'fixture', displayName: 'Fixture' }),
           }),
-        listOpenPullRequests: list,
+        listPullRequests: list,
         getPullRequest: () => new ProviderUnavailable(),
       }),
   }
@@ -75,6 +75,92 @@ const waitFor = (session: ReviewSession['Service'], predicate: (state: ReviewSta
 
 const settled = (state: ReviewState) =>
   state._tag === 'Active' && state.inspection === 'Ready' && !state.discovering
+
+it.effect(
+  'switches PR state without retaining old rows or pages and preserves the filter on refresh',
+  () =>
+    Effect.gen(function* () {
+      const paging = yield* Deferred.make<void>()
+      const cancelled = yield* Deferred.make<void>()
+      yield* Effect.gen(function* () {
+        const session = yield* ReviewSession
+        yield* session.selectRepository('/fixture', { discover: true })
+        const open = yield* waitFor(session, settled)
+
+        if (open?._tag !== 'Active' || !open.rows[0]) return yield* Effect.die('Missing open group')
+        const oldId = open.rows[0].group.id
+        yield* session.loadMore(oldId)
+        yield* Deferred.await(paging)
+        yield* session.selectRepository('/fixture', { discover: true, state: 'merged' })
+        yield* Deferred.await(cancelled)
+        const switching = yield* session.current()
+
+        if (switching._tag !== 'Active') return yield* Effect.die('Missing selected filter')
+        expect(switching.pullRequestState).toBe('merged')
+        expect(
+          switching.rows.flatMap((row) =>
+            'data' in row.content ? row.content.data.items.map((pr) => pr.id) : [],
+          ),
+        ).not.toContain('open-first')
+        const merged = yield* waitFor(session, settled)
+
+        if (merged?._tag !== 'Active' || merged.rows[0]?.content._tag !== 'Ready')
+          return yield* Effect.die('Missing merged group')
+        expect(merged.rows[0].content.data.items.map((pr) => pr.id)).toEqual(['merged-first'])
+        expect(merged.rows[0].group.id).not.toBe(oldId)
+        yield* session.loadMore(oldId)
+        yield* session.loadMore(merged.rows[0].group.id)
+
+        const paged = yield* waitFor(
+          session,
+          (state) =>
+            settled(state) &&
+            state._tag === 'Active' &&
+            state.rows[0]?.content._tag === 'Ready' &&
+            state.rows[0].content.data.items.length === 2,
+        )
+
+        if (paged?._tag !== 'Active' || paged.rows[0]?.content._tag !== 'Ready')
+          return yield* Effect.die('Missing merged page')
+        expect(paged.rows[0].content.data.items.map((pr) => pr.id)).toEqual([
+          'merged-first',
+          'merged-next',
+        ])
+        yield* session.selectRepository('/fixture', { discover: true })
+        const refreshed = yield* waitFor(session, settled)
+
+        if (refreshed?._tag !== 'Active' || refreshed.rows[0]?.content._tag !== 'Ready')
+          return yield* Effect.die('Missing refreshed group')
+        expect(refreshed.pullRequestState).toBe('merged')
+        expect(refreshed.rows[0].content.data.items.map((pr) => pr.id)).toEqual(['merged-first'])
+        yield* session.selectRepository('/fixture', { discover: true, state: 'closed' })
+        const closed = yield* waitFor(session, settled)
+
+        if (closed?._tag !== 'Active') return yield* Effect.die('Missing closed group')
+        expect(closed.pullRequestState).toBe('closed')
+        expect(closed.rows[0]?.content._tag).toBe('Failed')
+      }).pipe(
+        Effect.provide(
+          testLayer((input) => {
+            if (input.state === 'closed') return new ProviderUnavailable()
+
+            if (input.state === 'open' && Option.isSome(input.cursor))
+              return Deferred.succeed(paging, undefined).pipe(
+                Effect.andThen(Effect.never),
+                Effect.ensuring(Deferred.succeed(cancelled, undefined)),
+              )
+
+            return Effect.succeed({
+              items: [pr(`${input.state}-${Option.isNone(input.cursor) ? 'first' : 'next'}`)],
+              next: Option.isNone(input.cursor)
+                ? Option.some(Redacted.make('page'))
+                : Option.none(),
+            })
+          }),
+        ),
+      )
+    }),
+)
 
 it.effect('keeps PRs during refresh and explicitly marks them stale after a failed refresh', () =>
   Effect.gen(function* () {
@@ -251,7 +337,7 @@ it.effect(
             connectAuthentication: () =>
               Deferred.await(connection).pipe(Effect.andThen(new ProviderUnavailable())),
             getPullRequest: () => new ProviderUnavailable(),
-            listOpenPullRequests: (input) =>
+            listPullRequests: (input) =>
               remote.name === 'slow'
                 ? Deferred.succeed(slowStarted, undefined).pipe(
                     Effect.andThen(Effect.never),

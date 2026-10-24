@@ -1,9 +1,10 @@
 import { expect, it } from '@effect/vitest'
-import { Cause, Deferred, Effect, Exit, Fiber, Option, Redacted } from 'effect'
+import { Cause, Deferred, Effect, Exit, Fiber, Option, Redacted, Schema } from 'effect'
 import { TestClock } from 'effect/testing'
 
 import {
   AuthenticationRequired,
+  OpenPullRequest,
   ProviderUnavailable,
   RateLimited,
   RepositoryUnavailable,
@@ -23,8 +24,9 @@ const remote = (destination: string): Remote => ({
 
 const request = {
   scope: 'repository',
+  state: 'open',
   cursor: Option.none<Redacted.Redacted>(),
-} satisfies Parameters<ProviderRepository['listOpenPullRequests']>[0]
+} satisfies Parameters<ProviderRepository['listPullRequests']>[0]
 
 const session = (token = 'test-token', id = 'session'): ProviderSession => ({
   id,
@@ -39,6 +41,8 @@ const pull = {
   number: 17,
   title: 'A pull request',
   draft: true,
+  state: 'open',
+  merged_at: null,
   html_url: 'https://evil.invalid/untrusted',
   head: {
     ref: 'feature/topic',
@@ -157,11 +161,12 @@ it.effect('normalizes drafts, fork identities, full refs and revisions, and dele
         }),
     })
 
-    const page = yield* repository.listOpenPullRequests(request)
+    const page = yield* repository.listPullRequests(request)
     expect(page.items[0]).toEqual({
       id: '17',
       title: pull.title,
       draft: true,
+      state: 'open',
       url: 'https://github.com/owner/repo/pull/17',
       source: {
         _tag: 'Available',
@@ -182,6 +187,27 @@ it.effect('normalizes drafts, fork identities, full refs and revisions, and dele
   }),
 )
 
+it.effect('continues decoding saved pull requests without state and rejects unknown states', () =>
+  Effect.gen(function* () {
+    const legacy = {
+      id: '17',
+      title: 'Saved review',
+      url: 'https://github.com/owner/repo/pull/17',
+      draft: false,
+      source: { _tag: 'Unavailable' },
+      target: {
+        repository: { authority: 'github.com', key: 'owner/repo', displayName: 'owner/repo' },
+        ref: { name: 'refs/heads/main', revision: Option.some(pull.base.sha) },
+      },
+    }
+
+    expect(yield* Schema.decodeUnknownEffect(OpenPullRequest)(legacy)).toEqual(legacy)
+    expect(Schema.decodeUnknownOption(OpenPullRequest)({ ...legacy, state: 'active' })).toEqual(
+      Option.none(),
+    )
+  }),
+)
+
 it.effect('rejects malformed provider data and inconsistent targets', () =>
   Effect.gen(function* () {
     for (const body of [
@@ -189,6 +215,9 @@ it.effect('rejects malformed provider data and inconsistent targets', () =>
       [null],
       [{ ...pull, number: 0 }],
       [{ ...pull, draft: 'true' }],
+      [{ ...pull, state: 'unknown' }],
+      [{ ...pull, merged_at: 123 }],
+      [{ ...pull, merged_at: '2026-10-01T00:00:00Z' }],
       [{ ...pull, head: { ...pull.head, sha: 'bad' } }],
       [{ ...pull, base: { ...pull.base, repo: null } }],
       [{ ...pull, base: { ...pull.base, repo: { owner: { login: 'other' }, name: 'repo' } } }],
@@ -197,7 +226,7 @@ it.effect('rejects malformed provider data and inconsistent targets', () =>
         get: () => Effect.succeed({ body, headers: {} }),
       })
 
-      expect((yield* repository.listOpenPullRequests(request).pipe(Effect.flip))._tag).toBe(
+      expect((yield* repository.listPullRequests(request).pipe(Effect.flip))._tag).toBe(
         'InvalidProviderResponse',
       )
     }
@@ -231,19 +260,18 @@ it.effect('continues with rebuilt URLs and refuses other repositories or replace
       },
     )
 
-    const first = yield* repository.listOpenPullRequests(request)
+    const first = yield* repository.listPullRequests(request)
     expect(Option.isSome(first.next)).toBe(true)
-    const second = yield* repository.listOpenPullRequests({ ...request, cursor: first.next })
-    const third = yield* repository.listOpenPullRequests({ ...request, cursor: second.next })
+    const second = yield* repository.listPullRequests({ ...request, cursor: first.next })
+    const third = yield* repository.listPullRequests({ ...request, cursor: second.next })
     expect(Option.isNone(third.next)).toBe(true)
     expect(requests).toEqual([url(1), url(2), url(3)])
     const other = provider.recognizeRemote(remote('github.com:other/repo'))
 
     if (Option.isSome(other))
       expect(
-        (yield* other.value
-          .listOpenPullRequests({ ...request, cursor: first.next })
-          .pipe(Effect.flip))._tag,
+        (yield* other.value.listPullRequests({ ...request, cursor: first.next }).pipe(Effect.flip))
+          ._tag,
       ).toBe('InvalidContinuation')
 
     for (const replacement of [
@@ -253,18 +281,50 @@ it.effect('continues with rebuilt URLs and refuses other repositories or replace
     ]) {
       active = replacement
       expect(
-        (yield* repository
-          .listOpenPullRequests({ ...request, cursor: first.next })
-          .pipe(Effect.flip))._tag,
+        (yield* repository.listPullRequests({ ...request, cursor: first.next }).pipe(Effect.flip))
+          ._tag,
       ).toBe('InvalidContinuation')
     }
 
     expect(requests).toHaveLength(3)
     expect(
       (yield* repository
-        .listOpenPullRequests({ ...request, cursor: Option.some(Redacted.make('unissued')) })
+        .listPullRequests({ ...request, cursor: Option.some(Redacted.make('unissued')) })
         .pipe(Effect.flip))._tag,
     ).toBe('InvalidContinuation')
+  }),
+)
+
+it.effect('accepts GitHub numeric repository page links only for the response repository', () =>
+  Effect.gen(function* () {
+    const numeric = (id: number) => url(2).replace('/repos/owner/repo/', `/repositories/${id}/`)
+    const body = [{ ...pull, base: { ...pull.base, repo: { ...pull.base.repo, id: 42 } } }]
+    const requests: string[] = []
+
+    const { repository } = yield* make(undefined, {
+      get: (actual) => {
+        requests.push(actual)
+
+        const headers: Readonly<Record<string, string>> =
+          actual === url(1) ? { link: `<${numeric(42)}>; rel="next"` } : {}
+
+        return Effect.succeed({ body, headers })
+      },
+    })
+
+    const first = yield* repository.listPullRequests(request)
+    expect(Option.isSome(first.next)).toBe(true)
+    const second = yield* repository.listPullRequests({ ...request, cursor: first.next })
+    expect(second.items.map((pr) => pr.id)).toEqual(['17'])
+    expect(requests).toEqual([url(1), url(2)])
+
+    const wrong = yield* make(undefined, {
+      get: () => Effect.succeed({ body, headers: { link: `<${numeric(43)}>; rel="next"` } }),
+    })
+
+    expect((yield* wrong.repository.listPullRequests(request).pipe(Effect.flip))._tag).toBe(
+      'InvalidProviderResponse',
+    )
   }),
 )
 
@@ -285,7 +345,7 @@ it.effect('rejects unsafe, repeated, backwards and query-changing next links', (
         get: () => Effect.succeed({ body: [], headers: { link: `<${next}>; rel="next"` } }),
       })
 
-      expect((yield* repository.listOpenPullRequests(request).pipe(Effect.flip))._tag).toBe(
+      expect((yield* repository.listPullRequests(request).pipe(Effect.flip))._tag).toBe(
         'InvalidProviderResponse',
       )
     }
@@ -295,7 +355,7 @@ it.effect('rejects unsafe, repeated, backwards and query-changing next links', (
         get: () => Effect.succeed({ body: [], headers: { link } }),
       })
 
-      expect((yield* repository.listOpenPullRequests(request).pipe(Effect.flip))._tag).toBe(
+      expect((yield* repository.listPullRequests(request).pipe(Effect.flip))._tag).toBe(
         'InvalidProviderResponse',
       )
     }
@@ -308,9 +368,9 @@ it.effect('rejects unsafe, repeated, backwards and query-changing next links', (
         }),
     })
 
-    const first = yield* repository.listOpenPullRequests(request)
+    const first = yield* repository.listPullRequests(request)
     expect(
-      (yield* repository.listOpenPullRequests({ ...request, cursor: first.next }).pipe(Effect.flip))
+      (yield* repository.listPullRequests({ ...request, cursor: first.next }).pipe(Effect.flip))
         ._tag,
     ).toBe('InvalidProviderResponse')
   }),
@@ -342,7 +402,7 @@ it.effect(
         },
       )
 
-      expect(yield* repository.listOpenPullRequests(request).pipe(Effect.flip)).toEqual(
+      expect(yield* repository.listPullRequests(request).pipe(Effect.flip)).toEqual(
         new AuthenticationRequired(),
       )
       expect(yield* repository.getPullRequest('17').pipe(Effect.flip)).toEqual(
@@ -351,9 +411,9 @@ it.effect(
       expect(yield* repository.inspectAuthentication()).toEqual({ _tag: 'Unauthenticated' })
 
       yield* repository.connectAuthentication()
-      expect(
-        (yield* repository.listOpenPullRequests(request)).items.map((item) => item.id),
-      ).toEqual(['17'])
+      expect((yield* repository.listPullRequests(request)).items.map((item) => item.id)).toEqual([
+        '17',
+      ])
       expect((yield* repository.getPullRequest('17')).id).toBe('17')
     }),
 )
@@ -378,7 +438,7 @@ it.effect('propagates HTTP and authentication failures without anonymous fallbac
         },
       )
 
-      expect(yield* repository.listOpenPullRequests(request).pipe(Effect.flip)).toEqual(error)
+      expect(yield* repository.listPullRequests(request).pipe(Effect.flip)).toEqual(error)
       expect(calls).toBe(1)
     }
 
@@ -393,7 +453,7 @@ it.effect('propagates HTTP and authentication failures without anonymous fallbac
     expect((yield* repository.connectAuthentication().pipe(Effect.flip))._tag).toBe(
       'ProviderUnavailable',
     )
-    expect((yield* repository.listOpenPullRequests(request).pipe(Effect.flip))._tag).toBe(
+    expect((yield* repository.listPullRequests(request).pipe(Effect.flip))._tag).toBe(
       'ProviderUnavailable',
     )
   }),
@@ -416,12 +476,12 @@ it.effect(
           },
         })
 
-        yield* repository.listOpenPullRequests(request).pipe(Effect.result)
-        const error = yield* repository.listOpenPullRequests(request).pipe(Effect.flip)
+        yield* repository.listPullRequests(request).pipe(Effect.result)
+        const error = yield* repository.listPullRequests(request).pipe(Effect.flip)
         expect(error._tag).toBe('RateLimited')
         expect(calls).toBe(1)
         yield* TestClock.adjust('10 seconds')
-        yield* repository.listOpenPullRequests(request).pipe(Effect.result)
+        yield* repository.listPullRequests(request).pipe(Effect.result)
         expect(calls).toBe(2)
       }
     }),
@@ -444,15 +504,166 @@ it.effect('uses the test clock for HTTP-date Retry-After and ignores malformed d
         }),
     })
 
-    yield* repository.listOpenPullRequests(request)
-    expect(yield* repository.listOpenPullRequests(request).pipe(Effect.flip)).toEqual(
+    yield* repository.listPullRequests(request)
+    expect(yield* repository.listPullRequests(request).pipe(Effect.flip)).toEqual(
       new RateLimited({ retryAfterSeconds: Option.some(10) }),
     )
     expect(calls).toBe(1)
     yield* TestClock.adjust('10 seconds')
-    yield* repository.listOpenPullRequests(request)
-    yield* repository.listOpenPullRequests(request)
+    yield* repository.listPullRequests(request)
+    yield* repository.listPullRequests(request)
     expect(calls).toBe(3)
+  }),
+)
+
+it.effect('separates merged and closed results while retaining exact source and target SHAs', () =>
+  Effect.gen(function* () {
+    const merged = {
+      ...pull,
+      state: 'closed',
+      merged_at: '2026-10-01T00:00:00Z',
+      merge_commit_sha: 'c'.repeat(40),
+    }
+
+    const closed = { ...pull, number: 18, state: 'closed' }
+    const requests: string[] = []
+
+    const { repository } = yield* make(undefined, {
+      get: (actualUrl) =>
+        Effect.sync(() => {
+          requests.push(actualUrl)
+
+          return { body: [merged, closed], headers: {} }
+        }),
+    })
+
+    for (const state of ['merged', 'closed'] satisfies ReadonlyArray<'merged' | 'closed'>) {
+      const page = yield* repository.listPullRequests({ ...request, state })
+      expect(page.items).toHaveLength(1)
+      expect(page.items[0]).toMatchObject({
+        id: state === 'merged' ? '17' : '18',
+        state,
+        source: { ref: { revision: Option.some(pull.head.sha) } },
+        target: { ref: { revision: Option.some(pull.base.sha) } },
+      })
+    }
+
+    expect(requests).toEqual([
+      url(1).replace('state=open', 'state=closed'),
+      url(1).replace('state=open', 'state=closed'),
+    ])
+  }),
+)
+
+it.effect('continues empty filtered pages and binds cursors to the selected historical state', () =>
+  Effect.gen(function* () {
+    for (const state of ['merged', 'closed'] satisfies ReadonlyArray<'merged' | 'closed'>) {
+      const requests: string[] = []
+      const historicalUrl = (page: number) => url(page).replace('state=open', 'state=closed')
+
+      const { repository } = yield* make(undefined, {
+        get: (actualUrl) =>
+          Effect.sync(() => {
+            requests.push(actualUrl)
+            const selected = actualUrl === historicalUrl(2)
+            const merged = state === 'merged' ? selected : !selected
+
+            const headers: Readonly<Record<string, string>> = selected
+              ? {}
+              : { link: `<${historicalUrl(2)}>; rel="next"` }
+
+            return {
+              body: [
+                { ...pull, state: 'closed', merged_at: merged ? '2026-10-01T00:00:00Z' : null },
+              ],
+              headers,
+            }
+          }),
+      })
+
+      const firstPage = yield* repository.listPullRequests({ ...request, state })
+      expect(firstPage.items).toEqual([])
+      expect(Option.isSome(firstPage.next)).toBe(true)
+
+      for (const changed of [
+        'open',
+        state === 'merged' ? 'closed' : 'merged',
+      ] satisfies ReadonlyArray<'open' | 'merged' | 'closed'>) {
+        expect(
+          (yield* repository
+            .listPullRequests({ ...request, state: changed, cursor: firstPage.next })
+            .pipe(Effect.flip))._tag,
+        ).toBe('InvalidContinuation')
+      }
+
+      const second = yield* repository.listPullRequests({
+        ...request,
+        state,
+        cursor: firstPage.next,
+      })
+
+      expect(second.items.map((item) => item.state)).toEqual([state])
+      expect(Option.isNone(second.next)).toBe(true)
+      expect(requests).toEqual([historicalUrl(1), historicalUrl(2)])
+    }
+  }),
+)
+
+it.effect('rejects historical next links with an open API query', () =>
+  Effect.gen(function* () {
+    const { repository } = yield* make(undefined, {
+      get: () => Effect.succeed({ body: [], headers: { link: `<${url(2)}>; rel="next"` } }),
+    })
+
+    for (const state of ['merged', 'closed'] satisfies ReadonlyArray<'merged' | 'closed'>) {
+      expect(
+        (yield* repository.listPullRequests({ ...request, state }).pipe(Effect.flip))._tag,
+      ).toBe('InvalidProviderResponse')
+    }
+  }),
+)
+
+it.effect('rereads any state by id without following list pagination or changing its cursor', () =>
+  Effect.gen(function* () {
+    let state: 'open' | 'merged' | 'closed' = 'open'
+    const requests: string[] = []
+
+    const { repository } = yield* make(undefined, {
+      get: (actualUrl) =>
+        Effect.sync(() => {
+          requests.push(actualUrl)
+
+          const body = {
+            ...pull,
+            state: state === 'open' ? 'open' : 'closed',
+            merged_at: state === 'merged' ? '2026-10-01T00:00:00Z' : null,
+          }
+
+          const headers: Readonly<Record<string, string>> =
+            actualUrl === url(2) ? {} : { link: 'not a valid pagination link' }
+
+          return {
+            body: actualUrl.includes('?') ? [pull] : body,
+            headers: actualUrl === url(1) ? { link: `<${url(2)}>; rel="next"` } : headers,
+          }
+        }),
+    })
+
+    const page = yield* repository.listPullRequests(request)
+
+    for (const selected of ['open', 'merged', 'closed'] satisfies ReadonlyArray<
+      'open' | 'merged' | 'closed'
+    >) {
+      state = selected
+      expect((yield* repository.getPullRequest('17')).state).toBe(selected)
+    }
+
+    yield* repository.listPullRequests({ ...request, cursor: page.next })
+    expect(requests).toEqual([
+      url(1),
+      ...Array.from({ length: 3 }, () => 'https://api.github.com/repos/owner/repo/pulls/17'),
+      url(2),
+    ])
   }),
 )
 
@@ -473,7 +684,7 @@ it.effect('preserves interruption and transport cleanup', () =>
         ),
     })
 
-    const fiber = yield* repository.listOpenPullRequests(request).pipe(Effect.forkScoped)
+    const fiber = yield* repository.listPullRequests(request).pipe(Effect.forkScoped)
     yield* Deferred.await(started)
     yield* Fiber.interrupt(fiber)
     const exit = yield* Fiber.await(fiber)

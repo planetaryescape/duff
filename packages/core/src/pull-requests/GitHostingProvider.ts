@@ -47,9 +47,14 @@ export const PullRequestRef = Schema.Struct({
   ),
 })
 
+export const PullRequestState = Schema.Literals(['open', 'merged', 'closed'])
+
+export type PullRequestState = Schema.Schema.Type<typeof PullRequestState>
+
 export const OpenPullRequest = Schema.Struct({
   id: Schema.NonEmptyString,
   title: Schema.String,
+  state: Schema.optionalKey(PullRequestState),
   url: Schema.String.check(Schema.isPattern(/^https:\/\//)),
   draft: Schema.Boolean,
   source: Schema.Union([
@@ -137,8 +142,9 @@ export interface ProviderRepository {
   readonly inspectAuthentication: () => Effect.Effect<Authentication, AuthenticationError>
   readonly connectAuthentication: () => Effect.Effect<Authentication, AuthenticationError>
   readonly getPullRequest: (id: string) => Effect.Effect<OpenPullRequest, DiscoveryError>
-  readonly listOpenPullRequests: (input: {
+  readonly listPullRequests: (input: {
     readonly scope: 'repository'
+    readonly state: PullRequestState
     readonly cursor: Option.Option<Redacted.Redacted>
   }) => Effect.Effect<PullRequestPage, DiscoveryError>
 }

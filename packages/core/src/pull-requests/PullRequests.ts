@@ -22,6 +22,7 @@ import {
   OpenPullRequest,
   ProviderIdentity,
   type PullRequestPage,
+  type PullRequestState,
   type ProviderRepository,
   type Remote,
   RepositoryIdentity,
@@ -100,6 +101,7 @@ class Entry {
     group: RepositoryGroup,
     readonly repository: ProviderRepository,
     readonly gate: Semaphore.Semaphore,
+    readonly state: PullRequestState,
   ) {
     this.#group = group
   }
@@ -163,7 +165,10 @@ export interface ResolvedPullRequest extends Schema.Schema.Type<typeof ResolvedP
 export class PullRequests extends Context.Service<
   PullRequests,
   {
-    readonly discover: (snapshot: GitContextSnapshot) => Stream.Stream<DiscoveryEvent>
+    readonly discover: (
+      snapshot: GitContextSnapshot,
+      state?: PullRequestState,
+    ) => Stream.Stream<DiscoveryEvent>
     readonly loadMore: (id: GroupId) => Effect.Effect<GroupResult, GroupNotFound>
     readonly connect: (
       id: GroupId,
@@ -198,9 +203,10 @@ export const makePullRequestsLayer = (providers: ReadonlyArray<GitHostingProvide
         return yield* Effect.gen(function* () {
           const authentication = yield* entry.repository.inspectAuthentication()
 
-          const page = yield* entry.repository.listOpenPullRequests({
+          const page = yield* entry.repository.listPullRequests({
             scope: 'repository',
             cursor,
+            state: entry.state,
           })
 
           if (!entry.acceptPage(page)) return yield* new InvalidContinuation()
@@ -221,7 +227,10 @@ export const makePullRequestsLayer = (providers: ReadonlyArray<GitHostingProvide
         )
       })
 
-      const discover = (snapshot: GitContextSnapshot): Stream.Stream<DiscoveryEvent> =>
+      const discover = (
+        snapshot: GitContextSnapshot,
+        state: PullRequestState = 'open',
+      ): Stream.Stream<DiscoveryEvent> =>
         Stream.unwrap(
           Effect.gen(function* () {
             const currentGeneration = yield* Ref.updateAndGet(generation, (value) => value + 1)
@@ -276,6 +285,7 @@ export const makePullRequestsLayer = (providers: ReadonlyArray<GitHostingProvide
                     }),
                     match.repository,
                     yield* Semaphore.make(1),
+                    state,
                   ),
                 )
             }

@@ -80,9 +80,10 @@ it.effect(
         account: Option.none(),
       })
 
-      const page = yield* repository.listOpenPullRequests({
+      const page = yield* repository.listPullRequests({
         scope: 'repository',
         cursor: Option.none(),
+        state: 'open',
       })
 
       expect(page.items.map((item) => item.id)).toEqual(['42'])

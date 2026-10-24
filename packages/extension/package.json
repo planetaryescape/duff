@@ -42,7 +42,7 @@
       },
       {
         "command": "duff.inspectContext",
-        "title": "Inspect / Refresh Git Context",
+        "title": "Show Git Diagnostics",
         "icon": "$(refresh)",
         "category": "Duff"
       },
@@ -61,6 +61,12 @@
         "command": "duff.searchPullRequests",
         "title": "Search Pull Requests…",
         "icon": "$(search)",
+        "category": "Duff"
+      },
+      {
+        "command": "duff.filterPullRequests",
+        "title": "Show Open / Merged / Closed Pull Requests…",
+        "icon": "$(filter)",
         "category": "Duff"
       },
       {
@@ -168,7 +174,8 @@
         },
         {
           "id": "duff.context",
-          "name": "Git Context"
+          "name": "Git Diagnostics",
+          "when": "duff.gitDiagnostics"
         },
         {
           "id": "duff.providers",
@@ -193,11 +200,11 @@
       },
       {
         "view": "duff.context",
-        "contents": "Inspect local identity and credential configuration without authenticating.\n[Inspect Git Context](command:duff.inspectContext)"
+        "contents": "Inspect local identity and credential configuration without authenticating.\n[Show Git Diagnostics](command:duff.inspectContext)"
       },
       {
         "view": "duff.providers",
-        "contents": "Discover open pull requests for GitHub and Azure DevOps remotes.\n[Check Pull Requests](command:duff.refreshProviders)",
+        "contents": "Review pull requests from GitHub and Azure DevOps.\n[Check Pull Requests](command:duff.refreshProviders)\n[Show Open / Merged / Closed…](command:duff.filterPullRequests)",
         "when": "config.duff.automaticDiscovery != false"
       },
       {
@@ -264,9 +271,14 @@
           "group": "navigation@1"
         },
         {
-          "command": "duff.refreshProviders",
+          "command": "duff.filterPullRequests",
           "when": "view == duff.providers",
           "group": "navigation@2"
+        },
+        {
+          "command": "duff.refreshProviders",
+          "when": "view == duff.providers",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [

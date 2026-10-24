@@ -12,6 +12,7 @@ import {
   ProviderIdentity,
   ProviderRepository,
   PullRequestPage,
+  type PullRequestState,
   RateLimited,
   RepositoryIdentity,
 } from '../GitHostingProvider'
@@ -39,7 +40,7 @@ const ForkRepository = Schema.Struct({
 const WirePullRequest = Schema.Struct({
   pullRequestId: Schema.Int.check(Schema.isGreaterThan(0)),
   title: Schema.String,
-  status: Schema.Literal('active'),
+  status: Schema.Literals(['active', 'completed', 'abandoned']),
   isDraft: Schema.optional(Schema.Boolean),
   sourceRefName: OpenPullRequest.fields.target.fields.ref.fields.name,
   targetRefName: OpenPullRequest.fields.target.fields.ref.fields.name,
@@ -54,6 +55,18 @@ const WirePage = Schema.Struct({
   value: Schema.Array(WirePullRequest),
   count: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 })
+
+const statusByState = {
+  open: 'active',
+  merged: 'completed',
+  closed: 'abandoned',
+} satisfies Record<PullRequestState, string>
+
+const stateByStatus = {
+  active: 'open',
+  completed: 'merged',
+  abandoned: 'closed',
+} satisfies Record<Schema.Schema.Type<typeof WirePullRequest>['status'], PullRequestState>
 
 function parseRemote(destination: string): Option.Option<Address> {
   const modern = /^https:\/\/dev\.azure\.com\/([^/]+)\/([^/]+)\/_git\/([^/]+)\/?$/i.exec(
@@ -110,7 +123,12 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
 
   const continuations = new Map<
     string,
-    { readonly key: string; readonly session: string; readonly skip: number }
+    {
+      readonly key: string
+      readonly session: string
+      readonly skip: number
+      readonly state: PullRequestState
+    }
   >()
 
   const cooldowns = new Map<string, number>()
@@ -133,7 +151,7 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
       })
 
       const read = Effect.fn('AzureDevOps.readPullRequests')(function* (
-        input: Parameters<ProviderRepository['listOpenPullRequests']>[0],
+        input: Parameters<ProviderRepository['listPullRequests']>[0],
         id?: string,
       ) {
         if (id !== undefined && !/^[1-9][0-9]*$/.test(id))
@@ -160,7 +178,8 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
           if (
             !continuation ||
             continuation.key !== Redacted.value(input.cursor.value) ||
-            continuation.session !== sessionKey
+            continuation.session !== sessionKey ||
+            continuation.state !== input.state
           ) {
             return yield* new InvalidContinuation()
           }
@@ -176,7 +195,7 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
 
         const url =
           id === undefined
-            ? `${endpoint}?searchCriteria.status=active&$top=50&$skip=${skip}&api-version=7.1`
+            ? `${endpoint}?searchCriteria.status=${statusByState[input.state]}&$top=50&$skip=${skip}&api-version=7.1`
             : `${endpoint}/${id}?api-version=7.1`
 
         const response = yield* http.get(url, Option.some(session.value.token)).pipe(
@@ -223,6 +242,9 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
           Effect.fn('AzureDevOps.normalizePullRequest')(function* (pr) {
             if (id !== undefined && String(pr.pullRequestId) !== id)
               return yield* new InvalidProviderResponse()
+
+            if (id === undefined && stateByStatus[pr.status] !== input.state)
+              return yield* new InvalidProviderResponse()
             let sourceRepository: Option.Option<RepositoryIdentity> = Option.some(boundIdentity)
 
             if (pr.forkSource !== undefined) {
@@ -243,6 +265,7 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
             return yield* Schema.decodeUnknownEffect(OpenPullRequest)({
               id: String(pr.pullRequestId),
               title: pr.title,
+              state: stateByStatus[pr.status],
               url: `${repositoryUrl(address)}/pullrequest/${pr.pullRequestId}`,
               draft: pr.isDraft ?? false,
               source: Option.isSome(sourceRepository)
@@ -271,7 +294,12 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
 
         if (id === undefined && page.value.length === 50) {
           const key = randomUUID()
-          continuations.set(continuationOwner, { key, session: sessionKey, skip: skip + 50 })
+          continuations.set(continuationOwner, {
+            key,
+            session: sessionKey,
+            skip: skip + 50,
+            state: input.state,
+          })
           next = Option.some(Redacted.make(key))
         }
 
@@ -282,9 +310,13 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
         identity: boundIdentity,
         inspectAuthentication: () => inspect('silent'),
         connectAuthentication: () => inspect('connect'),
-        listOpenPullRequests: (input) => read(input),
+        listPullRequests: (input) => read(input),
         getPullRequest: Effect.fn('AzureDevOps.getPullRequest')(function* (id) {
-          const page = yield* read({ scope: 'repository', cursor: Option.none() }, id)
+          const page = yield* read(
+            { scope: 'repository', state: 'open', cursor: Option.none() },
+            id,
+          )
+
           const pull = page.items[0]
 
           if (!pull) return yield* new InvalidProviderResponse()
