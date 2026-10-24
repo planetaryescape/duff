@@ -1,10 +1,18 @@
 import { GroupId } from '@duff/core/pull-requests'
-import { ReviewSession } from '@duff/core/review-session'
+import { ReviewSession, type ReviewState } from '@duff/core/review-session'
 import { Effect, Fiber, Option, Schema, Stream } from 'effect'
 import * as vscode from 'vscode'
 
 import { type CommandRuntime, runOperation } from '../Operations'
-import { PullRequestView } from './PullRequestView'
+import { providerError, PullRequestItem, PullRequestView } from './PullRequestView'
+
+type SearchItem = vscode.QuickPickItem & {
+  readonly command?: {
+    readonly command: string
+    readonly title: string
+    readonly arguments?: ReadonlyArray<unknown>
+  }
+}
 
 export function registerPullRequestCommands(
   context: vscode.ExtensionContext,
@@ -12,6 +20,101 @@ export function registerPullRequestCommands(
 ) {
   const provider = new PullRequestView()
   const view = vscode.window.createTreeView('duff.providers', { treeDataProvider: provider })
+  let search: vscode.QuickPick<SearchItem> | undefined
+
+  const updateSearch = (state: ReviewState) => {
+    if (!search) return
+    search.busy =
+      state._tag === 'Active' &&
+      (state.discovering ||
+        state.inspection === 'Inspecting' ||
+        state.rows.some((row) => row.activity !== 'Idle'))
+    const items: SearchItem[] = []
+
+    if (state._tag === 'Active') {
+      const ready = state.inspection === 'Ready' && Option.isSome(state.snapshot)
+      const busy = !ready || state.rows.some((row) => row.activity === 'Connecting')
+
+      const root = Option.getOrElse(
+        Option.map(state.snapshot, (snapshot) => snapshot.root),
+        () => state.directory,
+      )
+
+      for (const row of state.rows) {
+        if ('data' in row.content) {
+          for (const pr of row.content.data.items) {
+            const item = new PullRequestItem(root, row, pr)
+            items.push({
+              label: `#${pr.id} ${pr.title}`,
+              description: `${row.group.repository.displayName} · ${pr.draft ? 'Draft' : 'Open'}`,
+              detail: `${pr.source._tag === 'Available' ? pr.source.ref.name.replace('refs/heads/', '') : 'Source unavailable'} → ${pr.target.ref.name.replace('refs/heads/', '')}${row.content._tag === 'Ready' ? '' : ' · Previous results'}`,
+              command: ready
+                ? {
+                    command: 'duff.reviewPullRequest',
+                    title: 'Review Pull Request',
+                    arguments: [item],
+                  }
+                : undefined,
+            })
+          }
+
+          if (
+            !busy &&
+            row.activity === 'Idle' &&
+            row.content._tag !== 'Refreshing' &&
+            row.content.data.hasMore
+          )
+            items.push({
+              label: '$(list-unordered) Load More Pull Requests',
+              description: row.group.repository.displayName,
+              detail: 'Search covers loaded open PRs. Load the next page to search more.',
+              alwaysShow: true,
+              command: {
+                command: 'duff.loadMoreProviders',
+                title: 'Load More',
+                arguments: [row.group.id],
+              },
+            })
+        }
+
+        if (row.content._tag === 'Failed' || row.content._tag === 'Stale')
+          items.push({
+            label: row.group.repository.displayName,
+            detail: providerError(row.content.error),
+            alwaysShow: true,
+          })
+
+        if (
+          !busy &&
+          row.activity === 'Idle' &&
+          (row.content._tag === 'Failed' ||
+            ('data' in row.content && row.content.data.authentication._tag !== 'Authenticated'))
+        )
+          items.push({
+            label: '$(account) Connect Provider…',
+            description: row.group.repository.displayName,
+            alwaysShow: true,
+            command: {
+              command: 'duff.connectProvider',
+              title: 'Connect Provider',
+              arguments: [row.group.id],
+            },
+          })
+      }
+    }
+
+    items.push({
+      label: '$(refresh) Check Pull Requests',
+      detail: 'Refresh discovery for the selected local repository.',
+      alwaysShow: true,
+      command: {
+        command: 'duff.inspectContext',
+        title: 'Check Pull Requests',
+        arguments: ['manual'],
+      },
+    })
+    search.items = items
+  }
 
   const subscription = runtime.runFork(
     ReviewSession.use((session) =>
@@ -19,6 +122,7 @@ export function registerPullRequestCommands(
         Stream.runForEach((state) =>
           Effect.sync(() => {
             provider.setState(state)
+            updateSearch(state)
             view.message =
               state._tag === 'Idle'
                 ? undefined
@@ -42,9 +146,48 @@ export function registerPullRequestCommands(
     view,
     {
       dispose: () => {
+        search?.dispose()
         runtime.runFork(Fiber.interrupt(subscription))
       },
     },
+    vscode.commands.registerCommand('duff.searchPullRequests', async () => {
+      if (search) {
+        search.show()
+
+        return
+      }
+
+      const picker = vscode.window.createQuickPick<SearchItem>()
+      search = picker
+      picker.title = 'Search Pull Requests'
+      picker.placeholder = 'Search loaded open PRs by title, #number, repository, or branch'
+      picker.matchOnDescription = true
+      picker.matchOnDetail = true
+
+      const accept = picker.onDidAccept(async () => {
+        const selected = picker.selectedItems[0]
+
+        if (!selected?.command) return
+        const command = selected.command
+
+        if (command.command === 'duff.reviewPullRequest') picker.hide()
+        await vscode.commands.executeCommand(command.command, ...(command.arguments ?? []))
+      })
+
+      const hide = picker.onDidHide(() => {
+        if (search === picker) search = undefined
+        accept.dispose()
+        hide.dispose()
+        picker.dispose()
+      })
+
+      const state = await runtime.runPromise(ReviewSession.use((session) => session.current()))
+      updateSearch(state)
+      picker.show()
+
+      if (state._tag === 'Idle' || (state.rows.length === 0 && !state.discovering))
+        await vscode.commands.executeCommand('duff.inspectContext', 'manual')
+    }),
     vscode.commands.registerCommand('duff.refreshProviders', async () => {
       await vscode.commands.executeCommand('duff.inspectContext', 'manual')
       await vscode.commands.executeCommand('duff.providers.focus')

@@ -4,7 +4,11 @@ import * as vscode from 'vscode'
 export function snapshotUri(snapshot: Snapshot): vscode.Uri {
   return vscode.Uri.from({
     scheme: 'duff-snapshot',
-    path: `/${snapshot.path ?? 'empty'}`,
+    path: vscode.Uri.joinPath(
+      vscode.Uri.file(snapshot.root),
+      snapshot.commit,
+      snapshot.path ?? 'empty',
+    ).path,
     query: JSON.stringify(snapshot),
   })
 }
@@ -25,7 +29,13 @@ export class ReviewFile extends vscode.TreeItem {
         : change.status
     this.tooltip = `${change.previousPath ? `${change.previousPath} → ` : ''}${change.path} (${change.status}) · ${viewed ? 'Viewed' : 'Unviewed'}`
     this.contextValue = `${change.status === 'D' ? 'deletedReviewFile' : 'reviewFile'}.${viewed ? 'viewed' : 'unviewed'}`
-    this.iconPath = new vscode.ThemeIcon(viewed ? 'pass-filled' : 'circle-large-outline')
+    this.checkboxState = {
+      state: viewed ? vscode.TreeItemCheckboxState.Checked : vscode.TreeItemCheckboxState.Unchecked,
+      tooltip: viewed ? 'Mark as Unviewed' : 'Mark as Viewed',
+      accessibilityInformation: {
+        label: `${viewed ? 'Mark as unviewed' : 'Mark as viewed'}: ${change.path}`,
+      },
+    }
     this.accessibilityInformation = {
       label: `${change.path}, ${change.status}, ${viewed ? 'viewed' : 'unviewed'}`,
     }
@@ -34,11 +44,23 @@ export class ReviewFile extends vscode.TreeItem {
 }
 
 export class ReviewFolder extends vscode.TreeItem {
-  constructor(readonly path: string) {
+  constructor(
+    readonly review: Review,
+    readonly path: string,
+    viewed: boolean,
+  ) {
     super(path.slice(path.lastIndexOf('/') + 1), vscode.TreeItemCollapsibleState.Expanded)
     this.id = `folder:${path}`
     this.iconPath = new vscode.ThemeIcon('folder')
     this.tooltip = path
+    this.checkboxState = {
+      state: viewed ? vscode.TreeItemCheckboxState.Checked : vscode.TreeItemCheckboxState.Unchecked,
+      tooltip: `${viewed ? 'Mark as Unviewed' : 'Mark as Viewed'}: all changed files in ${path}`,
+      accessibilityInformation: {
+        label: `${viewed ? 'Mark as unviewed' : 'Mark as viewed'}: all changed files in ${path}`,
+      },
+    }
+    this.contextValue = `reviewFolder.${viewed ? 'viewed' : 'unviewed'}`
   }
 }
 
@@ -101,7 +123,16 @@ export class ReviewView
     return [
       ...Array.from(folders)
         .sort()
-        .map((path) => new ReviewFolder(path)),
+        .map(
+          (path) =>
+            new ReviewFolder(
+              review,
+              path,
+              review.files
+                .filter((file) => file.path.startsWith(`${path}/`))
+                .every((file) => this.viewed.has(file.path)),
+            ),
+        ),
       ...files.sort((left, right) => left.change.path.localeCompare(right.change.path)),
     ]
   }
@@ -110,7 +141,16 @@ export class ReviewView
     const path = item instanceof ReviewFile ? item.change.path : item.path
     const separator = path.lastIndexOf('/')
 
-    if (this.mode === 'tree' && separator > 0) return new ReviewFolder(path.slice(0, separator))
+    if (this.mode !== 'tree' || separator < 1) return
+    const parent = path.slice(0, separator)
+
+    return new ReviewFolder(
+      item.review,
+      parent,
+      item.review.files
+        .filter((file) => file.path.startsWith(`${parent}/`))
+        .every((file) => this.viewed.has(file.path)),
+    )
   }
 
   /** Changed files in the order the view displays them. */

@@ -18,11 +18,14 @@ import {
   type ResolvedPullRequest,
 } from '../pull-requests/PullRequests'
 import { BranchReview, type Review, type ReviewError } from './BranchReview'
+import { ReviewSessions, reviewSessionKey } from './ReviewSessions'
+import { type SavedReview, type ReviewStorageError } from './SavedReviews'
 
 export class PreparedReview extends Data.Class<{
   readonly selection: PullRequestSelection
   readonly resolved: ResolvedPullRequest
   readonly review: Review
+  readonly saved: SavedReview
 }> {}
 
 export type PreparationActivity =
@@ -34,7 +37,7 @@ export type PreparationActivity =
       readonly resolved: ResolvedPullRequest
       readonly root: string
     }
-  | { readonly _tag: 'Failed'; readonly error: DiscoveryError | ReviewError }
+  | { readonly _tag: 'Failed'; readonly error: DiscoveryError | ReviewError | ReviewStorageError }
 
 const Activity = Data.taggedEnum<PreparationActivity>()
 
@@ -56,10 +59,18 @@ export class PullRequestReview extends Context.Service<
     readonly start: (
       snapshot: GitContextSnapshot,
       selection: PullRequestSelection,
+      mode?: 'resume' | 'update',
     ) => Effect.Effect<void>
     readonly allowFetch: () => Effect.Effect<void>
     readonly cancel: () => Effect.Effect<void>
-    readonly exit: () => Effect.Effect<void>
+    readonly exit: () => Effect.Effect<void, ReviewStorageError>
+    readonly restore: (root: string) => Effect.Effect<void, ReviewStorageError | ReviewError>
+    readonly resume: (key: string) => Effect.Effect<void, ReviewStorageError | ReviewError>
+    readonly mark: (
+      review: Review,
+      paths: ReadonlyArray<string>,
+      viewed: boolean,
+    ) => Effect.Effect<void, ReviewStorageError | ReviewError>
   }
 >()('duff/PullRequestReview') {
   static readonly layer = Layer.effect(
@@ -67,6 +78,7 @@ export class PullRequestReview extends Context.Service<
     Effect.gen(function* () {
       const prs = yield* PullRequests
       const git = yield* BranchReview
+      const sessions = yield* ReviewSessions
 
       const state = yield* SubscriptionRef.make(
         new PreparationState({
@@ -79,12 +91,28 @@ export class PullRequestReview extends Context.Service<
       const jobs = yield* FiberMap.make<string, void>()
       const gate = yield* Semaphore.make(1)
       let directory: Option.Option<string> = Option.none()
+      let durableActive = false
+
+      const list = Effect.fn('PullRequestReview.list')(function* () {
+        const catalog = yield* sessions.list()
+        durableActive = Option.isSome(catalog.active)
+
+        return catalog
+      }, Effect.uninterruptible)
 
       const activity = (activity: PreparationActivity) =>
         SubscriptionRef.update(
           state,
           (old) => new PreparationState({ root: old.root, accepted: old.accepted, activity }),
         )
+
+      const accepted = (saved: SavedReview) =>
+        new PreparedReview({
+          selection: saved.selection,
+          resolved: saved.resolved,
+          review: saved.review,
+          saved,
+        })
 
       const prepare = Effect.fn('PullRequestReview.prepare')(function* (
         root: string,
@@ -104,20 +132,24 @@ export class PullRequestReview extends Context.Service<
           return yield* result.failure
         }
 
-        yield* SubscriptionRef.update(
-          state,
-          (old) =>
-            new PreparationState({
-              root: old.root,
-              activity: Activity.Idle(),
-              accepted: Option.some(
-                new PreparedReview({ selection, resolved, review: result.success }),
-              ),
-            }),
-        )
+        // Once persistence begins, cancellation waits for publication too. Otherwise
+        // a cancelled job could change the durable active session without its view.
+        yield* Effect.gen(function* () {
+          const saved = yield* sessions.accept(selection, resolved, result.success)
+          durableActive = true
+          yield* SubscriptionRef.update(
+            state,
+            (old) =>
+              new PreparationState({
+                root: old.root,
+                activity: Activity.Idle(),
+                accepted: Option.some(accepted(saved)),
+              }),
+          )
+        }).pipe(Effect.uninterruptible)
       })
 
-      const run = (work: Effect.Effect<void, DiscoveryError | ReviewError>) =>
+      const run = (work: Effect.Effect<void, DiscoveryError | ReviewError | ReviewStorageError>) =>
         FiberMap.run(
           jobs,
           'prepare',
@@ -139,6 +171,9 @@ export class PullRequestReview extends Context.Service<
       const exit = Effect.fn('PullRequestReview.exit')(
         function* () {
           yield* FiberMap.clear(jobs)
+
+          if (durableActive) yield* sessions.leave()
+          durableActive = false
           yield* SubscriptionRef.update(
             state,
             (old) =>
@@ -174,7 +209,11 @@ export class PullRequestReview extends Context.Service<
       )
 
       const start = Effect.fn('PullRequestReview.start')(
-        function* (snapshot: GitContextSnapshot, selection: PullRequestSelection) {
+        function* (
+          snapshot: GitContextSnapshot,
+          selection: PullRequestSelection,
+          mode: 'resume' | 'update' = 'resume',
+        ) {
           const old = yield* SubscriptionRef.get(state)
 
           if (Option.getOrUndefined(old.root) !== snapshot.root) return
@@ -182,6 +221,28 @@ export class PullRequestReview extends Context.Service<
           yield* activity(Activity.Preparing({ selection }))
           yield* run(
             Effect.gen(function* () {
+              const saved = (yield* list()).sessions.find(
+                (item) => item.key === reviewSessionKey(snapshot.root, selection),
+              )
+
+              if (saved && mode === 'resume') {
+                yield* Effect.gen(function* () {
+                  const resumed = yield* sessions.resume(saved.key)
+                  durableActive = true
+                  yield* SubscriptionRef.update(
+                    state,
+                    (current) =>
+                      new PreparationState({
+                        root: current.root,
+                        activity: Activity.Idle(),
+                        accepted: Option.some(accepted(resumed)),
+                      }),
+                  )
+                }).pipe(Effect.uninterruptible)
+
+                return
+              }
+
               const resolved = yield* prs.resolve(snapshot, selection)
               yield* prepare(snapshot.root, selection, resolved, 'local-only')
             }),
@@ -205,6 +266,66 @@ export class PullRequestReview extends Context.Service<
         Effect.uninterruptible,
       )
 
+      const resume = Effect.fn('PullRequestReview.resume')(function* (key: string) {
+        const current = yield* SubscriptionRef.get(state)
+        const savedSession = (yield* list()).sessions.find((item) => item.key === key)
+
+        if (savedSession && savedSession.review.root !== Option.getOrUndefined(current.root)) return
+        yield* FiberMap.clear(jobs)
+        const saved = yield* sessions.resume(key)
+        durableActive = true
+        yield* SubscriptionRef.set(
+          state,
+          new PreparationState({
+            root: current.root,
+            activity: Activity.Idle(),
+            accepted: Option.some(accepted(saved)),
+          }),
+        )
+      })
+
+      const restore = Effect.fn('PullRequestReview.restore')(
+        function* (root: string) {
+          const current = yield* list()
+
+          const saved = current.sessions.find(
+            (item) =>
+              item.key === Option.getOrUndefined(current.active) && item.review.root === root,
+          )
+
+          if (saved) yield* resume(saved.key)
+        },
+        gate.withPermits(1),
+        Effect.uninterruptible,
+      )
+
+      const mark = Effect.fn('PullRequestReview.mark')(
+        function* (review: Review, paths: ReadonlyArray<string>, viewed: boolean) {
+          const current = yield* SubscriptionRef.get(state)
+
+          if (Option.isNone(current.accepted)) return
+
+          const saved = yield* sessions.progress(
+            current.accepted.value.saved.key,
+            review,
+            paths,
+            viewed,
+          )
+
+          yield* SubscriptionRef.update(state, (old) =>
+            old.accepted === current.accepted
+              ? new PreparationState({
+                  root: old.root,
+                  activity: old.activity,
+                  accepted: Option.some(accepted(saved)),
+                })
+              : old,
+          )
+        },
+        gate.withPermits(1),
+        Effect.uninterruptible,
+      )
+
       return PullRequestReview.of({
         changes: SubscriptionRef.changes(state),
         current: () => SubscriptionRef.get(state),
@@ -213,6 +334,9 @@ export class PullRequestReview extends Context.Service<
         cancel,
         exit,
         repositoryChanged,
+        restore,
+        resume: (key) => resume(key).pipe(gate.withPermits(1), Effect.uninterruptible),
+        mark,
       })
     }),
   )

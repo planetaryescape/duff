@@ -1,8 +1,9 @@
-import { spawn } from 'node:child_process'
-
+import { Run } from '@effected/commands'
+import { Git } from '@effected/git'
 import { Context, Effect, Layer, Option, Schema } from 'effect'
+import { ChildProcessSpawner } from 'effect/process'
 
-import { repositoryEnvironment } from '../git-context/RepositoryEnvironment'
+import { gitCommand, makeGitProcessLayer } from '../git-context/GitProcess'
 
 export const Commit = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40,64}$/))
 
@@ -63,6 +64,20 @@ export const ReviewRevisions = Schema.Struct({ source: ReviewRevision, target: R
 
 export interface ReviewRevisions extends Schema.Schema.Type<typeof ReviewRevisions> {}
 
+export const FileObject = Schema.Struct({ id: Commit, mode: Schema.String })
+
+export const FileComparison = Schema.Struct({
+  change: FileChange,
+  base: Schema.Option(FileObject),
+  head: Schema.Option(FileObject),
+})
+
+export interface FileComparison extends Schema.Schema.Type<typeof FileComparison> {}
+
+export const RetentionPrefix = Schema.String.check(
+  Schema.isPattern(/^refs\/duff\/sessions\/[a-f0-9]{64}\/[a-f0-9]{64}\/[a-f0-9]{64}$/),
+)
+
 export class FetchRequired extends Schema.TaggedError<FetchRequired>()('FetchRequired', {}) {}
 
 export class BranchReview extends Context.Service<
@@ -76,6 +91,15 @@ export class BranchReview extends Context.Service<
       permission: 'local-only' | 'fetch',
     ) => Effect.Effect<Review, ReviewError | FetchRequired>
     readonly read: (snapshot: Snapshot) => Effect.Effect<string, ReviewError>
+    readonly comparisons: (
+      review: Review,
+    ) => Effect.Effect<ReadonlyArray<FileComparison>, ReviewError>
+    readonly retain: (
+      root: string,
+      prefix: string,
+      commits: ReadonlyArray<string>,
+    ) => Effect.Effect<void, ReviewError>
+    readonly release: (root: string, prefix: string) => Effect.Effect<void, ReviewError>
   }
 >()('duff/BranchReview') {}
 
@@ -101,72 +125,12 @@ function fetchDestination(raw: string): Option.Option<string> {
 }
 
 export const makeGitReviewLayer = (environment: NodeJS.ProcessEnv) => {
-  const env = {
-    ...repositoryEnvironment(environment),
-    GIT_NO_LAZY_FETCH: '1',
-    GIT_TERMINAL_PROMPT: '0',
-    GIT_NO_REPLACE_OBJECTS: '1',
-  }
-
-  const git = Effect.fn('GitReview.git')(function* (root: string, args: ReadonlyArray<string>) {
-    const failure = () =>
-      new ReviewError({
-        operation: args[0] ?? 'git',
-        message:
-          'Git operation failed. Check that Git is installed, the repository has commits, and the selected branch is available locally. Raw diagnostics are hidden because they may contain private data.',
-      })
-
-    return yield* Effect.callback<string, ReviewError>((resume) => {
-      const child = spawn('git', ['-C', root, ...args], {
-        env,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        detached: process.platform !== 'win32',
-      })
-
-      let stdout = ''
-      let bytes = 0
-
-      const stop = () => {
-        if (child.pid !== undefined) {
-          try {
-            if (process.platform === 'win32') child.kill('SIGKILL')
-            else process.kill(-child.pid, 'SIGKILL')
-          } catch {
-            child.kill('SIGKILL')
-          }
-        }
-      }
-
-      child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
-        bytes += Buffer.byteLength(chunk)
-
-        if (bytes > 16 * 1024 * 1024) stop()
-        else stdout += chunk
-      })
-      child.stderr.on('data', (chunk: Buffer) => {
-        bytes += chunk.length
-
-        if (bytes > 16 * 1024 * 1024) stop()
-      })
-      child.once('error', () => {})
-
-      const closed = new Promise<void>((resolve) =>
-        child.once('close', (code) => {
-          resolve()
-          resume(
-            code === 0 && bytes <= 16 * 1024 * 1024
-              ? Effect.succeed(stdout)
-              : Effect.fail(failure()),
-          )
-        }),
-      )
-
-      return Effect.promise(async () => {
-        stop()
-        await closed
-      })
-    }).pipe(Effect.timeoutOrElse({ duration: '60 seconds', orElse: failure }))
-  })
+  const failure = (operation: string) =>
+    new ReviewError({
+      operation,
+      message:
+        'Git operation failed. Check that Git is installed, the repository has commits, and the selected branch is available locally. Raw diagnostics are hidden because they may contain private data.',
+    })
 
   const decodeFiles = Effect.fn('GitReview.decodeFiles')(function* (output: string) {
     const tokens = output.split('\0')
@@ -197,31 +161,53 @@ export const makeGitReviewLayer = (environment: NodeJS.ProcessEnv) => {
     return files
   })
 
-  const commit = Effect.fn('GitReview.commit')(function* (root: string, ref: string) {
-    const output = yield* git(root, [
-      'rev-parse',
-      '--verify',
-      '--end-of-options',
-      `${ref}^{commit}`,
-    ])
-
-    return yield* Schema.decodeUnknownEffect(Commit)(output.trim()).pipe(
-      Effect.mapError(
-        () =>
-          new ReviewError({
-            operation: 'resolve commit',
-            message: 'Git returned an invalid commit ID.',
-          }),
-      ),
-    )
-  })
-
   return Layer.effect(
     BranchReview,
     Effect.gen(function* () {
+      const upstream = yield* Git
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+
+      const git = Effect.fn('GitReview.git')(function* (root: string, args: ReadonlyArray<string>) {
+        const output = yield* Run.collect(gitCommand(root, args), {
+          timeout: '60 seconds',
+        }).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.mapError(() => failure(args[0] ?? 'git')),
+        )
+
+        if (!output.succeeded) return yield* failure(args[0] ?? 'git')
+
+        return output.stdout
+      })
+
+      const commit = Effect.fn('GitReview.commit')(function* (root: string, ref: string) {
+        const output = yield* git(root, [
+          'rev-parse',
+          '--verify',
+          '--end-of-options',
+          `${ref}^{commit}`,
+        ])
+
+        return yield* Schema.decodeUnknownEffect(Commit)(output.trim()).pipe(
+          Effect.mapError(
+            () =>
+              new ReviewError({
+                operation: 'resolve commit',
+                message: 'Git returned an invalid commit ID.',
+              }),
+          ),
+        )
+      })
+
       const branches = Effect.fn('BranchReview.branches')(function* (directory: string) {
-        const root = (yield* git(directory, ['rev-parse', '--show-toplevel'])).trim()
-        const current = (yield* git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
+        const root = yield* upstream
+          .repoRoot(directory)
+          .pipe(Effect.mapError(() => failure('rev-parse')))
+
+        const current = Option.getOrElse(
+          yield* upstream.currentBranch(root).pipe(Effect.mapError(() => failure('rev-parse'))),
+          () => 'HEAD',
+        )
 
         const output = yield* git(root, [
           'for-each-ref',
@@ -246,7 +232,11 @@ export const makeGitReviewLayer = (environment: NodeJS.ProcessEnv) => {
       ) {
         const headCommit = yield* commit(root, 'HEAD')
         const targetCommit = yield* commit(root, baseBranch)
-        const headBranch = (yield* git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).trim()
+
+        const headBranch = Option.getOrElse(
+          yield* upstream.currentBranch(root).pipe(Effect.mapError(() => failure('rev-parse'))),
+          () => 'HEAD',
+        )
 
         return yield* compareCommits(root, baseBranch, headBranch, targetCommit, headCommit)
       })
@@ -258,7 +248,7 @@ export const makeGitReviewLayer = (environment: NodeJS.ProcessEnv) => {
         targetCommit: string,
         headCommit: string,
       ) {
-        if ((yield* git(root, ['rev-parse', '--is-shallow-repository'])).trim() !== 'false')
+        if (yield* upstream.isShallow(root).pipe(Effect.mapError(() => failure('rev-parse'))))
           return yield* new ReviewError({
             operation: 'merge-base',
             message:
@@ -433,7 +423,97 @@ export const makeGitReviewLayer = (environment: NodeJS.ProcessEnv) => {
         return yield* git(snapshot.root, ['show', `${snapshot.commit}:${snapshot.path}`])
       })
 
-      return BranchReview.of({ branches, compare, prepare, read })
+      const object = Effect.fn('BranchReview.object')(function* (
+        root: string,
+        revision: string,
+        path: string,
+      ) {
+        const output = yield* git(root, ['ls-tree', '-z', revision, '--', `:(literal)${path}`])
+        const match = /^([0-7]{6}) (?:blob|commit) ([a-f0-9]{40,64})\t([^\0]+)\0$/.exec(output)
+
+        if (!match || match[3] !== path)
+          return yield* new ReviewError({
+            operation: 'read comparison',
+            message: 'The saved comparison is unavailable. Its Git objects may be missing.',
+          })
+
+        return yield* Schema.decodeUnknownEffect(FileObject)({ mode: match[1], id: match[2] }).pipe(
+          Effect.mapError(
+            () =>
+              new ReviewError({
+                operation: 'read comparison',
+                message: 'Git returned invalid file metadata.',
+              }),
+          ),
+        )
+      })
+
+      const comparisons = Effect.fn('BranchReview.comparisons')(function* (review: Review) {
+        return yield* Effect.forEach(
+          review.files,
+          Effect.fn('BranchReview.fileComparison')(function* (change) {
+            const base =
+              change.status === 'A'
+                ? Option.none()
+                : Option.some(
+                    yield* object(
+                      review.root,
+                      review.baseCommit,
+                      change.previousPath ?? change.path,
+                    ),
+                  )
+
+            const head =
+              change.status === 'D'
+                ? Option.none()
+                : Option.some(yield* object(review.root, review.headCommit, change.path))
+
+            return FileComparison.make({ change, base, head })
+          }),
+        )
+      })
+
+      const prefix = (value: string) =>
+        Schema.decodeUnknownEffect(RetentionPrefix)(value).pipe(
+          Effect.mapError(
+            () =>
+              new ReviewError({
+                operation: 'retention',
+                message: 'Invalid Duff retention namespace.',
+              }),
+          ),
+        )
+
+      const retain = Effect.fn('BranchReview.retain')(function* (
+        root: string,
+        input: string,
+        commits: ReadonlyArray<string>,
+      ) {
+        const namespace = yield* prefix(input)
+
+        for (const [index, value] of commits.entries()) {
+          const verified = yield* commit(root, value)
+          yield* git(root, [
+            '-c',
+            'core.hooksPath=/dev/null',
+            'update-ref',
+            `${namespace}/${index}`,
+            verified,
+          ])
+        }
+      })
+
+      const release = Effect.fn('BranchReview.release')(function* (root: string, input: string) {
+        const namespace = yield* prefix(input)
+        const output = yield* git(root, ['for-each-ref', '--format=%(refname)', `${namespace}/`])
+
+        for (const ref of output.trim().split('\n')) {
+          if (ref.startsWith(`${namespace}/`))
+            yield* git(root, ['-c', 'core.hooksPath=/dev/null', 'update-ref', '-d', ref])
+        }
+      })
+
+      return BranchReview.of({ branches, compare, prepare, read, comparisons, retain, release })
     }),
-  )
+  ).pipe(Layer.provide(makeGitProcessLayer(environment)))
 }

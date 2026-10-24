@@ -5,15 +5,17 @@ import {
 } from '@duff/core/pull-request-review'
 import { BranchReview, type Review, ReviewError, Snapshot } from '@duff/core/review'
 import { fileSnapshots, ReviewProgress, ViewedFiles } from '@duff/core/review-progress'
-import { Effect, Option, Schema } from 'effect'
+import { ReviewSessions } from '@duff/core/saved-review-sessions'
+import { Effect, Match, Option, Schema } from 'effect'
 import * as vscode from 'vscode'
 
-import { type CommandRuntime, runOperation } from '../Operations'
+import { type CommandRuntime, reviewStorageMessage, runOperation } from '../Operations'
 import { registerPullRequestReviewCommands } from '../pull-requests/PullRequestReviewCommands'
 import { providerError } from '../pull-requests/PullRequestView'
 import { chooseDirectory } from '../Repository'
 import { observeOperation } from '../telemetry/Telemetry'
-import { ReviewFile, ReviewView, snapshotUri } from './ReviewView'
+import { ReviewFile, ReviewFolder, ReviewView, snapshotUri } from './ReviewView'
+import { registerSnapshotNavigation } from './SnapshotNavigation'
 
 class BranchChoice implements vscode.QuickPickItem {
   readonly label: string
@@ -36,7 +38,12 @@ export function registerReviewCommands(
 ) {
   const savedLayout = context.workspaceState.get<unknown>('reviewLayout')
   const provider = new ReviewView(savedLayout === 'tree' ? 'tree' : 'list')
-  const view = vscode.window.createTreeView('duff.files', { treeDataProvider: provider })
+
+  const view = vscode.window.createTreeView('duff.files', {
+    treeDataProvider: provider,
+    manageCheckboxStateManually: true,
+  })
+
   let review: Review | undefined
   let progress: ReviewProgress | undefined
   let localReview: Review | undefined
@@ -62,7 +69,7 @@ export function registerReviewCommands(
     return progress?.activeFile(original.value, modified.value)
   }
 
-  const openDiff = async (item: ReviewFile) => {
+  const openDiff = async (item: ReviewFile, preserveFocus: boolean) => {
     const { review: current, change } = item
     const [base, head] = fileSnapshots(current, change)
     await vscode.commands.executeCommand(
@@ -70,6 +77,7 @@ export function registerReviewCommands(
       snapshotUri(base),
       snapshotUri(head),
       `${change.path}: ${current.baseCommit.slice(0, 8)} ↔ ${current.headCommit.slice(0, 8)}`,
+      { preview: false, preserveFocus },
     )
   }
 
@@ -156,7 +164,7 @@ export function registerReviewCommands(
         return
       }
 
-      await openDiff(target)
+      await openDiff(target, false)
 
       if (review !== current || activeFile()?.path !== target.change.path) return
       const openedTab = vscode.window.tabGroups.activeTabGroup.activeTab
@@ -223,6 +231,17 @@ export function registerReviewCommands(
     }
 
     await vscode.commands.executeCommand('setContext', 'duff.activeFileState', state)
+
+    if (file && prepared) {
+      const current = prepared
+      await runOperation(
+        runtime,
+        'Duff.preparePullRequest',
+        ReviewSessions.use((service) =>
+          service.opened(current.saved.key, current.review, file.path),
+        ),
+      )
+    }
   }
 
   const renderProgress = () => {
@@ -250,7 +269,17 @@ export function registerReviewCommands(
       context.workspaceState.get<unknown>('viewedFiles'),
     )
 
-    progress = new ReviewProgress(next, progress?.saved() ?? Option.getOrUndefined(saved))
+    progress = new ReviewProgress(
+      next,
+      prepared
+        ? ViewedFiles.make({
+            root: next.root,
+            baseCommit: next.baseCommit,
+            headCommit: next.headCommit,
+            paths: prepared.saved.viewed,
+          })
+        : (progress?.saved() ?? Option.getOrUndefined(saved)),
+    )
     renderProgress()
     const base = next.baseBranch.replace(/^refs\/(heads|remotes)\//, '')
     const head = next.headBranch.replace(/^refs\/(heads|remotes)\//, '')
@@ -258,16 +287,47 @@ export function registerReviewCommands(
     view.title = prepared
       ? `PR #${prepared.resolved.pullRequest.id}: ${prepared.resolved.pullRequest.title}`
       : 'Changed Files'
-    await context.workspaceState.update('viewedFiles', progress.saved())
+
+    if (!prepared) await context.workspaceState.update('viewedFiles', progress.saved())
     await updateActive()
   }
 
   const mark = async (item: unknown, viewed: boolean) => {
     if (!progress) return
-    const path = item instanceof ReviewFile ? item.change.path : activeFile()?.path
-    const target = item instanceof ReviewFile ? item.review : review
 
-    if (!target || !path || !progress.setViewed(target, path, viewed)) return
+    const path =
+      item instanceof ReviewFolder
+        ? item.path
+        : item instanceof ReviewFile
+          ? item.change.path
+          : activeFile()?.path
+
+    const target = item instanceof ReviewFile || item instanceof ReviewFolder ? item.review : review
+
+    if (!target || !path) return
+
+    if (prepared) {
+      const paths =
+        item instanceof ReviewFolder
+          ? target.files.filter((file) => file.path.startsWith(`${path}/`)).map((file) => file.path)
+          : [path]
+
+      await runOperation(
+        runtime,
+        'Duff.preparePullRequest',
+        PullRequestReview.use((service) => service.mark(target, paths, viewed)),
+        renderProgress,
+      )
+
+      return
+    }
+
+    const changed =
+      item instanceof ReviewFolder
+        ? progress.setFolderViewed(target, path, viewed)
+        : progress.setViewed(target, path, viewed)
+
+    if (!changed) return
     renderProgress()
     await context.workspaceState.update('viewedFiles', progress.saved())
     await updateActive()
@@ -317,7 +377,14 @@ export function registerReviewCommands(
     const current = await runtime.runPromise(PullRequestReview.use((service) => service.current()))
 
     if (current !== before) return
-    await runtime.runPromise(PullRequestReview.use((service) => service.exit()))
+
+    const left = await runOperation(
+      runtime,
+      'Duff.preparePullRequest',
+      PullRequestReview.use((service) => service.exit().pipe(Effect.as(true))),
+    )
+
+    if (!left) return
     prepared = undefined
     localReview = next
     await showReview(next)
@@ -334,7 +401,23 @@ export function registerReviewCommands(
 
       if (accepted) {
         await showReview(accepted.review)
-        await vscode.commands.executeCommand('duff.files.focus')
+
+        if (accepted.review !== previous?.review) {
+          await vscode.commands.executeCommand('duff.files.focus')
+          const path = Option.getOrUndefined(accepted.saved.lastFile)
+          const change = accepted.review.files.find((file) => file.path === path)
+
+          if (change) {
+            const [base, head] = fileSnapshots(accepted.review, change)
+            await vscode.commands.executeCommand(
+              'vscode.diff',
+              snapshotUri(base),
+              snapshotUri(head),
+              `${change.path}: ${accepted.review.baseCommit.slice(0, 8)} ↔ ${accepted.review.headCommit.slice(0, 8)}`,
+              { preview: false, preserveFocus: true },
+            )
+          }
+        }
       } else if (previous) {
         if (localReview && localReview.root === Option.getOrUndefined(state.root))
           await showReview(localReview)
@@ -355,20 +438,29 @@ export function registerReviewCommands(
     else if (state.activity._tag === 'AwaitingFetch')
       view.message = `PR #${state.activity.selection.id}: ${state.activity.resolved.pullRequest.title} · Missing commits. Use Fetch PR Revisions… to consent, or Cancel Preparation.${review ? ' Existing review is unchanged.' : ''}`
     else if (state.activity._tag === 'Failed')
-      view.message =
-        state.activity.error._tag === 'ReviewError'
-          ? state.activity.error.message
-          : providerError(state.activity.error)
+      view.message = Match.value(state.activity.error).pipe(
+        Match.tag('ReviewError', (error) => error.message),
+        Match.tag('ReviewStorageError', reviewStorageMessage),
+        Match.orElse(providerError),
+      )
     else if (progress) renderProgress()
     else view.message = undefined
   }
 
   registerPullRequestReviewCommands(context, runtime, renderPreparation)
+  registerSnapshotNavigation(context)
 
   context.subscriptions.push(
     hint,
     provider,
     view,
+    view.onDidChangeCheckboxState((event) =>
+      runtime.runFork(
+        Effect.forEach(event.items, ([item, state]) =>
+          Effect.promise(() => mark(item, state === vscode.TreeItemCheckboxState.Checked)),
+        ),
+      ),
+    ),
     vscode.window.tabGroups.onDidChangeTabs(() => runtime.runFork(Effect.promise(updateActive))),
     vscode.window.tabGroups.onDidChangeTabGroups(() =>
       runtime.runFork(Effect.promise(updateActive)),
@@ -376,6 +468,12 @@ export function registerReviewCommands(
     vscode.window.onDidChangeActiveTextEditor(() => runtime.runFork(Effect.promise(updateActive))),
     vscode.commands.registerCommand('duff.markViewed', (item: unknown) => mark(item, true)),
     vscode.commands.registerCommand('duff.markUnviewed', (item: unknown) => mark(item, false)),
+    vscode.commands.registerCommand('duff.openSelectedFile', () => {
+      const selected = view.selection[0]
+
+      if (selected instanceof ReviewFile)
+        return vscode.commands.executeCommand('duff.openFile', selected)
+    }),
     vscode.commands.registerCommand('duff.compare', compare),
     vscode.commands.registerCommand('duff.toggleLayout', async () => {
       await context.workspaceState.update('reviewLayout', provider.toggleLayout())
@@ -403,7 +501,7 @@ export function registerReviewCommands(
       }
     }),
     vscode.commands.registerCommand('duff.openDiff', async (item: unknown) => {
-      if (item instanceof ReviewFile) await openDiff(item)
+      if (item instanceof ReviewFile) await openDiff(item, true)
     }),
     vscode.commands.registerCommand('duff.nextChange', () => goToChange('next')),
     vscode.commands.registerCommand('duff.previousChange', () => goToChange('previous')),

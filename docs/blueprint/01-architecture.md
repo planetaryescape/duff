@@ -19,6 +19,7 @@ Status: review, conservative local identity inspection, and shared GitHub/Azure 
 | Composition root | [extension.ts](../../packages/extension/src/extension.ts) | Layers, feature registration and coordination, one managed runtime and disposal |
 | Verification | [BranchReview.test.ts](../../packages/core/src/review/BranchReview.test.ts) | Real temporary repositories, divergence, dirty files, renames, detached HEAD, failures |
 | Git context | [GitContext.ts](../../packages/core/src/git-context/GitContext.ts), [test](../../packages/core/src/git-context/GitContext.test.ts), [view](../../packages/extension/src/git-context/GitContextView.ts) | Safe local identity, config provenance, sanitized remotes, helper declarations |
+| Git execution | [GitProcess.ts](../../packages/core/src/git-context/GitProcess.ts) | Activation-supplied environment isolation, Effect Node spawner and `@effected/git` Layer; custom commands run through `@effected/commands` |
 
 ## Bun workspace boundaries
 
@@ -28,6 +29,7 @@ The extension supplies the environment to the GitContext Layer during activation
 The private root owns the pinned Bun version, shared tooling, aggregate scripts, and one lockfile. Each package has its own typecheck; only the extension enables VS Code ambient types.
 Bun bundles all runtime workspace dependencies into `packages/extension/dist/extension.js`; only VS Code and Node runtime modules remain external. The extension manifest stays inside `packages/extension`.
 The VSIX excludes source, maps, workspace links, and node_modules. Packaging uses pinned vsce without dependency traversal. Missing repository and license metadata are tolerated for local smoke packaging, not a claim of publishing readiness.
+The extension requires VS Code/VSCodium 1.123+, whose Electron 42.3 runtime uses Node 24.15, satisfying the effected packages' Node 24.11 floor. Effect, platform-node and vitest are aligned at 4.0.5. Repository-root, current-branch and shallow-history probes use the upstream Git service. Custom configuration/provenance, commit-object resolution, unique merge-base, safe diff/content and consent-gated fetch commands use `Run.collect`; neither Git's triple-dot diff helper nor its general fetch replaces Duff's stricter policy. Both paths share a policy-configured spawner, not a second hand-written process runner.
 See [D006](02-decision-log.md#d006-feature-owned-core-and-editor-packages) for the accepted structure.
 
 Git owns branches, commits, and contents. Duff keeps a calculated review snapshot in memory.
