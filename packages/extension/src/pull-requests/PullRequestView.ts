@@ -100,10 +100,26 @@ export class PullRequestItem extends vscode.TreeItem {
   }
 }
 
+export function canConnectProvider(row: GroupRow, busy: boolean): boolean {
+  if (busy || row.activity !== 'Idle') return false
+
+  return Match.value(row.content).pipe(
+    Match.when(
+      { error: { _tag: 'GitHubAuthenticationError', source: (source) => source !== 'editor' } },
+      () => false,
+    ),
+    Match.tag('Failed', () => true),
+    Match.when(
+      { data: { authentication: { _tag: Match.is('Unauthenticated', 'Unknown') } } },
+      () => true,
+    ),
+    Match.orElse(() => false),
+  )
+}
+
 function groupChildren(row: GroupRow, busy: boolean, root: string): vscode.TreeItem[] {
   const content = row.content
   const authentication = 'data' in content ? content.data.authentication : undefined
-  const error = 'error' in content ? content.error : undefined
 
   const source = Match.value(content).pipe(
     Match.when({ error: { _tag: 'GitHubAuthenticationError' } }, ({ error }) => error.source),
@@ -167,19 +183,7 @@ function groupChildren(row: GroupRow, busy: boolean, root: string): vscode.TreeI
   else children.push(item(providerError(content.error)))
 
   if (row.activity === 'Connecting') children.push(item('Connecting provider…'))
-  else if (
-    !busy &&
-    row.activity === 'Idle' &&
-    !(
-      error &&
-      error !== 'InspectionFailed' &&
-      error !== 'UnexpectedFailure' &&
-      error._tag === 'GitHubAuthenticationError' &&
-      error.source !== 'editor'
-    ) &&
-    (content._tag === 'Failed' ||
-      ('data' in content && content.data.authentication._tag !== 'Authenticated'))
-  ) {
+  else if (canConnectProvider(row, busy)) {
     children.push(
       item(
         row.group.provider.authenticationSource === 'github'

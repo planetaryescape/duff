@@ -234,18 +234,29 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
           },
         )
         .pipe(
-          Effect.mapError((error) =>
-            Option.isSome(current) &&
-            current.value.source &&
-            (error._tag === 'AuthenticationRequired' || error._tag === 'RepositoryUnavailable')
-              ? new GitHubAuthenticationError({
-                  source: current.value.source,
-                  reason: error._tag === 'AuthenticationRequired' ? 'rejected' : 'inaccessible',
-                })
-              : error._tag === 'RepositoryUnavailable' && Option.isNone(current)
-                ? new AuthenticationRequired()
-                : error,
-          ),
+          Effect.catchTags({
+            AuthenticationRequired: (error) =>
+              Option.match(
+                Option.flatMap(current, (session) => Option.fromUndefinedOr(session.source)),
+                {
+                  onSome: (source) =>
+                    Effect.fail(new GitHubAuthenticationError({ source, reason: 'rejected' })),
+                  onNone: () => Effect.fail(error),
+                },
+              ),
+            RepositoryUnavailable: (error) =>
+              Option.match(current, {
+                onNone: () => Effect.fail(new AuthenticationRequired()),
+                onSome: (session) =>
+                  Option.match(Option.fromUndefinedOr(session.source), {
+                    onSome: (source) =>
+                      Effect.fail(
+                        new GitHubAuthenticationError({ source, reason: 'inaccessible' }),
+                      ),
+                    onNone: () => Effect.fail(error),
+                  }),
+              }),
+          }),
           Effect.catchTag(
             'RateLimited',
             Effect.fn('GitHub.rateLimited')(function* (error) {

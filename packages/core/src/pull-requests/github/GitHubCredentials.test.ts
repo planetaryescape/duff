@@ -107,6 +107,8 @@ it.effect(
         "console.error('private_canary'); process.exit(1)",
         "console.log('private_canary\\nInjected:yes')",
         "process.stdout.write('x'.repeat(1024*1024+1))",
+        "process.stderr.write('x'.repeat(1024*1024+1)); console.log('private_canary')",
+        "process.stdout.write('x'.repeat(600*1024)); process.stderr.write('x'.repeat(600*1024))",
       ]) {
         const path = yield* fixture(body)
 

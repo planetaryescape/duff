@@ -4,7 +4,12 @@ import { Effect, Fiber, Option, Schema, Stream } from 'effect'
 import * as vscode from 'vscode'
 
 import { type CommandRuntime, runOperation } from '../Operations'
-import { providerError, PullRequestItem, PullRequestView } from './PullRequestView'
+import {
+  canConnectProvider,
+  providerError,
+  PullRequestItem,
+  PullRequestView,
+} from './PullRequestView'
 
 type SearchItem = vscode.QuickPickItem & {
   readonly command?: {
@@ -84,19 +89,7 @@ export function registerPullRequestCommands(
             alwaysShow: true,
           })
 
-        if (
-          !busy &&
-          row.activity === 'Idle' &&
-          !(
-            (row.content._tag === 'Failed' || row.content._tag === 'Stale') &&
-            row.content.error !== 'InspectionFailed' &&
-            row.content.error !== 'UnexpectedFailure' &&
-            row.content.error._tag === 'GitHubAuthenticationError' &&
-            row.content.error.source !== 'editor'
-          ) &&
-          (row.content._tag === 'Failed' ||
-            ('data' in row.content && row.content.data.authentication._tag !== 'Authenticated'))
-        )
+        if (canConnectProvider(row, busy))
           items.push({
             label:
               row.group.provider.authenticationSource === 'github'
