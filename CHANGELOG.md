@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/planetaryescape/duff/compare/v0.2.1...v0.3.0) (2026-10-24)
+
+
+### Features
+
+* **github:** prefer environment and CLI credentials ([#17](https://github.com/planetaryescape/duff/issues/17)) ([256e165](https://github.com/planetaryescape/duff/commit/256e165af19845f068dfb29876ffdbebd98662ab))
+
 ## [0.2.1](https://github.com/planetaryescape/duff/compare/v0.2.0...v0.2.1) (2026-10-24)
 
 
