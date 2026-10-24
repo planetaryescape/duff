@@ -1,7 +1,7 @@
 import { type OpenPullRequest } from '@duff/core/git-hosting-provider'
 import { PullRequestSelection } from '@duff/core/pull-requests'
 import { type GroupRow, type ReviewState, type SessionProblem } from '@duff/core/review-session'
-import { Option } from 'effect'
+import { Match, Option } from 'effect'
 import * as vscode from 'vscode'
 
 const credentialLabels = {
@@ -105,15 +105,14 @@ function groupChildren(row: GroupRow, busy: boolean, root: string): vscode.TreeI
   const authentication = 'data' in content ? content.data.authentication : undefined
   const error = 'error' in content ? content.error : undefined
 
-  const source =
-    error &&
-    error !== 'InspectionFailed' &&
-    error !== 'UnexpectedFailure' &&
-    error._tag === 'GitHubAuthenticationError'
-      ? error.source
-      : authentication?._tag === 'Authenticated'
-        ? authentication.source
-        : undefined
+  const source = Match.value(content).pipe(
+    Match.when({ error: { _tag: 'GitHubAuthenticationError' } }, ({ error }) => error.source),
+    Match.when(
+      { data: { authentication: { _tag: 'Authenticated' } } },
+      ({ data }) => data.authentication.source,
+    ),
+    Match.orElse(() => undefined),
+  )
 
   const children = [
     item('Remotes', row.group.remoteNames.join(', ')),
