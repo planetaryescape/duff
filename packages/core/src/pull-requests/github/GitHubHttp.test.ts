@@ -315,6 +315,48 @@ it.effect('rejects unsafe, repeated, backwards and query-changing next links', (
   }),
 )
 
+it.effect(
+  'requests sign-in for anonymous inaccessible repositories and succeeds after connection',
+  () =>
+    Effect.gen(function* () {
+      let active = Option.none<ProviderSession>()
+
+      const { repository } = yield* make(
+        {
+          session: (_provider, _scopes, mode) =>
+            Effect.sync(() => {
+              if (mode === 'connect') active = Option.some(session())
+
+              return active
+            }),
+        },
+        {
+          get: (requestedUrl, token) =>
+            Option.isNone(token)
+              ? Effect.fail(new RepositoryUnavailable())
+              : Effect.succeed({
+                  body: requestedUrl === url(1) ? [pull] : pull,
+                  headers: {},
+                }),
+        },
+      )
+
+      expect(yield* repository.listOpenPullRequests(request).pipe(Effect.flip)).toEqual(
+        new AuthenticationRequired(),
+      )
+      expect(yield* repository.getPullRequest('17').pipe(Effect.flip)).toEqual(
+        new AuthenticationRequired(),
+      )
+      expect(yield* repository.inspectAuthentication()).toEqual({ _tag: 'Unauthenticated' })
+
+      yield* repository.connectAuthentication()
+      expect(
+        (yield* repository.listOpenPullRequests(request)).items.map((item) => item.id),
+      ).toEqual(['17'])
+      expect((yield* repository.getPullRequest('17')).id).toBe('17')
+    }),
+)
+
 it.effect('propagates HTTP and authentication failures without anonymous fallback or retries', () =>
   Effect.gen(function* () {
     for (const error of [
