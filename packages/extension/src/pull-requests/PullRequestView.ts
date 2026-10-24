@@ -1,8 +1,15 @@
 import { type OpenPullRequest } from '@duff/core/git-hosting-provider'
 import { PullRequestSelection } from '@duff/core/pull-requests'
 import { type GroupRow, type ReviewState, type SessionProblem } from '@duff/core/review-session'
-import { Option } from 'effect'
+import { Match, Option } from 'effect'
 import * as vscode from 'vscode'
+
+const credentialLabels = {
+  'github-cli': 'GitHub CLI',
+  editor: 'VS Code',
+  GH_TOKEN: 'GH_TOKEN',
+  GITHUB_TOKEN: 'GITHUB_TOKEN',
+}
 
 export function providerError(error: SessionProblem): string {
   if (error === 'InspectionFailed')
@@ -11,6 +18,21 @@ export function providerError(error: SessionProblem): string {
   if (error === 'UnexpectedFailure') return 'Unexpected operation failure. Refresh to retry.'
 
   switch (error._tag) {
+    case 'GitHubAuthenticationError': {
+      const source = credentialLabels[error.source]
+
+      switch (error.reason) {
+        case 'invalid-credential':
+          return `${source} supplied a malformed credential. Fix that source; Duff will not switch accounts.`
+        case 'unavailable':
+          return `${source} failed or timed out. Check gh auth status --hostname github.com outside Duff, then refresh.`
+        case 'rejected':
+          return `${source} credential rejected by GitHub. Renew that credential, then refresh. No fallback attempted.`
+        case 'inaccessible':
+          return `Repository missing or inaccessible with ${source}. Check repository access and SSO authorization. No fallback attempted.`
+      }
+    }
+
     case 'AzureCliAuthenticationError':
       switch (error.reason) {
         case 'not-installed':
@@ -78,16 +100,50 @@ export class PullRequestItem extends vscode.TreeItem {
   }
 }
 
+export function canConnectProvider(row: GroupRow, busy: boolean): boolean {
+  if (busy || row.activity !== 'Idle') return false
+
+  return Match.value(row.content).pipe(
+    Match.when(
+      { error: { _tag: 'GitHubAuthenticationError', source: (source) => source !== 'editor' } },
+      () => false,
+    ),
+    Match.tag('Failed', () => true),
+    Match.when(
+      { data: { authentication: { _tag: Match.is('Unauthenticated', 'Unknown') } } },
+      () => true,
+    ),
+    Match.orElse(() => false),
+  )
+}
+
 function groupChildren(row: GroupRow, busy: boolean, root: string): vscode.TreeItem[] {
+  const content = row.content
+  const authentication = 'data' in content ? content.data.authentication : undefined
+
+  const source = Match.value(content).pipe(
+    Match.when({ error: { _tag: 'GitHubAuthenticationError' } }, ({ error }) => error.source),
+    Match.when(
+      { data: { authentication: { _tag: 'Authenticated' } } },
+      ({ data }) => data.authentication.source,
+    ),
+    Match.orElse(() => undefined),
+  )
+
   const children = [
     item('Remotes', row.group.remoteNames.join(', ')),
+    item('Host', row.group.repository.authority),
     item(
       'Authentication source',
-      row.group.provider.authenticationSource === 'azure-cli' ? 'Azure CLI' : 'Editor',
+      source
+        ? credentialLabels[source]
+        : row.group.provider.authenticationSource === 'azure-cli'
+          ? 'Azure CLI'
+          : authentication?._tag === 'Unauthenticated'
+            ? 'Anonymous'
+            : 'GH_TOKEN → GITHUB_TOKEN → GitHub CLI → VS Code',
     ),
   ]
-
-  const content = row.content
 
   if ('data' in content) {
     const data = content.data
@@ -127,18 +183,19 @@ function groupChildren(row: GroupRow, busy: boolean, root: string): vscode.TreeI
   else children.push(item(providerError(content.error)))
 
   if (row.activity === 'Connecting') children.push(item('Connecting provider…'))
-  else if (
-    !busy &&
-    row.activity === 'Idle' &&
-    (content._tag === 'Failed' ||
-      ('data' in content && content.data.authentication._tag !== 'Authenticated'))
-  ) {
+  else if (canConnectProvider(row, busy)) {
     children.push(
-      item('Connect Provider…', undefined, {
-        command: 'duff.connectProvider',
-        title: 'Connect Provider',
-        arguments: [row.group.id],
-      }),
+      item(
+        row.group.provider.authenticationSource === 'github'
+          ? 'Use VS Code account…'
+          : 'Connect Provider…',
+        undefined,
+        {
+          command: 'duff.connectProvider',
+          title: 'Connect Provider',
+          arguments: [row.group.id],
+        },
+      ),
     )
   }
 

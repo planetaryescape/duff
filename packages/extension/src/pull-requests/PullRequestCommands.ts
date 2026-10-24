@@ -4,7 +4,12 @@ import { Effect, Fiber, Option, Schema, Stream } from 'effect'
 import * as vscode from 'vscode'
 
 import { type CommandRuntime, runOperation } from '../Operations'
-import { providerError, PullRequestItem, PullRequestView } from './PullRequestView'
+import {
+  canConnectProvider,
+  providerError,
+  PullRequestItem,
+  PullRequestView,
+} from './PullRequestView'
 
 type SearchItem = vscode.QuickPickItem & {
   readonly command?: {
@@ -84,14 +89,12 @@ export function registerPullRequestCommands(
             alwaysShow: true,
           })
 
-        if (
-          !busy &&
-          row.activity === 'Idle' &&
-          (row.content._tag === 'Failed' ||
-            ('data' in row.content && row.content.data.authentication._tag !== 'Authenticated'))
-        )
+        if (canConnectProvider(row, busy))
           items.push({
-            label: '$(account) Connect Provider…',
+            label:
+              row.group.provider.authenticationSource === 'github'
+                ? '$(account) Use VS Code account…'
+                : '$(account) Connect Provider…',
             description: row.group.repository.displayName,
             alwaysShow: true,
             command: {
@@ -221,7 +224,7 @@ export function registerPullRequestCommands(
       const choice = await vscode.window.showInformationMessage(
         cli
           ? 'Duff will recheck your existing Azure CLI login. It will not open Microsoft sign-in, run az login, or change your CLI account. Duff only reads pull requests.'
-          : 'Provider sign-in can grant broad repository read/write permissions. Duff only reads pull requests and never changes Git or provider data.',
+          : 'Duff checks GH_TOKEN, GITHUB_TOKEN and GitHub CLI first. Only when those credentials are absent will it request a VS Code GitHub session. Sign-in can grant broad repository read/write permissions. Duff only reads pull requests.',
         { modal: true },
         action,
       )

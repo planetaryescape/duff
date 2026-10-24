@@ -14,6 +14,7 @@
     "./pull-request-providers": "./src/pull-requests/Providers.ts",
     "./provider-authentication": "./src/pull-requests/ProviderAuthentication.ts",
     "./azure-cli-authentication": "./src/pull-requests/azure-devops/AzureCliAuthentication.ts",
+    "./github-credentials": "./src/pull-requests/github/GitHubCredentials.ts",
     "./review-session": "./src/review-session/ReviewSession.ts"
   },
   "scripts": {

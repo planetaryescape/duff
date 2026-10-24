@@ -74,7 +74,7 @@ it.effect('construction and remote recognition do not authenticate or call HTTP'
     expect(provider.identity).toEqual({
       id: 'github',
       displayName: 'GitHub',
-      authenticationSource: 'editor',
+      authenticationSource: 'github',
     })
 
     for (const destination of [
@@ -131,6 +131,7 @@ it.effect('reports only actual sessions and explicitly requests connect', () =>
     expect(yield* repository.connectAuthentication()).toEqual({
       _tag: 'Authenticated',
       account: session().account,
+      source: 'editor',
     })
     expect(modes).toEqual(['silent', 'connect'])
   }),

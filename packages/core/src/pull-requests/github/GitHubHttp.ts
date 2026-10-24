@@ -5,6 +5,7 @@ import { Clock, DateTime, Effect, Option, Redacted, Schema } from 'effect'
 import {
   Authentication,
   AuthenticationRequired,
+  GitHubAuthenticationError,
   InvalidContinuation,
   InvalidProviderResponse,
   OpenPullRequest,
@@ -137,9 +138,52 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
   const authentication = Effect.fn('GitHub.authentication')(function* (mode: 'silent' | 'connect') {
     const current = yield* session(mode)
 
+    if (Option.isSome(current) && current.value.source && current.value.source !== 'editor') {
+      const source = current.value.source
+
+      const response = yield* http
+        .get('https://api.github.com/user', Option.some(current.value.token), {
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2026-03-10',
+          'User-Agent': 'Duff',
+        })
+        .pipe(
+          Effect.map(Option.some),
+          Effect.catchTag('RepositoryUnavailable', () => Effect.succeed(Option.none())),
+          Effect.mapError((error) => {
+            if (error._tag === 'AuthenticationRequired')
+              return new GitHubAuthenticationError({ source, reason: 'rejected' })
+
+            if (error._tag === 'InvalidContinuation') return new InvalidProviderResponse()
+
+            return error
+          }),
+        )
+
+      if (Option.isNone(response))
+        return Authentication.make({ _tag: 'Authenticated', source, account: Option.none() })
+
+      const account = yield* Schema.decodeUnknownEffect(
+        Schema.Struct({
+          id: Schema.Int,
+          login: Schema.NonEmptyString,
+        }),
+      )(response.value.body).pipe(Effect.mapError(() => new InvalidProviderResponse()))
+
+      return Authentication.make({
+        _tag: 'Authenticated',
+        source,
+        account: Option.some({ id: String(account.id), displayName: account.login }),
+      })
+    }
+
     return yield* Schema.decodeUnknownEffect(Authentication)(
       Option.isSome(current)
-        ? { _tag: 'Authenticated', account: current.value.account }
+        ? {
+            _tag: 'Authenticated',
+            account: current.value.account,
+            source: current.value.source ?? 'editor',
+          }
         : { _tag: 'Unauthenticated' },
     ).pipe(Effect.mapError(() => new InvalidProviderResponse()))
   })
@@ -190,11 +234,29 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
           },
         )
         .pipe(
-          Effect.mapError((error) =>
-            error._tag === 'RepositoryUnavailable' && Option.isNone(current)
-              ? new AuthenticationRequired()
-              : error,
-          ),
+          Effect.catchTags({
+            AuthenticationRequired: (error) =>
+              Option.match(
+                Option.flatMap(current, (session) => Option.fromUndefinedOr(session.source)),
+                {
+                  onSome: (source) =>
+                    Effect.fail(new GitHubAuthenticationError({ source, reason: 'rejected' })),
+                  onNone: () => Effect.fail(error),
+                },
+              ),
+            RepositoryUnavailable: (error) =>
+              Option.match(current, {
+                onNone: () => Effect.fail(new AuthenticationRequired()),
+                onSome: (session) =>
+                  Option.match(Option.fromUndefinedOr(session.source), {
+                    onSome: (source) =>
+                      Effect.fail(
+                        new GitHubAuthenticationError({ source, reason: 'inaccessible' }),
+                      ),
+                    onNone: () => Effect.fail(error),
+                  }),
+              }),
+          }),
           Effect.catchTag(
             'RateLimited',
             Effect.fn('GitHub.rateLimited')(function* (error) {
@@ -299,7 +361,7 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
     identity: ProviderIdentity.make({
       id: 'github',
       displayName: 'GitHub',
-      authenticationSource: 'editor',
+      authenticationSource: 'github',
     }),
     recognizeRemote: (remote) => Option.map(recognize(remote.destination), bind),
   })
