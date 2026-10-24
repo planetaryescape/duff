@@ -58,9 +58,9 @@ Evidence: [2026-10-15 viewed progress](implementation-log.md#2026-10-15-explicit
 
 ## S09: Change navigation across files
 
-Status: implemented and verified locally.
+Status: implemented on PR #9 with fail-closed native navigation; not merged.
 Scope: Duff: Go to Next/Previous Change in Review, exposed as toolbar buttons in current-review Duff diffs, with no default keybinding.
-Acceptance: inside a file, move exactly like the native diff editor. Past the last or first change, open the adjacent file in the displayed list or tree order on its first or last change and select its row. Stop at the review ends with a status message. While a Duff diff is active, a clickable status-bar hint shows the file position, and its hover offers previous, next and a filtered Keyboard Shortcuts link; the empty Changed Files view points to the buttons. No keys are claimed, so editors and Vim keep their own bindings. No skipping, marking or wrapping across the review.
+Acceptance: follow native change navigation. Only a cursor wrap opens the adjacent file in displayed list/tree order and requests its first/last change. An unchanged line stays in the file with a status directing manual adjacent-file selection; single-hunk files are intentionally ambiguous. First/last landing is not guaranteed when native mappings are unavailable. Proven wraps at review ends stop with a status message. The clickable file-position hint retains previous/next and Keyboard Shortcuts links. No default keys, automatic marking or cross-review wrap. Tree opens remain pinned and preserve focus; cross-file navigation opens a pinned diff and focuses it.
 Evidence: [2026-10-23 change navigation](implementation-log.md#2026-10-23-change-navigation-across-files).
 
 ## S08: Persistent PR review sessions

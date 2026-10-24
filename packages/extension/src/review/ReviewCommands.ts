@@ -126,6 +126,12 @@ export function registerReviewCommands(
 
   let navigating = false
 
+  const unconfirmedNavigation = () =>
+    vscode.window.setStatusBarMessage(
+      'Duff: No native cursor movement. Select an adjacent file in Changed Files.',
+      7000,
+    )
+
   const goToChange = async (direction: 'next' | 'previous') => {
     const file = activeFile()
     const current = review
@@ -145,7 +151,14 @@ export function registerReviewCommands(
       if (review !== current || vscode.window.tabGroups.activeTabGroup.activeTab !== tab) return
       const line = editor.selection.active.line
 
-      // The native command wraps around within the file; not moving forward means this file is done.
+      // An unchanged line can mean a single hunk, no hunks, or a timed-out native diff.
+      // Only movement in the opposite direction establishes a wrap into the adjacent file.
+      if (line === before.active.line) {
+        unconfirmedNavigation()
+
+        return
+      }
+
       if (direction === 'next' ? line > before.active.line : line < before.active.line) return
       const files = provider.files()
       const index = files.findIndex((item) => item.change.path === file.path)
@@ -182,7 +195,7 @@ export function registerReviewCommands(
       )
         return
 
-      // From the last line the native command lands on the first change; from the first line, on the last.
+      // Ask native navigation for the first/last change; unavailable mappings may leave it here.
       const position =
         direction === 'next'
           ? opened.document.lineAt(opened.document.lineCount - 1).range.end
@@ -190,6 +203,13 @@ export function registerReviewCommands(
 
       opened.selection = new vscode.Selection(position, position)
       await vscode.commands.executeCommand(`workbench.action.compareEditor.${direction}Change`)
+
+      if (
+        review === current &&
+        vscode.window.tabGroups.activeTabGroup.activeTab === openedTab &&
+        opened.selection.active.line === position.line
+      )
+        unconfirmedNavigation()
     } finally {
       navigating = false
     }
@@ -202,7 +222,7 @@ export function registerReviewCommands(
 
   const hintTooltip = (position: string) => {
     const tooltip = new vscode.MarkdownString(
-      `Duff review · ${position}\n\n[$(arrow-circle-up) Previous change](command:duff.previousChange) · [$(arrow-circle-down) Next change](command:duff.nextChange)\n\nChanges continue into the adjacent file. [$(keyboard) Set keyboard shortcuts…](command:workbench.action.openGlobalKeybindings?${shortcuts})`,
+      `Duff review · ${position}\n\n[$(arrow-circle-up) Previous change](command:duff.previousChange) · [$(arrow-circle-down) Next change](command:duff.nextChange)\n\nContinues into the adjacent file when native navigation wraps. If the cursor does not move, select an adjacent file in Changed Files, including for single-hunk files. [$(keyboard) Set keyboard shortcuts…](command:workbench.action.openGlobalKeybindings?${shortcuts})`,
       true,
     )
 

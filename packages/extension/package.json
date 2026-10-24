@@ -191,7 +191,7 @@
     "viewsWelcome": [
       {
         "view": "duff.files",
-        "contents": "Review committed changes on your current branch.\n[Compare Against Branch](command:duff.compare)\n[Resume Review…](command:duff.resumeReview)\nClick a changed file to open its diff. Use Open Workspace File to edit and navigate."
+        "contents": "Review committed changes on your current branch.\n[Compare Against Branch](command:duff.compare)\n[Resume Review…](command:duff.resumeReview)\nClick a changed file to open its diff. Circled arrow buttons follow native changes into adjacent files when the cursor wraps. If it does not move, select an adjacent file here, including for single-hunk files. Use Open Workspace File to edit and navigate."
       },
       {
         "view": "duff.context",

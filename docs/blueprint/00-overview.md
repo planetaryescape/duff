@@ -23,7 +23,7 @@ Choose a branch, browse changed files, open a native diff, and navigate the real
 - Compare current committed HEAD with a chosen local or remote-tracking branch.
 - List changes since the common ancestor, excluding uncommitted work.
 - Open immutable text diffs, including added, deleted, and renamed files.
-- Step through changes across the whole review with the Previous/Next Change in Review buttons in a Duff diff's toolbar, crossing into the adjacent changed file in the view's order.
+- Follow native changes with the Previous/Next Change in Review toolbar buttons. A native cursor wrap opens the adjacent file in the view's order and requests its first/last change. An unchanged line does not establish exhaustion: Duff stays in that file and asks the user to select an adjacent file, including for single-hunk files. Native timeout can also prevent first/last-change landing. No default navigation keys are claimed.
 - Open the real workspace file separately for editing and language navigation.
 - Open the current working-tree file from a Duff diff's toolbar or the Duff: Open Workspace File command, including uncommitted contents.
 - Refresh comparison explicitly; choose a repository in multi-folder workspaces.
