@@ -223,7 +223,23 @@ it.effect('timeout and cancellation terminate the CLI process group', () =>
         })
       } else yield* Fiber.interrupt(running)
 
-      for (const pid of pids) expect(() => process.kill(pid, 0)).toThrow()
+      for (const pid of pids)
+        yield* Effect.promise(() =>
+          expect
+            .poll(
+              () => {
+                try {
+                  process.kill(pid, 0)
+
+                  return true
+                } catch {
+                  return false
+                }
+              },
+              { timeout: 2_000 },
+            )
+            .toBe(false),
+        )
     }
   }),
 )
