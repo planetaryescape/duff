@@ -1,5 +1,6 @@
 import { makeAzureCliAuthenticationLayer } from '@duff/core/azure-cli-authentication'
 import { makeGitContextLayer } from '@duff/core/git-context'
+import { makeGitHubCredentialsLayer } from '@duff/core/github-credentials'
 import { pullRequestsLayer } from '@duff/core/pull-request-providers'
 import { PullRequestReview } from '@duff/core/pull-request-review'
 import { makeGitReviewLayer } from '@duff/core/review'
@@ -28,7 +29,14 @@ export function activate(context: vscode.ExtensionContext) {
 
   const providers = pullRequestsLayer.pipe(
     Layer.provide(
-      authenticationLayer.pipe(Layer.provide(makeAzureCliAuthenticationLayer(process.env))),
+      authenticationLayer.pipe(
+        Layer.provide(
+          Layer.merge(
+            makeAzureCliAuthenticationLayer(process.env),
+            makeGitHubCredentialsLayer(process.env),
+          ),
+        ),
+      ),
     ),
   )
 

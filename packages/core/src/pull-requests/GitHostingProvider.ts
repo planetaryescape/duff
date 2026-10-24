@@ -4,10 +4,19 @@ import { type GitContextSnapshot } from '../git-context/GitContext'
 
 export type Remote = GitContextSnapshot['remotes'][number]
 
+export const GitHubCredentialSource = Schema.Literals([
+  'GH_TOKEN',
+  'GITHUB_TOKEN',
+  'github-cli',
+  'editor',
+])
+
+export type GitHubCredentialSource = Schema.Schema.Type<typeof GitHubCredentialSource>
+
 export const ProviderIdentity = Schema.Struct({
   id: Schema.NonEmptyString,
   displayName: Schema.NonEmptyString,
-  authenticationSource: Schema.Literals(['editor', 'azure-cli']),
+  authenticationSource: Schema.Literals(['editor', 'azure-cli', 'github']),
 })
 
 export interface ProviderIdentity extends Schema.Schema.Type<typeof ProviderIdentity> {}
@@ -23,6 +32,7 @@ export interface RepositoryIdentity extends Schema.Schema.Type<typeof Repository
 export const Authentication = Schema.Union([
   Schema.TaggedStruct('Authenticated', {
     account: Schema.Option(Schema.Struct({ id: Schema.String, displayName: Schema.String })),
+    source: Schema.optionalKey(GitHubCredentialSource),
   }),
   Schema.TaggedStruct('Unauthenticated', {}),
   Schema.TaggedStruct('Unknown', {}),
@@ -101,11 +111,20 @@ export class AzureCliAuthenticationError extends Schema.TaggedError<AzureCliAuth
   },
 ) {}
 
+export class GitHubAuthenticationError extends Schema.TaggedError<GitHubAuthenticationError>()(
+  'GitHubAuthenticationError',
+  {
+    source: GitHubCredentialSource,
+    reason: Schema.Literals(['invalid-credential', 'unavailable', 'rejected', 'inaccessible']),
+  },
+) {}
+
 export type AuthenticationError =
   | RateLimited
   | ProviderUnavailable
   | InvalidProviderResponse
   | AzureCliAuthenticationError
+  | GitHubAuthenticationError
 
 export type DiscoveryError =
   | AuthenticationRequired
