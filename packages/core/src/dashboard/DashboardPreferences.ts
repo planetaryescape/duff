@@ -12,6 +12,12 @@ export const DashboardColumnWidths = Schema.Struct({
   details: Schema.optionalKey(Width),
 })
 
+const RepositoryLabel = Schema.String.check(
+  Schema.isTrimmed(),
+  Schema.isMinLength(1),
+  Schema.isMaxLength(100),
+)
+
 export const DashboardPreferences = Schema.Struct({
   repositoryOrder: Schema.Array(Schema.NonEmptyString),
   repositoryId: Schema.String,
@@ -19,6 +25,7 @@ export const DashboardPreferences = Schema.Struct({
   filter: PullRequestState,
   query: Schema.String.check(Schema.isMaxLength(1000)),
   columnWidths: DashboardColumnWidths,
+  repositoryLabels: Schema.optionalKey(Schema.Record(Schema.NonEmptyString, RepositoryLabel)),
 })
 
 export interface DashboardPreferences extends Schema.Schema.Type<typeof DashboardPreferences> {}
@@ -53,6 +60,10 @@ export const DashboardPreferenceChange = Schema.Union([
     targetId: Schema.NonEmptyString,
     placement: Schema.Literals(['before', 'after']),
   }),
+  Schema.TaggedStruct('RenameRepository', {
+    repositoryId: Schema.NonEmptyString,
+    label: Schema.String.check(Schema.isMaxLength(100)),
+  }),
 ])
 
 export type DashboardPreferenceChange = Schema.Schema.Type<typeof DashboardPreferenceChange>
@@ -71,15 +82,30 @@ export function reconcileDashboardPreferences(
 
   const changed = repositoryId !== preferences.repositoryId
 
-  return DashboardPreferences.make({
-    repositoryOrder,
-    repositoryId,
-    pullRequestId: changed ? '' : preferences.pullRequestId,
-    filter: preferences.filter,
-    query: changed ? '' : preferences.query,
-    columnWidths: preferences.columnWidths,
-  })
+  return withLabels(
+    DashboardPreferences.make({
+      repositoryOrder,
+      repositoryId,
+      pullRequestId: changed ? '' : preferences.pullRequestId,
+      filter: preferences.filter,
+      query: changed ? '' : preferences.query,
+      columnWidths: preferences.columnWidths,
+    }),
+    Object.fromEntries(
+      Object.entries(preferences.repositoryLabels ?? {}).filter(([id]) => ids.includes(id)),
+    ),
+  )
 }
+
+const withLabels = (
+  preferences: DashboardPreferences,
+  repositoryLabels: Readonly<Record<string, string>>,
+) =>
+  DashboardPreferences.make(
+    Object.keys(repositoryLabels).length
+      ? Struct.assign(preferences, { repositoryLabels })
+      : Struct.omit(preferences, ['repositoryLabels']),
+  )
 
 export function changeDashboardPreferences(
   preferences: DashboardPreferences,
@@ -136,6 +162,13 @@ export function changeDashboardPreferences(
       )
 
       return DashboardPreferences.make(Struct.assign(preferences, { repositoryOrder }))
+    }),
+    Match.tag('RenameRepository', ({ repositoryId, label }) => {
+      if (!preferences.repositoryOrder.includes(repositoryId)) return preferences
+      const { [repositoryId]: _previous, ...others } = preferences.repositoryLabels ?? {}
+      const trimmed = label.trim()
+
+      return withLabels(preferences, trimmed ? { ...others, [repositoryId]: trimmed } : others)
     }),
     Match.exhaustive,
   )

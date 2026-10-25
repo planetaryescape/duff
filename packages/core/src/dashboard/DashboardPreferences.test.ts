@@ -100,3 +100,30 @@ it('keeps selection-dependent state scoped to the current repository and filter'
     }),
   ).toEqual(next)
 })
+
+it('renames repositories, clears blank labels, and forgets labels of removed repositories', () => {
+  const initial = reconcileDashboardPreferences(defaultDashboardPreferences, ['a', 'b'])
+
+  const renamed = changeDashboardPreferences(initial, {
+    _tag: 'RenameRepository',
+    repositoryId: 'a',
+    label: '  Abstract Rhythm  ',
+  })
+
+  expect(renamed.repositoryLabels).toEqual({ a: 'Abstract Rhythm' })
+  expect(
+    changeDashboardPreferences(renamed, {
+      _tag: 'RenameRepository',
+      repositoryId: 'missing',
+      label: 'Ignored',
+    }),
+  ).toEqual(renamed)
+  expect(
+    changeDashboardPreferences(renamed, { _tag: 'RenameRepository', repositoryId: 'a', label: ' ' })
+      .repositoryLabels,
+  ).toBeUndefined()
+  expect(reconcileDashboardPreferences(renamed, ['b']).repositoryLabels).toBeUndefined()
+  expect(reconcileDashboardPreferences(renamed, ['a', 'b']).repositoryLabels).toEqual({
+    a: 'Abstract Rhythm',
+  })
+})

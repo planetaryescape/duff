@@ -115,6 +115,11 @@ it.effect(
       const id = hostedRepositoryId(hosting)
 
       yield* store.add([repository('old', ['/old']), repository(id, ['/new']), repository('other')])
+      yield* store.changePreferences({
+        _tag: 'RenameRepository',
+        repositoryId: 'old',
+        label: 'Old',
+      })
       const moved = yield* store.relocate('old', hosting)
       const reopened = yield* openStore(path)
 
@@ -125,6 +130,7 @@ it.effect(
         localPaths: ['/old', '/new'],
       })
       expect(yield* reopened.list()).toEqual([moved, repository('other')])
+      expect((yield* reopened.preferences()).repositoryLabels).toEqual({ [id]: 'Old' })
       expect((yield* Effect.flip(store.relocate('old', hosting))).reason).toBe('unavailable')
 
       yield* store.add([repository('another', ['/keep'])])

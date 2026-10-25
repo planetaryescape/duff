@@ -193,6 +193,8 @@ export const makeRepositoryStoreLayer = (directory: string): Layer.Layer<Reposit
             .run(repository.id, Schema.encodeSync(codec)(repository))
 
           if (id !== canonicalId) database.prepare('DELETE FROM repositories WHERE id = ?').run(id)
+          const { [id]: label, ...labels } = preferences.repositoryLabels ?? {}
+
           writeDashboardPreferences(
             database,
             DashboardPreferences.make(
@@ -206,6 +208,10 @@ export const makeRepositoryStoreLayer = (directory: string): Layer.Layer<Reposit
                 ],
                 repositoryId:
                   preferences.repositoryId === id ? canonicalId : preferences.repositoryId,
+                ...(preferences.repositoryLabels && {
+                  repositoryLabels:
+                    label === undefined ? labels : { ...labels, [canonicalId]: label },
+                }),
               }),
             ),
           )
