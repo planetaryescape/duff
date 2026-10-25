@@ -16,6 +16,7 @@ it.effect('classifies HTTP failures before decoding and hides raw response diagn
           | 'RateLimited'
           | 'ProviderUnavailable'
           | 'InvalidProviderResponse'
+          | 'ProviderRedirected'
         ),
       ]
     > = [
@@ -24,7 +25,10 @@ it.effect('classifies HTTP failures before decoding and hides raw response diagn
       [404, 'RepositoryUnavailable'],
       [429, 'RateLimited'],
       [503, 'ProviderUnavailable'],
-      [302, 'InvalidProviderResponse'],
+      [301, 'ProviderRedirected'],
+      [302, 'ProviderRedirected'],
+      [307, 'ProviderRedirected'],
+      [308, 'ProviderRedirected'],
     ]
 
     for (const [status, expected] of fixtures) {

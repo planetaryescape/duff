@@ -119,6 +119,11 @@ export class InvalidProviderResponse extends Schema.TaggedError<InvalidProviderR
   {},
 ) {}
 
+export class ProviderRedirected extends Schema.TaggedError<ProviderRedirected>()(
+  'ProviderRedirected',
+  {},
+) {}
+
 export class InvalidContinuation extends Schema.TaggedError<InvalidContinuation>()(
   'InvalidContinuation',
   {},
@@ -150,12 +155,21 @@ export type AuthenticationError =
   | InvalidProviderResponse
   | AzureCliAuthenticationError
   | GitHubAuthenticationError
+  | ProviderRedirected
 
-export type DiscoveryError =
-  | AuthenticationRequired
-  | RepositoryUnavailable
-  | AuthenticationError
-  | InvalidContinuation
+export const DiscoveryError = Schema.Union([
+  AuthenticationRequired,
+  RepositoryUnavailable,
+  RateLimited,
+  ProviderUnavailable,
+  InvalidProviderResponse,
+  AzureCliAuthenticationError,
+  GitHubAuthenticationError,
+  ProviderRedirected,
+  InvalidContinuation,
+])
+
+export type DiscoveryError = Schema.Schema.Type<typeof DiscoveryError>
 
 export interface ProviderRepository {
   readonly identity: RepositoryIdentity

@@ -299,7 +299,13 @@ export function registerDashboardCommands(
       RepositoryDirectory.use((directory) =>
         directory.list(hosted, filter, more ? cursor : Option.none()),
       ),
-      undefined,
+      async () => {
+        if (current !== generation) return
+        state.busy = false
+        state.message = 'Could not load pull requests. Check the error notification, then retry.'
+        state.error = true
+        await render()
+      },
       abort.signal,
     )
 

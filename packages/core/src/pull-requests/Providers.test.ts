@@ -97,7 +97,7 @@ it.effect('built-ins discover both providers without host HTTP wiring and reject
     ])
     expect(
       results.filter((result) => result._tag === 'Failed').map((result) => result.error._tag),
-    ).toEqual(['InvalidProviderResponse'])
+    ).toEqual(['ProviderRedirected'])
   }).pipe(
     Effect.provide(
       pullRequestsLayer.pipe(

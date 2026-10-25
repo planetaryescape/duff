@@ -5,9 +5,9 @@ import { Effect, Fiber, Option, Schema, Stream } from 'effect'
 import * as vscode from 'vscode'
 
 import { type CommandRuntime, runOperation } from '../Operations'
+import { providerError } from './ProviderError'
 import {
   canConnectProvider,
-  providerError,
   PullRequestItem,
   pullRequestLabel,
   pullRequestStateLabels,

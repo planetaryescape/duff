@@ -16,6 +16,7 @@ import {
   type DiscoveryError,
   InvalidProviderResponse,
   ProviderUnavailable,
+  ProviderRedirected,
   RateLimited,
   RepositoryUnavailable,
 } from './GitHostingProvider'
@@ -96,6 +97,9 @@ export class ProviderHttp extends Context.Service<
 
           if (response.status >= 500 || response.status === 408)
             return yield* new ProviderUnavailable()
+
+          if (format === 'json' && [301, 302, 307, 308].includes(response.status))
+            return yield* new ProviderRedirected()
 
           if (response.status < 200 || response.status >= 300)
             return yield* new InvalidProviderResponse()

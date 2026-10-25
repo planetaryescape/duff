@@ -1,5 +1,6 @@
 import { type RepositoryCatalog, CatalogError } from '@duff/core/dashboard-repositories'
 import { type GitContext, GitContextError } from '@duff/core/git-context'
+import { DiscoveryError } from '@duff/core/git-hosting-provider'
 import { type PullRequestReview } from '@duff/core/pull-request-review'
 import { type RepositoryDirectory } from '@duff/core/repository-directory'
 import { type BranchReview, ReviewError } from '@duff/core/review'
@@ -7,9 +8,10 @@ import { type ReviewSession } from '@duff/core/review-session'
 import { type ReviewWorkspaces } from '@duff/core/review-workspaces'
 import { type ReviewSessions } from '@duff/core/saved-review-sessions'
 import { ReviewStorageError } from '@duff/core/saved-reviews'
-import { Cause, type Effect, type ManagedRuntime, Option } from 'effect'
+import { Cause, type Effect, type ManagedRuntime, Option, Schema } from 'effect'
 import * as vscode from 'vscode'
 
+import { providerError } from './pull-requests/ProviderError'
 import { observeOperation, type Operation } from './telemetry/Telemetry'
 
 export type CommandRuntime = ManagedRuntime.ManagedRuntime<
@@ -39,7 +41,7 @@ export async function runOperation<A, E>(
     | RepositoryDirectory
     | ReviewWorkspaces
   >,
-  onFailure?: () => void,
+  onFailure?: () => void | Promise<void>,
   signal?: AbortSignal,
   summarize?: (value: A) => 'success' | 'partial',
 ) {
@@ -50,8 +52,9 @@ export async function runOperation<A, E>(
   if (exit._tag === 'Success') return exit.value
 
   if (Cause.hasInterruptsOnly(exit.cause)) return undefined
-  onFailure?.()
+  await onFailure?.()
   const error = Cause.findErrorOption(exit.cause)
+  const provider = Option.flatMap(error, Schema.decodeUnknownOption(DiscoveryError))
 
   const message =
     Option.isSome(error) &&
@@ -61,7 +64,9 @@ export async function runOperation<A, E>(
         ? reviewStorageMessage(error.value)
         : Option.isSome(error) && error.value instanceof CatalogError
           ? 'The shared Duff catalog could not be read or updated. Check disk access and try again. Existing data has been preserved.'
-          : 'Operation failed. Refresh to retry; provider sign-in may be unavailable in this editor.'
+          : Option.isSome(provider)
+            ? providerError(provider.value)
+            : 'Operation failed. Refresh to retry; provider sign-in may be unavailable in this editor.'
 
   await vscode.window.showErrorMessage(`Duff: ${message}`)
 
