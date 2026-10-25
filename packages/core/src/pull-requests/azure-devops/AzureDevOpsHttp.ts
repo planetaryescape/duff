@@ -42,6 +42,9 @@ const ForkRepository = Schema.Struct({
 const WirePullRequest = Schema.Struct({
   pullRequestId: Schema.Int.check(Schema.isGreaterThan(0)),
   title: Schema.String,
+  createdBy: Schema.optionalKey(
+    Schema.NullOr(Schema.Struct({ displayName: Schema.NonEmptyString })),
+  ),
   status: Schema.Literals(['active', 'completed', 'abandoned']),
   isDraft: Schema.optional(Schema.Boolean),
   sourceRefName: OpenPullRequest.fields.target.fields.ref.fields.name,
@@ -267,6 +270,7 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
             return yield* Schema.decodeUnknownEffect(OpenPullRequest)({
               id: String(pr.pullRequestId),
               title: pr.title,
+              author: pr.createdBy?.displayName,
               state: stateByStatus[pr.status],
               url: `${repositoryUrl(address)}/pullrequest/${pr.pullRequestId}`,
               draft: pr.isDraft ?? false,
