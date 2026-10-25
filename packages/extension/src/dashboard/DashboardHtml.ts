@@ -33,6 +33,12 @@ const repositoryName=(name)=>{const slash=name.lastIndexOf('/');return slash<0?e
 const svg=(path)=>'<svg class="repository-icon" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round">'+path+'</svg>';
 const repositoryIcon=svg('<path d="M3.5 12.5V3a1 1 0 0 1 1-1h8v9.5h-8a1 1 0 0 0-1 1 1 1 0 0 0 1 1h1.5M9 13.5h3.5v-2"/><path d="M6 4.5h4"/>');
 const folderIcon=svg('<path d="M1.5 4a1 1 0 0 1 1-1h3.75l1.5 1.5h5.75a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z"/>');
+const brand=(id,path)=>'<svg class="repository-icon provider-icon provider-'+id+'" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="'+path+'"/></svg>';
+const providerIcons={
+github:brand('github','M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12'),
+'azure-devops':brand('azure-devops','M0 8.877L2.247 5.91l8.405-3.416V.022l7.37 5.393L2.966 8.338v8.225L0 15.707zm24-4.45v14.651l-5.753 4.9-9.303-3.057v3.056l-5.978-7.416 15.057 1.798V5.415z'),
+};
+const providerIcon=(id)=>Object.hasOwn(providerIcons,id)?providerIcons[id]:repositoryIcon;
 const send=(action,id)=>bridge.postMessage({action,id});
 const button=(label,action,id,kind='')=>'<button class="'+kind+'" data-action="'+action+'"'+(id!==undefined?' data-id="'+escape(id)+'"':'')+'>'+escape(label)+'</button>';
 const authorName=(pr)=>pr.author??'Unknown author';
@@ -77,7 +83,7 @@ for(const provider of model.providers)nav+='<button data-action="browse" data-id
 if(model.sources.length){nav+='<h3>Collections</h3>';for(const source of model.sources)nav+=button(source.label,'suggestion',source.id,source.id===model.sourceId?'selected':'');nav+='<small>Suggested from Git remotes or browsed by you. Explore to load repositories; nothing is added automatically.</small>';}
 }else{
 nav+='<p class="sr-only" id="repository-order-help">Drag to reorder repositories, or focus a repository and press Alt plus Up or Down.</p><div class="sr-only" id="repository-order-status" role="status" aria-live="polite"></div>';
-for(const repo of model.repositories)nav+='<button class="repository-button" draggable="true" data-action="repository" data-id="'+escape(repo.id)+'" aria-describedby="repository-order-help" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown" aria-current="'+(repo.id===model.repositoryId)+'"><span class="repository-lead" aria-hidden="true">'+(hosted(repo)?repositoryIcon:folderIcon)+'<span class="repository-grip">⠿</span></span><span class="repository-label" title="'+escape(repo.name)+'">'+repositoryName(repo.name)+(hosted(repo)?'':' <small>Local only</small>')+'</span></button>';
+for(const repo of model.repositories)nav+='<button class="repository-button" draggable="true" data-action="repository" data-id="'+escape(repo.id)+'" aria-describedby="repository-order-help" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown" aria-current="'+(repo.id===model.repositoryId)+'"><span class="repository-lead" aria-hidden="true">'+(hosted(repo)?providerIcon(hosted(repo).provider.id):folderIcon)+'<span class="repository-grip">⠿</span></span><span class="repository-label" title="'+escape(repo.name)+'">'+repositoryName(repo.name)+(hosted(repo)?'':' <small>Local only</small>')+'</span></button>';
 nav+=button('+ Add repositories','picker',undefined,'wide');
 }
 let body='';let detail='';
