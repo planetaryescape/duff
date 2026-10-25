@@ -52,6 +52,7 @@ render();
 });
 document.addEventListener('keydown',(event)=>{
 const button=repositoryButton(event.target);
+if(button&&event.key==='F2'){event.preventDefault();bridge.postMessage({action:'rename',id:button.dataset.id});return;}
 if(!button||!event.altKey||!['ArrowUp','ArrowDown'].includes(event.key))return;
 event.preventDefault();
 const index=model.repositories.findIndex((repository)=>repository.id===button.dataset.id);

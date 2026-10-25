@@ -31,6 +31,9 @@ ${repositoryOrderingScript}
 const requestedAvatars=new Set();
 const escape=(value)=>String(value??'').replace(/[&<>"']/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const hosted=(repo)=>repo.hosting._tag==='Some'?repo.hosting.value:undefined;
+const label=(repo)=>Object.hasOwn(model.labels??{},repo.id)?model.labels[repo.id]:undefined;
+const displayName=(repo)=>label(repo)??repo.name;
+const repositoryContext=(repo)=>escape(JSON.stringify({webviewSection:'repository',repositoryId:repo.id,preventDefaultContextMenuItems:true}));
 const repositoryName=(name)=>{const slash=name.lastIndexOf('/');return slash<0?escape(name):'<span class="muted">'+escape(name.slice(0,slash+1))+'</span>'+escape(name.slice(slash+1));};
 const svg=(path)=>'<svg class="repository-icon" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round">'+path+'</svg>';
 const repositoryIcon=svg('<path d="M3.5 12.5V3a1 1 0 0 1 1-1h8v9.5h-8a1 1 0 0 0-1 1 1 1 0 0 0 1 1h1.5M9 13.5h3.5v-2"/><path d="M6 4.5h4"/>');
@@ -78,15 +81,15 @@ return {tag,key,top:element?.dataset.scrollKey===key?element.scrollTop:0};
 const picker=model.mode==='picker';
 const current=model.repositories.find((repo)=>repo.id===model.repositoryId);
 const selected=model.pulls.find((pr)=>pr.id===model.pullRequestId);
-const heading=picker?'Add repositories':(current?.name??'Your repositories');
+const heading=picker?'Add repositories':(current?displayName(current):'Your repositories');
 let nav='<h3>'+(picker?'Sources':'Repositories')+'</h3>';
 if(picker){
 nav+=navItem(folderIcon,'Local repositories','source','local',model.sourceId==='local')+'<h3>Remote repositories</h3>';
 for(const provider of model.providers)nav+=navItem(providerIcon(provider.id),provider.displayName,'browse',provider.id,model.sources.some((source)=>source.id===model.sourceId&&source.providerId===provider.id));
 if(model.sources.length){nav+='<h3>Collections</h3>';for(const source of model.sources)nav+=navItem(providerIcon(source.providerId),source.label,'suggestion',source.id,source.id===model.sourceId);nav+='<small class="nav-hint">Suggested from your Git remotes and browsing.</small>';}
 }else{
-nav+='<p class="sr-only" id="repository-order-help">Drag to reorder repositories, or focus a repository and press Alt plus Up or Down.</p><div class="sr-only" id="repository-order-status" role="status" aria-live="polite"></div>';
-for(const repo of model.repositories)nav+='<button class="repository-button" draggable="true" data-action="repository" data-id="'+escape(repo.id)+'" aria-describedby="repository-order-help" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown" aria-current="'+(repo.id===model.repositoryId)+'"><span class="repository-lead" aria-hidden="true">'+(hosted(repo)?providerIcon(hosted(repo).provider.id):folderIcon)+'<span class="repository-grip">⠿</span></span><span class="repository-label" title="'+escape(repo.name)+'">'+repositoryName(repo.name)+(hosted(repo)?'':' <small>Local only</small>')+'</span></button>';
+nav+='<p class="sr-only" id="repository-order-help">Drag to reorder repositories, or focus a repository and press Alt plus Up or Down. Press F2 to rename.</p><div class="sr-only" id="repository-order-status" role="status" aria-live="polite"></div>';
+for(const repo of model.repositories)nav+='<button class="repository-button" draggable="true" data-action="repository" data-id="'+escape(repo.id)+'" aria-describedby="repository-order-help" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown F2" aria-current="'+(repo.id===model.repositoryId)+'" data-vscode-context="'+repositoryContext(repo)+'"><span class="repository-lead" aria-hidden="true">'+(hosted(repo)?providerIcon(hosted(repo).provider.id):folderIcon)+'<span class="repository-grip">⠿</span></span><span class="repository-label" title="'+escape(label(repo)?label(repo)+' ('+repo.name+')':repo.name)+'">'+(label(repo)?escape(label(repo)):repositoryName(repo.name))+(hosted(repo)?'':' <small>Local only</small>')+'</span></button>';
 nav+=button('+ Add repositories','picker',undefined,'wide');
 }
 let body='';let detail='';
@@ -106,7 +109,7 @@ body='<div class="empty"><h2>What would you like to review?</h2><p>Watch reposit
 detail='<h2>Your review workspace</h2><p class="muted">Open a PR in its own window with a complete copy of its HEAD. Browse files, use language tooling, and keep your edits.</p><p class="hint muted">Duff never installs dependencies or runs project setup. Editor trust and language tooling still apply.</p>';
 }else if(!hosted(current)){
 body='<div class="empty"><h2>Local branch comparison</h2><p>This repository has no supported hosting remote. Open its folder to compare local branches. No provider connection is required.</p>'+button('Open local repository','local',current.id,'primary')+'</div>';
-detail='<h2>'+escape(current.name)+'</h2><p class="mono">'+escape(current.localPaths.join(', '))+'</p>'+button('Remove from watchlist','remove',current.id,'wide');
+detail='<h2>'+escape(displayName(current))+'</h2><p class="mono">'+escape(current.localPaths.join(', '))+'</p><div class="actions">'+button('Rename…','rename',current.id)+button('Remove from watchlist','remove',current.id)+'</div>';
 }else{
 body='<div class="toolbar"><div class="tabs" role="group" aria-label="Pull request state">';
 for(const state of ['open','merged','closed'])body+='<button data-action="state" data-id="'+state+'" aria-pressed="'+(model.filter===state)+'">'+state[0].toUpperCase()+state.slice(1)+'</button>';
@@ -117,7 +120,7 @@ body+='</div>';
 if(!visible.length&&!model.busy&&!model.error)body+='<div class="empty"><h2>No matching pull requests</h2><p>Try another state or search. Search covers loaded pages only.</p></div>';
 if(model.more)body+=button('Load more pull requests','more',undefined,'wide');
 if(selected){detail='<small>#'+escape(selected.id)+' · '+escape(selected.state??'open')+(selected.draft?' · Draft':'')+'</small><h2>'+escape(selected.title)+'</h2><div class="detail-meta">'+avatar(selected)+'<span class="mono">'+escape(selected.source._tag==='Available'?branch(selected.source.ref):'Unavailable')+' → '+escape(branch(selected.target.ref))+'</span></div><div class="actions">'+button('Review in new window','review',selected.id,'primary')+button('Open on provider','external',selected.id)+'</div>'+metadata(selected);}
-else detail='<h2>'+escape(current.name)+'</h2><p class="muted">Choose a pull request to prepare an isolated review workspace.</p>'+button('Remove from watchlist','remove',current.id,'wide');
+else detail='<h2>'+escape(displayName(current))+'</h2>'+(label(current)?'<p class="mono muted">'+escape(current.name)+'</p>':'')+'<p class="muted">Choose a pull request to prepare an isolated review workspace.</p><div class="actions">'+button('Rename…','rename',current.id)+button('Remove from watchlist','remove',current.id)+'</div>';
 }
 const notice=model.message?'<div class="notice '+(model.error?'error':'')+'" role="status">'+escape(model.message)+'</div>':'';
 document.getElementById('app').innerHTML='<header class="header"><h1><span class="muted">Duff /</span> '+escape(heading)+'</h1>'+(picker?button('Back to dashboard','dashboard',undefined,'quiet'):'')+'</header><div class="layout"><nav id="dashboard-navigation" aria-label="'+(picker?'Repository sources':'Watched repositories')+'">'+nav+'</nav>${dashboardSplitters.navigation}<main>'+notice+body+'</main>${dashboardSplitters.details}<aside id="dashboard-details">'+detail+'</aside></div>';

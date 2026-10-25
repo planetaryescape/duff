@@ -18,7 +18,7 @@ it('ships executable dashboard JavaScript inside its nonce-bound document', () =
 
 function renderDashboard(
   value: Pick<DashboardState, 'mode' | 'repositories' | 'repositoryId' | 'pulls' | 'filter'> &
-    Partial<Pick<DashboardState, 'details' | 'avatars' | 'pullRequestId'>>,
+    Partial<Pick<DashboardState, 'details' | 'avatars' | 'pullRequestId' | 'labels'>>,
 ): string {
   const html = dashboardHtml('fixture-nonce')
   const script = html.match(/<script nonce="fixture-nonce">([\s\S]*?)<\/script>/)?.[1]
@@ -214,4 +214,14 @@ it('keeps column positions on background updates and resets only the changed sel
 
   publish({ ...model, repositoryId: 'other' })
   expect(Object.values(panes).map((pane) => pane.scrollTop)).toEqual([40, 0, 0])
+})
+
+it('shows escaped custom repository labels with the original name and a rename context', () => {
+  const html = renderDashboard({ ...model, pulls: [], labels: { repository: '<b>Mine</b>' } })
+
+  expect(html).toContain('&lt;b&gt;Mine&lt;/b&gt;')
+  expect(html).not.toContain('<b>Mine</b>')
+  expect(html).toContain('title="&lt;b&gt;Mine&lt;/b&gt; (owner/repository)"')
+  expect(html).toContain('&quot;webviewSection&quot;:&quot;repository&quot;')
+  expect(html).toContain('data-action="rename"')
 })

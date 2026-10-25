@@ -30,6 +30,11 @@
         "category": "Duff"
       },
       {
+        "command": "duff.renameRepository",
+        "title": "Rename…",
+        "category": "Duff"
+      },
+      {
         "command": "duff.compare",
         "title": "Compare Current Branch Against...",
         "icon": "$(git-compare)",
@@ -235,6 +240,12 @@
       }
     ],
     "menus": {
+      "webview/context": [
+        {
+          "command": "duff.renameRepository",
+          "when": "webviewId == 'duff.dashboard' && webviewSection == 'repository'"
+        }
+      ],
       "view/title": [
         {
           "command": "duff.dashboard",
@@ -340,6 +351,10 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "duff.renameRepository",
+          "when": "false"
+        },
         {
           "command": "duff.openSelectedFile",
           "when": "false"

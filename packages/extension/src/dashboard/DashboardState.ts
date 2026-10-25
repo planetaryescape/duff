@@ -42,6 +42,7 @@ export class DashboardState {
   filter: PullRequestState = 'open'
   query = ''
   columnWidths = defaultDashboardPreferences.columnWidths
+  labels: Readonly<Record<string, string>> = {}
   message = ''
   error = false
   busy = false
@@ -53,6 +54,7 @@ export class DashboardState {
     this.filter = preferences.filter
     this.query = preferences.query
     this.columnWidths = preferences.columnWidths
+    this.labels = preferences.repositoryLabels ?? {}
   }
 
   updateRepositories(repositories: ReadonlyArray<WatchedRepository>): boolean {

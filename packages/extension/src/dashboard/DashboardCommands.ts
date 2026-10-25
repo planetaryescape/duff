@@ -48,6 +48,7 @@ const Message = Schema.Struct({
     'remove',
     'connect',
     'preference',
+    'rename',
   ]),
   id: Schema.optionalKey(Schema.String),
   change: Schema.optionalKey(DashboardPreferenceChange),
@@ -153,6 +154,14 @@ export function registerDashboardCommands(
     if (!repositories) return
 
     if (state.updateRepositories(repositories)) reset()
+
+    const preferences = await runOperation(
+      runtime,
+      'Duff.dashboard',
+      RepositoryCatalog.use((catalog) => catalog.preferences()),
+    )
+
+    if (preferences) state.labels = preferences.repositoryLabels ?? {}
 
     const directory = await runtime.runPromise(RepositoryDirectory)
     state.providers = directory.providers
@@ -716,6 +725,28 @@ export function registerDashboardCommands(
         await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(path), {
           forceNewWindow: true,
         })
+    } else if (action === 'rename') {
+      const repository = state.repositories.find((item) => item.id === id)
+
+      if (!repository) return
+
+      const value = await vscode.window.showInputBox({
+        title: 'Rename repository',
+        prompt: `Label for ${repository.name}. Leave empty to show the repository name.`,
+        value: state.labels[repository.id] ?? repository.name,
+        validateInput: (input) =>
+          input.trim().length > 100 ? 'Use 100 characters or fewer.' : undefined,
+      })
+
+      if (value === undefined) return
+
+      const preferences = await persist({
+        _tag: 'RenameRepository',
+        repositoryId: repository.id,
+        label: value.trim() === repository.name ? '' : value,
+      })
+
+      if (preferences) state.labels = preferences.repositoryLabels ?? {}
     } else if (action === 'remove') {
       await runOperation(
         runtime,
@@ -799,6 +830,13 @@ export function registerDashboardCommands(
       },
     }),
     vscode.commands.registerCommand('duff.dashboard', open),
+    vscode.commands.registerCommand('duff.renameRepository', async (raw: unknown) => {
+      const target = Schema.decodeUnknownOption(
+        Schema.Struct({ repositoryId: Schema.NonEmptyString }),
+      )(raw)
+
+      if (Option.isSome(target)) await handle({ action: 'rename', id: target.value.repositoryId })
+    }),
     vscode.commands.registerCommand(
       'duff.openReviewWorkspace',
       async (raw: unknown, id: unknown) => {
