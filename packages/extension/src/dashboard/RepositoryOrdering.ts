@@ -1,6 +1,6 @@
 export const repositoryOrderingStyle = `
 .repository-button{position:relative;display:flex;align-items:center;gap:8px;cursor:grab}
-.repository-button:active{cursor:grabbing}.repository-grip{flex:none;opacity:0;font-size:14px;transition:opacity .1s}.repository-button:hover .repository-grip,.repository-button:focus-visible .repository-grip{opacity:.6}
+.repository-button:active{cursor:grabbing}.repository-lead{flex:none;display:grid;place-items:center;width:16px;height:16px}.repository-lead>*{grid-area:1 / 1}.repository-icon{opacity:.75}.repository-grip{opacity:0;font-size:14px;line-height:1}.repository-button:hover .repository-icon,.repository-button:focus-visible .repository-icon{opacity:0}.repository-button:hover .repository-grip,.repository-button:focus-visible .repository-grip{opacity:.75}
 .repository-button[data-drop-position="before"]{box-shadow:0 -2px var(--vscode-focusBorder)}
 .repository-button[data-drop-position="after"]{box-shadow:0 2px var(--vscode-focusBorder)}
 .repository-button[data-dragging]{opacity:.45}.repository-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

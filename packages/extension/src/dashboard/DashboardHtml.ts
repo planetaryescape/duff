@@ -30,6 +30,9 @@ const requestedAvatars=new Set();
 const escape=(value)=>String(value??'').replace(/[&<>"']/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const hosted=(repo)=>repo.hosting._tag==='Some'?repo.hosting.value:undefined;
 const repositoryName=(name)=>{const slash=name.lastIndexOf('/');return slash<0?escape(name):'<span class="muted">'+escape(name.slice(0,slash+1))+'</span>'+escape(name.slice(slash+1));};
+const svg=(path)=>'<svg class="repository-icon" viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round">'+path+'</svg>';
+const repositoryIcon=svg('<path d="M3.5 12.5V3a1 1 0 0 1 1-1h8v9.5h-8a1 1 0 0 0-1 1 1 1 0 0 0 1 1h1.5M9 13.5h3.5v-2"/><path d="M6 4.5h4"/>');
+const folderIcon=svg('<path d="M1.5 4a1 1 0 0 1 1-1h3.75l1.5 1.5h5.75a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z"/>');
 const send=(action,id)=>bridge.postMessage({action,id});
 const button=(label,action,id,kind='')=>'<button class="'+kind+'" data-action="'+action+'"'+(id!==undefined?' data-id="'+escape(id)+'"':'')+'>'+escape(label)+'</button>';
 const authorName=(pr)=>pr.author??'Unknown author';
@@ -74,7 +77,7 @@ for(const provider of model.providers)nav+='<button data-action="browse" data-id
 if(model.sources.length){nav+='<h3>Collections</h3>';for(const source of model.sources)nav+=button(source.label,'suggestion',source.id,source.id===model.sourceId?'selected':'');nav+='<small>Suggested from Git remotes or browsed by you. Explore to load repositories; nothing is added automatically.</small>';}
 }else{
 nav+='<p class="sr-only" id="repository-order-help">Drag to reorder repositories, or focus a repository and press Alt plus Up or Down.</p><div class="sr-only" id="repository-order-status" role="status" aria-live="polite"></div>';
-for(const repo of model.repositories)nav+='<button class="repository-button" draggable="true" data-action="repository" data-id="'+escape(repo.id)+'" aria-describedby="repository-order-help" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown" aria-current="'+(repo.id===model.repositoryId)+'"><span class="repository-grip" aria-hidden="true">⠿</span><span class="repository-label" title="'+escape(repo.name)+'">'+repositoryName(repo.name)+(hosted(repo)?'':' <small>Local only</small>')+'</span></button>';
+for(const repo of model.repositories)nav+='<button class="repository-button" draggable="true" data-action="repository" data-id="'+escape(repo.id)+'" aria-describedby="repository-order-help" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown" aria-current="'+(repo.id===model.repositoryId)+'"><span class="repository-lead" aria-hidden="true">'+(hosted(repo)?repositoryIcon:folderIcon)+'<span class="repository-grip">⠿</span></span><span class="repository-label" title="'+escape(repo.name)+'">'+repositoryName(repo.name)+(hosted(repo)?'':' <small>Local only</small>')+'</span></button>';
 nav+=button('+ Add repositories','picker',undefined,'wide');
 }
 let body='';let detail='';
