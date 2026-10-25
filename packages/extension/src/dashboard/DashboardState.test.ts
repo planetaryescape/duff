@@ -1,4 +1,5 @@
 import { WatchedRepository } from '@duff/core/dashboard-repositories'
+import { PullRequestDetails } from '@duff/core/git-hosting-provider'
 import { Option } from 'effect'
 import { expect, it } from 'vitest'
 
@@ -6,6 +7,24 @@ import { DashboardState } from './DashboardState'
 
 const repository = (id: string, localPaths: ReadonlyArray<string> = []) =>
   WatchedRepository.make({ id, name: id, hosting: Option.none(), localPaths })
+
+const details = (id: string) =>
+  PullRequestDetails.make({
+    pullRequest: {
+      id,
+      title: id,
+      url: 'https://example.test/pull/1',
+      draft: false,
+      source: { _tag: 'Unavailable' },
+      target: {
+        repository: { authority: 'example.test', key: 'repo', displayName: 'Repo' },
+        ref: { name: 'refs/heads/main', revision: Option.none() },
+      },
+    },
+    description: 'Selected PR description',
+    filesChanged: Option.some(0),
+    linesChanged: Option.none(),
+  })
 
 it('keeps an empty catalog refresh from cancelling onboarding', () => {
   const state = new DashboardState()
@@ -61,4 +80,34 @@ it('selects chosen local repositories once, preserving remote choices and exclud
   state.checked = state.checked.filter((id) => id !== first.id)
   state.selectRepositories([second])
   expect(state.checked).toEqual(['remote-choice', second.id, linked.id])
+})
+
+it('keeps late PR details from replacing a newer selection or repository', () => {
+  const state = new DashboardState()
+  const first = state.beginDetails('first')
+  const second = state.beginDetails('second')
+
+  expect(state.details).toEqual({ _tag: 'Loading' })
+  expect(state.finishDetails(first, details('first'))).toBe(false)
+  expect(state.finishDetails(second, details('second'))).toBe(true)
+  expect(state.details).toEqual({ _tag: 'Loaded', value: details('second') })
+
+  const pending = state.beginDetails('first')
+  state.updateRepositories([repository('another')])
+
+  expect(state.finishDetails(pending, details('first'))).toBe(false)
+  expect(state.details).toEqual({ _tag: 'Idle' })
+})
+
+it('exposes detail failures and replaces them when retry succeeds', () => {
+  const state = new DashboardState()
+  const first = state.beginDetails('first')
+  state.finishDetails(first, undefined)
+
+  expect(state.details).toEqual({ _tag: 'Failed' })
+
+  const retry = state.beginDetails('first')
+  state.finishDetails(retry, details('first'))
+
+  expect(state.details).toEqual({ _tag: 'Loaded', value: details('first') })
 })

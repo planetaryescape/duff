@@ -1,4 +1,14 @@
-import { Clock, Context, DateTime, Effect, Layer, Option, type Redacted, Schema } from 'effect'
+import {
+  Clock,
+  Context,
+  DateTime,
+  Effect,
+  Layer,
+  Option,
+  type Redacted,
+  Schema,
+  Stream,
+} from 'effect'
 import { HttpClient, HttpClientRequest } from 'effect/http'
 
 import {
@@ -25,6 +35,7 @@ export class ProviderHttp extends Context.Service<
       url: string,
       token: Option.Option<Redacted.Redacted>,
       headers?: Readonly<Record<string, string>>,
+      format?: 'json' | 'image',
     ) => Effect.Effect<ProviderResponse, DiscoveryError>
   }
 >()('duff/ProviderHttp') {
@@ -38,6 +49,7 @@ export class ProviderHttp extends Context.Service<
           url: string,
           token: Option.Option<Redacted.Redacted>,
           headers: Readonly<Record<string, string>> = {},
+          format: 'json' | 'image' = 'json',
         ) {
           let request = HttpClientRequest.get(url).pipe(
             HttpClientRequest.setHeaders({ Accept: 'application/json', ...headers }),
@@ -87,6 +99,31 @@ export class ProviderHttp extends Context.Service<
 
           if (response.status < 200 || response.status >= 300)
             return yield* new InvalidProviderResponse()
+
+          if (format === 'image') {
+            const mime = response.headers['content-type']?.split(';')[0]?.trim().toLowerCase()
+
+            if (!mime || !['image/png', 'image/jpeg', 'image/gif', 'image/webp'].includes(mime))
+              return yield* new InvalidProviderResponse()
+            const chunks: Uint8Array[] = []
+            let bytes = 0
+
+            yield* Stream.runForEach(response.stream, (chunk) => {
+              bytes += chunk.byteLength
+
+              if (bytes > 256 * 1024) return Effect.fail(new InvalidProviderResponse())
+              chunks.push(chunk)
+
+              return Effect.void
+            }).pipe(Effect.mapError(() => new InvalidProviderResponse()))
+
+            if (bytes === 0) return yield* new InvalidProviderResponse()
+
+            return ProviderResponse.make({
+              body: `data:${mime};base64,${Buffer.concat(chunks).toString('base64')}`,
+              headers: response.headers,
+            })
+          }
 
           const body = yield* response.json.pipe(
             Effect.mapError(() => new InvalidProviderResponse()),

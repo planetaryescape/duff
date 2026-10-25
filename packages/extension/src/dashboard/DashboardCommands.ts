@@ -35,6 +35,8 @@ const Message = Schema.Struct({
     'refresh',
     'more',
     'pull',
+    'details',
+    'avatar',
     'review',
     'external',
     'local',
@@ -74,6 +76,7 @@ export function registerDashboardCommands(
   let page = 1
   let activeSource: RepositorySource | undefined
   let abort = new AbortController()
+  let detailsAbort = new AbortController()
   let generation = 0
   let preparing = false
 
@@ -86,6 +89,8 @@ export function registerDashboardCommands(
   const reset = () => {
     abort.abort()
     abort = new AbortController()
+    detailsAbort.abort()
+    state.clearDetails()
     generation++
     state.busy = false
     state.message = ''
@@ -215,6 +220,60 @@ export function registerDashboardCommands(
     return [...inspected.values()]
   }
 
+  const loadDetails = async (id: string) => {
+    const repository = state.repositories.find((item) => item.id === state.repositoryId)
+
+    if (!repository || Option.isNone(repository.hosting) || !state.pulls.some((pr) => pr.id === id))
+      return
+    const hosted = repository.hosting.value
+    detailsAbort.abort()
+    const controller = new AbortController()
+    detailsAbort = controller
+    const version = state.beginDetails(id)
+    await render()
+
+    if (controller.signal.aborted) return
+
+    const result = await runOperation(
+      runtime,
+      'Duff.dashboard',
+      RepositoryDirectory.use((directory) => directory.details(hosted, id)),
+      undefined,
+      controller.signal,
+    )
+
+    if (state.finishDetails(version, result)) await render()
+  }
+
+  const loadAvatar = async (id: string) => {
+    const repository = state.repositories.find((item) => item.id === state.repositoryId)
+    const key = state.pulls.find((pr) => pr.id === id)?.authorAvatarKey
+
+    if (
+      !repository ||
+      Option.isNone(repository.hosting) ||
+      !key ||
+      Object.prototype.hasOwnProperty.call(state.avatars, key)
+    )
+      return
+    const hosted = repository.hosting.value
+    const current = generation
+
+    const result = await runOperation(
+      runtime,
+      'Duff.dashboard',
+      RepositoryDirectory.use((directory) => directory.avatar(hosted, key)).pipe(
+        Effect.catch(() => Effect.succeed(Option.none<string>())),
+      ),
+      undefined,
+      abort.signal,
+    )
+
+    if (current !== generation || !result) return
+    state.avatars = { ...state.avatars, [key]: Option.getOrElse(result, () => '') }
+    await render()
+  }
+
   const loadPullRequests = async (more = false) => {
     const repository = state.repositories.find((item) => item.id === state.repositoryId)
 
@@ -226,6 +285,7 @@ export function registerDashboardCommands(
       reset()
       state.pulls = []
       state.pullRequestId = ''
+      state.avatars = {}
     }
 
     const current = generation
@@ -261,6 +321,8 @@ export function registerDashboardCommands(
     }
 
     await render()
+
+    if (!more && state.pullRequestId) await loadDetails(state.pullRequestId)
   }
 
   const browse = async (source: RepositorySource, more = false) => {
@@ -530,7 +592,8 @@ export function registerDashboardCommands(
       if (state.mode === 'picker' && activeSource) {
         await browse(activeSource, true)
       } else await loadPullRequests(true)
-    } else if (action === 'pull') state.pullRequestId = id
+    } else if (action === 'pull' || action === 'details') await loadDetails(id)
+    else if (action === 'avatar') await loadAvatar(id)
     else if (action === 'review') await openReview(id)
     else if (action === 'external') {
       const pr = state.pulls.find((item) => item.id === id)

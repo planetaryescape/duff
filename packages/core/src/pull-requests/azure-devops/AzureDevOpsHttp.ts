@@ -7,12 +7,15 @@ import { RepositoryPage } from '../../dashboard/RepositoryDirectory'
 import {
   Authentication,
   AuthenticationRequired,
+  AvatarImage,
+  ChangeCount,
   GitHostingProvider,
   InvalidContinuation,
   InvalidProviderResponse,
   OpenPullRequest,
   ProviderIdentity,
   ProviderRepository,
+  PullRequestDetails,
   PullRequestPage,
   type PullRequestState,
   RateLimited,
@@ -42,8 +45,15 @@ const ForkRepository = Schema.Struct({
 const WirePullRequest = Schema.Struct({
   pullRequestId: Schema.Int.check(Schema.isGreaterThan(0)),
   title: Schema.String,
+  description: Schema.optionalKey(Schema.NullOr(Schema.String)),
   createdBy: Schema.optionalKey(
-    Schema.NullOr(Schema.Struct({ displayName: Schema.NonEmptyString })),
+    Schema.NullOr(
+      Schema.Struct({
+        displayName: Schema.optionalKey(Schema.NonEmptyString),
+        _links: Schema.optionalKey(Schema.Unknown),
+        imageUrl: Schema.optionalKey(Schema.Unknown),
+      }),
+    ),
   ),
   status: Schema.Literals(['active', 'completed', 'abandoned']),
   isDraft: Schema.optional(Schema.Boolean),
@@ -60,6 +70,45 @@ const WirePage = Schema.Struct({
   value: Schema.Array(WirePullRequest),
   count: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
 })
+
+const ReadResult = Schema.Struct({ page: PullRequestPage, description: Schema.String })
+
+const Iterations = Schema.Struct({
+  value: Schema.Array(Schema.Struct({ id: Schema.Int.check(Schema.isGreaterThan(0)) })),
+})
+
+const Changes = Schema.Struct({
+  changeEntries: Schema.Array(
+    Schema.Struct({
+      item: Schema.Struct({
+        path: Schema.NonEmptyString,
+        isFolder: Schema.optionalKey(Schema.Boolean),
+      }),
+    }),
+  ),
+  nextSkip: Schema.optionalKey(ChangeCount),
+  nextTop: Schema.optionalKey(ChangeCount),
+})
+
+// Only org-bound identity image routes are authorized, never Graph or arbitrary links.
+function avatarDestination(value: string, org: string): Option.Option<string> {
+  const match =
+    /^https:\/\/(?:dev\.azure\.com\/([^/]+)|([a-z0-9-]+)\.visualstudio\.com)\/(?:_apis\/Identities\/([^/]+)\/avatar|_api\/_common\/identityImage\?id=([^&]+))$/i.exec(
+      value,
+    )
+
+  if (!match || (match[1] ?? match[2])?.toLowerCase() !== org.toLowerCase()) return Option.none()
+  const id = match[3] ?? match[4]
+
+  if (!id || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(id))
+    return Option.none()
+
+  const route = match[3]
+    ? `_apis/Identities/${id.toLowerCase()}/avatar`
+    : `_api/_common/identityImage?id=${id.toLowerCase()}`
+
+  return Option.some(`https://dev.azure.com/${encodeURIComponent(org)}/${route}`)
+}
 
 const statusByState = {
   open: 'active',
@@ -137,11 +186,44 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
   >()
 
   const cooldowns = new Map<string, number>()
+  const avatars = new Map<string, string>()
+  const avatarKeys = new Map<string, string>()
 
   const recognizeRemote: GitHostingProvider['recognizeRemote'] = (remote) =>
     Option.map(parseRemote(remote.destination), (address) => {
       const boundIdentity = identity(address)
       const continuationOwner = JSON.stringify([remote.name, boundIdentity.key])
+      const endpoint = `https://dev.azure.com/${encodeURIComponent(address.org)}/${encodeURIComponent(address.project)}/_apis/git/repositories/${encodeURIComponent(address.repo)}/pullrequests`
+
+      const avatarKey = (author: Schema.Schema.Type<typeof WirePullRequest>['createdBy']) => {
+        const links = Schema.decodeUnknownOption(
+          Schema.Struct({ avatar: Schema.Struct({ href: Schema.String }) }),
+        )(author?.['_links'])
+
+        const preferred = Option.flatMap(links, (value) =>
+          avatarDestination(value.avatar.href, address.org),
+        )
+
+        const destination = Option.orElse(preferred, () =>
+          Option.flatMap(Schema.decodeUnknownOption(Schema.String)(author?.imageUrl), (url) =>
+            avatarDestination(url, address.org),
+          ),
+        )
+
+        return Option.getOrUndefined(
+          Option.map(destination, (url) => {
+            const owner = JSON.stringify([boundIdentity.key, url])
+            const existing = avatarKeys.get(owner)
+
+            if (existing !== undefined) return existing
+            const key = randomUUID()
+            avatarKeys.set(owner, key)
+            avatars.set(JSON.stringify([boundIdentity.key, key]), url)
+
+            return key
+          }),
+        )
+      }
 
       const inspect = Effect.fn('AzureDevOps.inspectAuthentication')(function* (
         mode: 'silent' | 'connect',
@@ -196,7 +278,6 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
 
         if (cooldown > now)
           return yield* new RateLimited({ retryAfterSeconds: Option.some((cooldown - now) / 1000) })
-        const endpoint = `https://dev.azure.com/${encodeURIComponent(address.org)}/${encodeURIComponent(address.project)}/_apis/git/repositories/${encodeURIComponent(address.repo)}/pullrequests`
 
         const url =
           id === undefined
@@ -271,6 +352,7 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
               id: String(pr.pullRequestId),
               title: pr.title,
               author: pr.createdBy?.displayName,
+              authorAvatarKey: avatarKey(pr.createdBy),
               state: stateByStatus[pr.status],
               url: `${repositoryUrl(address)}/pullrequest/${pr.pullRequestId}`,
               draft: pr.isDraft ?? false,
@@ -309,21 +391,110 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
           next = Option.some(Redacted.make(key))
         }
 
-        return PullRequestPage.make({ items, next })
+        return ReadResult.make({
+          page: PullRequestPage.make({ items, next }),
+          description: page.value[0]?.description ?? '',
+        })
+      })
+
+      const fileCount = Effect.fn('AzureDevOps.fileCount')(function* (id: string) {
+        const session = yield* authentication.session('microsoft', scopes, 'silent')
+
+        if (Option.isNone(session)) return yield* new AuthenticationRequired()
+        const token = Option.some(session.value.token)
+        const response = yield* http.get(`${endpoint}/${id}/iterations?api-version=7.1`, token)
+
+        const iterations = yield* Schema.decodeUnknownEffect(Iterations)(response.body).pipe(
+          Effect.mapError(() => new InvalidProviderResponse()),
+        )
+
+        const latest = Math.max(...iterations.value.map((iteration) => iteration.id))
+
+        if (!Number.isSafeInteger(latest)) return yield* new InvalidProviderResponse()
+        let skip = 0
+        let top = 2000
+        const paths = new Set<string>()
+
+        while (true) {
+          const response = yield* http.get(
+            `${endpoint}/${id}/iterations/${latest}/changes?$compareTo=0&$top=${top}&$skip=${skip}&api-version=7.1`,
+            token,
+          )
+
+          const changes = yield* Schema.decodeUnknownEffect(Changes)(response.body).pipe(
+            Effect.mapError(() => new InvalidProviderResponse()),
+          )
+
+          if (changes.changeEntries.length > top) return yield* new InvalidProviderResponse()
+
+          for (const change of changes.changeEntries) {
+            if (change.item.isFolder !== true) paths.add(change.item.path)
+          }
+
+          // Azure omits paging fields on terminal pages. A full page alone proves no total.
+          if (changes.nextSkip === undefined && changes.nextTop === undefined) {
+            if (changes.changeEntries.length < top) return paths.size
+
+            return yield* new InvalidProviderResponse()
+          }
+
+          if (changes.nextSkip === 0 && changes.nextTop === 0) return paths.size
+
+          if (
+            changes.nextSkip === undefined ||
+            changes.nextTop === undefined ||
+            changes.nextSkip <= skip ||
+            changes.nextTop === 0 ||
+            changes.nextTop > 2000
+          )
+            return yield* new InvalidProviderResponse()
+          skip = changes.nextSkip
+          top = changes.nextTop
+        }
       })
 
       return ProviderRepository.of({
         identity: boundIdentity,
         inspectAuthentication: () => inspect('silent'),
         connectAuthentication: () => inspect('connect'),
-        listPullRequests: (input) => read(input),
-        getPullRequest: Effect.fn('AzureDevOps.getPullRequest')(function* (id) {
-          const page = yield* read(
+        listPullRequests: (input) => read(input).pipe(Effect.map((result) => result.page)),
+        getPullRequestDetails: Effect.fn('AzureDevOps.getPullRequestDetails')(function* (id) {
+          const result = yield* read(
             { scope: 'repository', state: 'open', cursor: Option.none() },
             id,
           )
 
-          const pull = page.items[0]
+          const pullRequest = result.page.items[0]
+
+          if (!pullRequest) return yield* new InvalidProviderResponse()
+          // Statistics are optional; a failed page discards the whole count, not the description.
+          const filesChanged = yield* fileCount(id).pipe(Effect.option)
+
+          return PullRequestDetails.make({
+            pullRequest,
+            description: result.description,
+            filesChanged,
+            linesChanged: Option.none(),
+          })
+        }),
+        getAvatar: Effect.fn('AzureDevOps.getAvatar')(function* (key) {
+          const url = avatars.get(JSON.stringify([boundIdentity.key, key]))
+
+          if (url === undefined) return Option.none()
+          const session = yield* authentication.session('microsoft', scopes, 'silent')
+
+          if (Option.isNone(session)) return Option.none()
+          const response = yield* http.get(url, Option.some(session.value.token), {}, 'image')
+
+          return Schema.decodeUnknownOption(AvatarImage)(response.body)
+        }),
+        getPullRequest: Effect.fn('AzureDevOps.getPullRequest')(function* (id) {
+          const result = yield* read(
+            { scope: 'repository', state: 'open', cursor: Option.none() },
+            id,
+          )
+
+          const pull = result.page.items[0]
 
           if (!pull) return yield* new InvalidProviderResponse()
 

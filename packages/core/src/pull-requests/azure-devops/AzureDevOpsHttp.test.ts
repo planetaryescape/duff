@@ -523,6 +523,349 @@ describe('AzureDevOps', () => {
     }),
   )
 
+  it.effect('reads descriptions and counts all latest-iteration file pages against the base', () =>
+    Effect.gen(function* () {
+      const urls: string[] = []
+
+      const contribution = yield* make(undefined, {
+        get: (url) =>
+          Effect.sync(() => {
+            urls.push(url)
+
+            return {
+              headers: {},
+              body: url.endsWith('/iterations?api-version=7.1')
+                ? { value: [{ id: 3 }, { id: 1 }, { id: 2 }] }
+                : url.includes('/changes?')
+                  ? url.includes('$skip=0')
+                    ? {
+                        changeEntries: [
+                          { item: { path: '/folder', isFolder: true } },
+                          {
+                            item: { path: '/renamed.ts' },
+                            changeType: 'rename',
+                            originalPath: '/old.ts',
+                          },
+                        ],
+                        nextSkip: 2,
+                        nextTop: 2000,
+                      }
+                    : {
+                        changeEntries: [
+                          { item: { path: '/deleted.ts' }, changeType: 'delete' },
+                          { item: { path: '/added.ts', isFolder: false }, changeType: 'add' },
+                        ],
+                        nextSkip: 0,
+                        nextTop: 0,
+                      }
+                  : {
+                      ...pullRequest(),
+                      description: '# Description\n\nKeep **markdown**.',
+                      lastMergeSourceCommit: { commitId: 'a'.repeat(40) },
+                      lastMergeTargetCommit: { commitId: 'b'.repeat(40) },
+                    },
+            }
+          }),
+      })
+
+      const repository = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
+      const details = yield* repository.getPullRequestDetails('1')
+      expect(details.description).toBe('# Description\n\nKeep **markdown**.')
+      expect(details.filesChanged).toEqual(Option.some(3))
+      expect(details.linesChanged).toEqual(Option.none())
+      expect(details.pullRequest.source).toMatchObject({
+        ref: { revision: Option.some('a'.repeat(40)) },
+      })
+      expect(details.pullRequest.target.ref.revision).toEqual(Option.some('b'.repeat(40)))
+      expect(urls).toEqual([
+        'https://dev.azure.com/acme/Target%20Project/_apis/git/repositories/TargetRepo/pullrequests/1?api-version=7.1',
+        'https://dev.azure.com/acme/Target%20Project/_apis/git/repositories/TargetRepo/pullrequests/1/iterations?api-version=7.1',
+        'https://dev.azure.com/acme/Target%20Project/_apis/git/repositories/TargetRepo/pullrequests/1/iterations/3/changes?$compareTo=0&$top=2000&$skip=0&api-version=7.1',
+        'https://dev.azure.com/acme/Target%20Project/_apis/git/repositories/TargetRepo/pullrequests/1/iterations/3/changes?$compareTo=0&$top=2000&$skip=2&api-version=7.1',
+      ])
+    }),
+  )
+
+  it.effect('distinguishes exact zero files from unavailable or incomplete statistics', () =>
+    Effect.gen(function* () {
+      for (const scenario of [
+        'empty',
+        'iterations-fail',
+        'no-iterations',
+        'second-page-fail',
+        'malformed-page',
+        'stuck-page',
+      ]) {
+        const contribution = yield* make(undefined, {
+          get: (url) => {
+            if (url.endsWith('/iterations?api-version=7.1')) {
+              if (scenario === 'iterations-fail') return Effect.fail(new RepositoryUnavailable())
+
+              return Effect.succeed({
+                headers: {},
+                body: { value: scenario === 'no-iterations' ? [] : [{ id: 1 }] },
+              })
+            }
+
+            if (url.includes('/changes?')) {
+              if (url.includes('$skip=1')) return Effect.fail(new ProviderUnavailable())
+
+              return Effect.succeed({
+                headers: {},
+                body:
+                  scenario === 'malformed-page'
+                    ? { changeEntries: [{ item: { path: 3 } }] }
+                    : {
+                        changeEntries: scenario === 'empty' ? [] : [{ item: { path: '/one.ts' } }],
+                        nextSkip: scenario === 'second-page-fail' ? 1 : 0,
+                        nextTop:
+                          scenario === 'stuck-page' || scenario === 'second-page-fail' ? 2000 : 0,
+                      },
+              })
+            }
+
+            return Effect.succeed({
+              headers: {},
+              body: { ...pullRequest(), description: 'Still usable' },
+            })
+          },
+        })
+
+        const repository = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
+        const details = yield* repository.getPullRequestDetails('1')
+        expect(details.description).toBe('Still usable')
+        expect(details.filesChanged).toEqual(scenario === 'empty' ? Option.some(0) : Option.none())
+        expect(details.linesChanged).toEqual(Option.none())
+      }
+    }),
+  )
+
+  it.effect('accepts omitted terminal paging only when the requested page is not full', () =>
+    Effect.gen(function* () {
+      for (const count of [0, 2, 1999, 2000]) {
+        const contribution = yield* make(undefined, {
+          get: (url) =>
+            Effect.succeed({
+              headers: {},
+              body: url.endsWith('/iterations?api-version=7.1')
+                ? { value: [{ id: 1 }] }
+                : url.includes('/changes?')
+                  ? {
+                      changeEntries: Array.from({ length: count }, (_, index) => ({
+                        item: { path: `/file-${index}.ts` },
+                      })),
+                    }
+                  : pullRequest(),
+            }),
+        })
+
+        const repository = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
+        const details = yield* repository.getPullRequestDetails('1')
+        expect(details.filesChanged).toEqual(count < 2000 ? Option.some(count) : Option.none())
+      }
+    }),
+  )
+
+  it.effect('accepts missing descriptions and authors without inventing author metadata', () =>
+    Effect.gen(function* () {
+      for (const fields of [
+        {},
+        { createdBy: null, description: null },
+        { createdBy: { displayName: 'Ada' }, description: '' },
+      ]) {
+        const contribution = yield* make(undefined, {
+          get: () => Effect.succeed({ headers: {}, body: { ...pullRequest(), ...fields } }),
+        })
+
+        const repository = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
+        const details = yield* repository.getPullRequestDetails('1')
+        expect(details.description).toBe('')
+        expect(details.pullRequest.authorAvatarKey).toBeUndefined()
+        expect(details.filesChanged).toEqual(Option.none())
+      }
+    }),
+  )
+
+  it.effect(
+    'prefers identity avatar links, owns opaque keys and canonicalizes legacy image links',
+    () =>
+      Effect.gen(function* () {
+        const preferred =
+          'https://dev.azure.com/acme/_apis/Identities/11111111-1111-1111-1111-111111111111/avatar'
+
+        const legacy =
+          'https://acme.visualstudio.com/_apis/Identities/22222222-2222-2222-2222-222222222222/avatar'
+
+        const image = 'data:image/png;base64,aGVsbG8='
+
+        for (const author of [
+          { displayName: 'Ada', _links: { avatar: { href: preferred } }, imageUrl: legacy },
+          { displayName: 'Ada', imageUrl: legacy },
+          {
+            displayName: 'Ada',
+            imageUrl:
+              'https://dev.azure.com/acme/_api/_common/identityImage?id=33333333-3333-3333-3333-333333333333',
+          },
+        ]) {
+          const requests: string[] = []
+
+          const contribution = yield* make(undefined, {
+            get: (url, token, _headers, format) =>
+              Effect.sync(() => {
+                requests.push(url)
+                expect(Option.isSome(token)).toBe(true)
+
+                if (format === 'image') return { headers: {}, body: image }
+
+                return {
+                  headers: {},
+                  body: { count: 1, value: [{ ...pullRequest(), createdBy: author }] },
+                }
+              }),
+          })
+
+          const repository = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
+          const page = yield* repository.listPullRequests(first)
+          const key = page.items[0]?.authorAvatarKey
+          expect(key).toBeDefined()
+
+          if (key === undefined) return yield* Effect.die('Expected provider-owned avatar key')
+          expect(key).not.toContain('https:')
+          expect(yield* repository.getAvatar(key)).toEqual(Option.some(image))
+          expect(requests[1]).toBe(
+            author['_links']
+              ? preferred
+              : author.imageUrl.replace('acme.visualstudio.com', 'dev.azure.com/acme'),
+          )
+          expect(yield* repository.getAvatar(preferred)).toEqual(Option.none())
+
+          const recognizedAgain = Option.getOrThrow(
+            contribution.recognizeRemote(remote(destination)),
+          )
+
+          expect(yield* recognizedAgain.getAvatar(key)).toEqual(Option.some(image))
+
+          const other = Option.getOrThrow(
+            contribution.recognizeRemote(remote('https://dev.azure.com/other/p/_git/r')),
+          )
+
+          expect(yield* other.getAvatar(key)).toEqual(Option.none())
+          expect(requests).toHaveLength(3)
+        }
+      }),
+  )
+
+  it.effect('never requests unsafe, cross-org, Graph or forged avatar destinations', () =>
+    Effect.gen(function* () {
+      const route = '/_apis/Identities/11111111-1111-1111-1111-111111111111/avatar'
+
+      for (const url of [
+        `https://evil.test/acme${route}`,
+        `https://dev.azure.com.evil.test/acme${route}`,
+        `https://dev.azure.com/other${route}`,
+        `https://other.visualstudio.com${route}`,
+        `https://dev.azure.com@evil.test/acme${route}`,
+        `http://dev.azure.com/acme${route}`,
+        `https://dev.azure.com/acme${route}?redirect=https://evil.test`,
+        `https://dev.azure.com/acme${route}#fragment`,
+        `https://dev.azure.com:443/acme${route}`,
+        'https://dev.azure.com/acme/_api/_common/identityImage?id=33333333-3333-3333-3333-333333333333&redirect=https://evil.test',
+        'https://dev.azure.com/other/_api/_common/identityImage?id=33333333-3333-3333-3333-333333333333',
+        'https://dev.azure.com/acme/_apis/GraphProfile/MemberAvatars/aad.identity',
+        'data:image/svg+xml;base64,PHN2Zz4=',
+      ]) {
+        const requests: string[] = []
+
+        const contribution = yield* make(undefined, {
+          get: (destination) =>
+            Effect.sync(() => {
+              requests.push(destination)
+
+              return {
+                headers: {},
+                body: {
+                  count: 1,
+                  value: [
+                    {
+                      ...pullRequest(),
+                      createdBy: {
+                        displayName: 'Ada',
+                        _links: { avatar: { href: url } },
+                        imageUrl: url,
+                      },
+                    },
+                  ],
+                },
+              }
+            }),
+        })
+
+        const repository = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
+        expect(
+          (yield* repository.listPullRequests(first)).items[0]?.authorAvatarKey,
+        ).toBeUndefined()
+        expect(yield* repository.getAvatar(url)).toEqual(Option.none())
+        expect(requests).toHaveLength(1)
+      }
+    }),
+  )
+
+  it.effect('rejects active image content and propagates avatar transport failures', () =>
+    Effect.gen(function* () {
+      for (const body of [
+        'data:image/svg+xml;base64,PHN2Zz4=',
+        'https://evil.test/image.png',
+        null,
+      ]) {
+        const contribution = yield* make(undefined, {
+          get: (_url, _token, _headers, format) =>
+            Effect.succeed({
+              headers: {},
+              body:
+                format === 'image'
+                  ? body
+                  : {
+                      ...pullRequest(),
+                      createdBy: {
+                        displayName: 'Ada',
+                        imageUrl:
+                          'https://dev.azure.com/acme/_apis/Identities/11111111-1111-1111-1111-111111111111/avatar',
+                      },
+                    },
+            }),
+        })
+
+        const repository = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
+        const key = (yield* repository.getPullRequest('1')).authorAvatarKey
+
+        if (key === undefined) return yield* Effect.die('Expected avatar key')
+        expect(yield* repository.getAvatar(key)).toEqual(Option.none())
+      }
+
+      const contribution = yield* make(undefined, {
+        get: (_url, _token, _headers, format) =>
+          format === 'image'
+            ? Effect.fail(new ProviderUnavailable())
+            : Effect.succeed({
+                headers: {},
+                body: {
+                  ...pullRequest(),
+                  createdBy: {
+                    imageUrl:
+                      'https://dev.azure.com/acme/_apis/Identities/11111111-1111-1111-1111-111111111111/avatar',
+                  },
+                },
+              }),
+      })
+
+      const repository = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
+      const key = (yield* repository.getPullRequest('1')).authorAvatarKey
+
+      if (key === undefined) return yield* Effect.die('Expected avatar key')
+      expect(yield* repository.getAvatar(key).pipe(Effect.flip)).toBeInstanceOf(ProviderUnavailable)
+    }),
+  )
+
   it.effect('rejects malformed provider values', () =>
     Effect.gen(function* () {
       for (const body of [

@@ -55,6 +55,8 @@ const testLayer = (
           }),
         listPullRequests: list,
         getPullRequest: () => new ProviderUnavailable(),
+        getPullRequestDetails: () => new ProviderUnavailable(),
+        getAvatar: () => Effect.succeed(Option.none()),
       }),
   }
 
@@ -337,6 +339,8 @@ it.effect(
             connectAuthentication: () =>
               Deferred.await(connection).pipe(Effect.andThen(new ProviderUnavailable())),
             getPullRequest: () => new ProviderUnavailable(),
+            getPullRequestDetails: () => new ProviderUnavailable(),
+            getAvatar: () => Effect.succeed(Option.none()),
             listPullRequests: (input) =>
               remote.name === 'slow'
                 ? Deferred.succeed(slowStarted, undefined).pipe(

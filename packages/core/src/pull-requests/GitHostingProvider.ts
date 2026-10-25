@@ -56,6 +56,7 @@ export const OpenPullRequest = Schema.Struct({
   id: Schema.NonEmptyString,
   title: Schema.String,
   author: Schema.optional(Schema.NonEmptyString),
+  authorAvatarKey: Schema.optional(Schema.NonEmptyString),
   state: Schema.optionalKey(PullRequestState),
   url: Schema.String.check(Schema.isPattern(/^https:\/\//)),
   draft: Schema.Boolean,
@@ -67,6 +68,23 @@ export const OpenPullRequest = Schema.Struct({
 })
 
 export interface OpenPullRequest extends Schema.Schema.Type<typeof OpenPullRequest> {}
+
+export const ChangeCount = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+
+/** Only inert, bounded raster images cross into the editor webview. */
+export const AvatarImage = Schema.String.check(
+  Schema.isPattern(/^data:image\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+=*$/),
+  Schema.isMaxLength(350_000),
+)
+
+export const PullRequestDetails = Schema.Struct({
+  pullRequest: OpenPullRequest,
+  description: Schema.String,
+  filesChanged: Schema.Option(ChangeCount),
+  linesChanged: Schema.Option(Schema.Struct({ additions: ChangeCount, deletions: ChangeCount })),
+})
+
+export interface PullRequestDetails extends Schema.Schema.Type<typeof PullRequestDetails> {}
 
 export const PullRequestPage = Schema.Struct({
   items: Schema.Array(OpenPullRequest),
@@ -144,6 +162,9 @@ export interface ProviderRepository {
   readonly inspectAuthentication: () => Effect.Effect<Authentication, AuthenticationError>
   readonly connectAuthentication: () => Effect.Effect<Authentication, AuthenticationError>
   readonly getPullRequest: (id: string) => Effect.Effect<OpenPullRequest, DiscoveryError>
+  readonly getPullRequestDetails: (id: string) => Effect.Effect<PullRequestDetails, DiscoveryError>
+  /** The key is provider-owned, never a webview-supplied destination for authenticated HTTP. */
+  readonly getAvatar: (key: string) => Effect.Effect<Option.Option<string>, DiscoveryError>
   readonly listPullRequests: (input: {
     readonly scope: 'repository'
     readonly state: PullRequestState

@@ -167,6 +167,7 @@ it.effect('normalizes drafts, fork identities, full refs and revisions, and dele
       id: '17',
       title: pull.title,
       author: 'original-author',
+      authorAvatarKey: undefined,
       draft: true,
       state: 'open',
       url: 'https://github.com/owner/repo/pull/17',
@@ -667,6 +668,181 @@ it.effect('rereads any state by id without following list pagination or changing
       ...Array.from({ length: 3 }, () => 'https://api.github.com/repos/owner/repo/pulls/17'),
       url(2),
     ])
+  }),
+)
+
+it.effect('loads descriptions and asymmetric statistics with exact SHAs in one request', () =>
+  Effect.gen(function* () {
+    const requests: string[] = []
+
+    const { repository } = yield* make(undefined, {
+      get: (actualUrl) =>
+        Effect.sync(() => {
+          requests.push(actualUrl)
+
+          return {
+            body: {
+              ...pull,
+              user: { login: 'original-author', id: 42, avatar_url: 'https://evil.invalid' },
+              body: '## Description\n\nA change.',
+              changed_files: 3,
+              additions: 125,
+              deletions: 7,
+            },
+            headers: { link: 'ignored for single PR' },
+          }
+        }),
+    })
+
+    const details = yield* repository.getPullRequestDetails('17')
+    expect(details.description).toBe('## Description\n\nA change.')
+    expect(details.filesChanged).toEqual(Option.some(3))
+    expect(details.linesChanged).toEqual(Option.some({ additions: 125, deletions: 7 }))
+    expect(details.pullRequest).toMatchObject({
+      authorAvatarKey: '42',
+      source: { ref: { revision: Option.some(pull.head.sha) } },
+      target: { ref: { revision: Option.some(pull.base.sha) } },
+    })
+    expect(requests).toEqual(['https://api.github.com/repos/owner/repo/pulls/17'])
+  }),
+)
+
+it.effect(
+  'normalizes null descriptions and unavailable authors without inventing avatar keys',
+  () =>
+    Effect.gen(function* () {
+      for (const user of [null, pull.user]) {
+        const { repository } = yield* make(undefined, {
+          get: () =>
+            Effect.succeed({
+              body: { ...pull, user, body: null, changed_files: 0, additions: 0, deletions: 0 },
+              headers: {},
+            }),
+        })
+
+        const details = yield* repository.getPullRequestDetails('17')
+        expect(details.description).toBe('')
+        expect(details.filesChanged).toEqual(Option.some(0))
+        expect(details.linesChanged).toEqual(Option.some({ additions: 0, deletions: 0 }))
+        expect(details.pullRequest.author).toBe(user?.login)
+        expect(details.pullRequest.authorAvatarKey).toBeUndefined()
+      }
+    }),
+)
+
+it.effect(
+  'rejects invalid detail fields and user IDs rather than reporting successful empty data',
+  () =>
+    Effect.gen(function* () {
+      for (const invalid of [
+        { body: 123 },
+        { body: undefined },
+        { changed_files: -1 },
+        { changed_files: 1.5 },
+        { additions: -1 },
+        { deletions: -1 },
+        { additions: '12' },
+        { deletions: null },
+        { changed_files: undefined },
+        { user: { login: 'author', id: 0 } },
+        { user: { login: 'author', id: '42' } },
+        { user: { login: 'author', id: Number.MAX_SAFE_INTEGER + 1 } },
+        { number: 18 },
+      ]) {
+        const { repository } = yield* make(undefined, {
+          get: () =>
+            Effect.succeed({
+              body: {
+                ...pull,
+                body: '',
+                changed_files: 3,
+                additions: 12,
+                deletions: 1,
+                ...invalid,
+              },
+              headers: {},
+            }),
+        })
+
+        expect((yield* repository.getPullRequestDetails('17').pipe(Effect.flip))._tag).toBe(
+          'InvalidProviderResponse',
+        )
+      }
+    }),
+)
+
+it.effect('fetches only provider-owned raster avatars without authentication or a token', () =>
+  Effect.gen(function* () {
+    const image = 'data:image/png;base64,aGVsbG8='
+    const requests: string[] = []
+
+    const { repository } = yield* make(
+      { session: () => Effect.die('Avatar requests must not authenticate') },
+      {
+        get: (actualUrl, token, headers, mode) =>
+          Effect.sync(() => {
+            requests.push(actualUrl)
+            expect(Option.isNone(token)).toBe(true)
+            expect(headers).toEqual({
+              Accept: 'image/png,image/jpeg,image/gif,image/webp',
+              'User-Agent': 'Duff',
+            })
+            expect(mode).toBe('image')
+
+            return { body: image, headers: {} }
+          }),
+      },
+    )
+
+    expect(yield* repository.getAvatar('42')).toEqual(Option.some(image))
+    expect(requests).toEqual(['https://avatars.githubusercontent.com/u/42?s=64'])
+  }),
+)
+
+it.effect('rejects unsafe avatar keys before making any HTTP request', () =>
+  Effect.gen(function* () {
+    const { repository } = yield* make(
+      { session: () => Effect.die('Unexpected authentication') },
+      { get: () => Effect.die('Unexpected HTTP') },
+    )
+
+    for (const key of [
+      '',
+      '0',
+      '-1',
+      '01',
+      '1.5',
+      '42/../1',
+      '42?secret=x',
+      'https://evil.invalid/avatar',
+      String(Number.MAX_SAFE_INTEGER + 1),
+    ]) {
+      expect((yield* repository.getAvatar(key).pipe(Effect.flip))._tag).toBe(
+        'InvalidProviderResponse',
+      )
+    }
+  }),
+)
+
+it.effect('rejects external, active, malformed and oversized avatar data', () =>
+  Effect.gen(function* () {
+    for (const body of [
+      null,
+      { image: 'data:image/png;base64,aGVsbG8=' },
+      'https://evil.invalid/avatar.png',
+      'data:image/svg+xml;base64,PHN2Zz4=',
+      'data:text/html;base64,PHNjcmlwdD4=',
+      'data:image/png;base64,not base64!',
+      `data:image/png;base64,${'A'.repeat(350_000)}`,
+    ]) {
+      const { repository } = yield* make(undefined, {
+        get: () => Effect.succeed({ body, headers: {} }),
+      })
+
+      expect((yield* repository.getAvatar('42').pipe(Effect.flip))._tag).toBe(
+        'InvalidProviderResponse',
+      )
+    }
   }),
 )
 

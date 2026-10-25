@@ -8,6 +8,7 @@ import {
   InvalidContinuation,
   type ProviderIdentity,
   type ProviderRepository,
+  type PullRequestDetails,
   type PullRequestPage,
   type PullRequestState,
   type RepositoryIdentity,
@@ -50,6 +51,14 @@ export class RepositoryDirectory extends Context.Service<
       state: PullRequestState,
       cursor: Option.Option<Redacted.Redacted>,
     ) => Effect.Effect<PullRequestPage, DiscoveryError>
+    readonly details: (
+      hosted: HostedRepository,
+      id: string,
+    ) => Effect.Effect<PullRequestDetails, DiscoveryError>
+    readonly avatar: (
+      hosted: HostedRepository,
+      key: string,
+    ) => Effect.Effect<Option.Option<string>, DiscoveryError>
     readonly connect: (hosted: HostedRepository) => Effect.Effect<void, DiscoveryError>
     readonly resolve: (
       hosted: HostedRepository,
@@ -156,6 +165,23 @@ export const makeRepositoryDirectoryLayer = (providers: ReadonlyArray<GitHosting
           const { repository } = yield* bind(hosted)
 
           return yield* repository.listPullRequests({ scope: 'repository', state, cursor })
+        }),
+        details: Effect.fn('RepositoryDirectory.details')(function* (hosted, id) {
+          const { repository } = yield* bind(hosted)
+          const details = yield* repository.getPullRequestDetails(id)
+
+          if (
+            details.pullRequest.id !== id ||
+            !same(details.pullRequest.target.repository, hosted.repository)
+          )
+            return yield* new RepositoryUnavailable()
+
+          return details
+        }),
+        avatar: Effect.fn('RepositoryDirectory.avatar')(function* (hosted, key) {
+          const { repository } = yield* bind(hosted)
+
+          return yield* repository.getAvatar(key)
         }),
         connect: Effect.fn('RepositoryDirectory.connect')(function* (hosted) {
           const { repository } = yield* bind(hosted)

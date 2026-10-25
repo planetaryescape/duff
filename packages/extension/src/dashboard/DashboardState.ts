@@ -2,9 +2,16 @@ import { type WatchedRepository } from '@duff/core/dashboard-repositories'
 import {
   type OpenPullRequest,
   type ProviderIdentity,
+  type PullRequestDetails,
   type PullRequestState,
 } from '@duff/core/git-hosting-provider'
 import { type RepositorySource } from '@duff/core/repository-directory'
+
+type DetailState =
+  | { readonly _tag: 'Idle' }
+  | { readonly _tag: 'Loading' }
+  | { readonly _tag: 'Loaded'; readonly value: PullRequestDetails }
+  | { readonly _tag: 'Failed' }
 
 export class DashboardState {
   mode: 'dashboard' | 'picker' = 'dashboard'
@@ -12,6 +19,9 @@ export class DashboardState {
   repositoryId = ''
   pullRequestId = ''
   pulls: ReadonlyArray<OpenPullRequest> = []
+  details: DetailState = { _tag: 'Idle' }
+  avatars: Readonly<Record<string, string>> = {}
+  #detailVersion = 0
   candidates: ReadonlyArray<WatchedRepository> = []
   selections: ReadonlyArray<WatchedRepository> = []
   providers: ReadonlyArray<ProviderIdentity> = []
@@ -34,6 +44,31 @@ export class DashboardState {
     this.repositoryId = repositoryId
     this.pulls = []
     this.pullRequestId = ''
+    this.clearDetails()
+    this.avatars = {}
+
+    return true
+  }
+
+  clearDetails(): void {
+    this.#detailVersion++
+    this.details = { _tag: 'Idle' }
+  }
+
+  beginDetails(id: string): number {
+    this.#detailVersion++
+    this.pullRequestId = id
+    this.details = { _tag: 'Loading' }
+
+    return this.#detailVersion
+  }
+
+  finishDetails(version: number, value: PullRequestDetails | undefined): boolean {
+    if (version !== this.#detailVersion) return false
+    this.details =
+      value && value.pullRequest.id === this.pullRequestId
+        ? { _tag: 'Loaded', value }
+        : { _tag: 'Failed' }
 
     return true
   }

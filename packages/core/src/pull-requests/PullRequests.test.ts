@@ -37,6 +37,8 @@ const repository = (
     }),
   listPullRequests: list,
   getPullRequest: () => new ProviderUnavailable(),
+  getPullRequestDetails: () => new ProviderUnavailable(),
+  getAvatar: () => Effect.succeed(Option.none()),
 })
 
 const provider = (

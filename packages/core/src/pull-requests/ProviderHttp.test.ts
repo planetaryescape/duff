@@ -78,3 +78,51 @@ it.effect('applies a finite deadline to a hung transport', () =>
     expect((yield* Fiber.join(fiber))._tag).toBe('ProviderUnavailable')
   }),
 )
+
+it.effect(
+  'accepts bounded raster images and rejects active, empty, oversized or redirected images',
+  () =>
+    Effect.gen(function* () {
+      const fixtures = [
+        { content: 'raster', mime: 'image/png', status: 200, valid: true },
+        { content: '<svg onload="alert(1)"/>', mime: 'image/svg+xml', status: 200, valid: false },
+        { content: '', mime: 'image/png', status: 200, valid: false },
+        { content: 'x'.repeat(256 * 1024 + 1), mime: 'image/png', status: 200, valid: false },
+        { content: 'redirect', mime: 'image/png', status: 302, valid: false },
+      ]
+
+      for (const fixture of fixtures) {
+        const client = HttpClient.make((request) =>
+          Effect.succeed(
+            HttpClientResponse.fromWeb(
+              request,
+              new Response(fixture.content, {
+                status: fixture.status,
+                headers: { 'Content-Type': fixture.mime },
+              }),
+            ),
+          ),
+        )
+
+        const result = yield* ProviderHttp.use((http) =>
+          http.get('https://example.invalid/avatar', Option.none(), {}, 'image'),
+        ).pipe(
+          Effect.provide(
+            ProviderHttp.layer.pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client))),
+          ),
+          Effect.result,
+        )
+
+        if (fixture.valid) {
+          expect(result._tag).toBe('Success')
+
+          if (result._tag === 'Success')
+            expect(result.success.body).toBe('data:image/png;base64,cmFzdGVy')
+        } else {
+          expect(result._tag).toBe('Failure')
+
+          if (result._tag === 'Failure') expect(result.failure._tag).toBe('InvalidProviderResponse')
+        }
+      }
+    }),
+)

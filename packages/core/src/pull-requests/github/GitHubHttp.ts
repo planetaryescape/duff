@@ -7,10 +7,13 @@ import { RepositoryPage } from '../../dashboard/RepositoryDirectory'
 import {
   Authentication,
   AuthenticationRequired,
+  AvatarImage,
+  ChangeCount,
   GitHubAuthenticationError,
   InvalidContinuation,
   InvalidProviderResponse,
   OpenPullRequest,
+  PullRequestDetails,
   PullRequestPage,
   type PullRequestState,
   RateLimited,
@@ -23,6 +26,20 @@ import { ProviderAuthentication } from '../ProviderAuthentication'
 import { ProviderHttp } from '../ProviderHttp'
 
 const Segment = Schema.String.check(Schema.isPattern(/^(?!\.{1,2}$)[a-zA-Z0-9_.-]+$/))
+
+const UserId = Schema.Int.check(
+  Schema.isGreaterThan(0),
+  Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER),
+)
+
+const DetailFields = Schema.Struct({
+  body: Schema.NullOr(Schema.String),
+  changed_files: ChangeCount,
+  additions: ChangeCount,
+  deletions: ChangeCount,
+})
+
+const ReadResult = Schema.Struct({ page: PullRequestPage, body: Schema.Unknown })
 
 const Repository = Schema.Struct({
   id: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThan(0))),
@@ -64,7 +81,11 @@ const PullRequests = Schema.Array(
     draft: Schema.Boolean,
     state: Schema.Literals(['open', 'closed']),
     merged_at: Schema.NullOr(Schema.NonEmptyString),
-    user: Schema.optionalKey(Schema.NullOr(Schema.Struct({ login: Schema.NonEmptyString }))),
+    user: Schema.optionalKey(
+      Schema.NullOr(
+        Schema.Struct({ login: Schema.NonEmptyString, id: Schema.optionalKey(UserId) }),
+      ),
+    ),
     head: Ref,
     base: Ref,
   }),
@@ -325,6 +346,7 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
             id: String(pull.number),
             title: pull.title,
             author: pull.user?.login,
+            authorAvatarKey: pull.user?.id === undefined ? undefined : String(pull.user.id),
             draft: pull.draft,
             state: pull.merged_at !== null ? 'merged' : pull.state,
             url: `https://github.com/${repository.key}/pull/${pull.number}`,
@@ -357,7 +379,7 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
             )
           : Option.none<number>()
 
-      return yield* Schema.decodeUnknownEffect(PullRequestPage)({
+      const result = yield* Schema.decodeUnknownEffect(PullRequestPage)({
         items: id === undefined ? items.filter((pull) => pull.state === input.state) : items,
         next: Option.map(next, (value) => {
           const cursor = JSON.stringify({
@@ -370,20 +392,64 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
           return Redacted.make(cursor)
         }),
       }).pipe(Effect.mapError(() => new InvalidProviderResponse()))
+
+      return ReadResult.make({ page: result, body: response.body })
     })
 
     return ProviderRepository.of({
       identity: repository,
       inspectAuthentication: () => authentication('silent'),
       connectAuthentication: () => authentication('connect'),
-      listPullRequests: (input) => read(input),
+      listPullRequests: (input) => read(input).pipe(Effect.map((result) => result.page)),
       getPullRequest: Effect.fn('GitHub.getPullRequest')(function* (id) {
-        const page = yield* read({ scope: 'repository', state: 'open', cursor: Option.none() }, id)
+        const { page } = yield* read(
+          { scope: 'repository', state: 'open', cursor: Option.none() },
+          id,
+        )
+
         const pull = page.items[0]
 
         if (!pull) return yield* new InvalidProviderResponse()
 
         return pull
+      }),
+      getPullRequestDetails: Effect.fn('GitHub.getPullRequestDetails')(function* (id) {
+        const { page, body } = yield* read(
+          { scope: 'repository', state: 'open', cursor: Option.none() },
+          id,
+        )
+
+        const pullRequest = page.items[0]
+
+        if (!pullRequest) return yield* new InvalidProviderResponse()
+
+        const fields = yield* Schema.decodeUnknownEffect(DetailFields)(body).pipe(
+          Effect.mapError(() => new InvalidProviderResponse()),
+        )
+
+        return PullRequestDetails.make({
+          pullRequest,
+          description: fields.body ?? '',
+          filesChanged: Option.some(fields.changed_files),
+          linesChanged: Option.some({ additions: fields.additions, deletions: fields.deletions }),
+        })
+      }),
+      getAvatar: Effect.fn('GitHub.getAvatar')(function* (key) {
+        if (!/^[1-9][0-9]*$/.test(key) || !Number.isSafeInteger(Number(key)))
+          return yield* new InvalidProviderResponse()
+
+        const response = yield* http.get(
+          `https://avatars.githubusercontent.com/u/${key}?s=64`,
+          Option.none(),
+          { Accept: 'image/png,image/jpeg,image/gif,image/webp', 'User-Agent': 'Duff' },
+          'image',
+        )
+
+        const image = yield* Schema.decodeUnknownEffect(AvatarImage)(response.body).pipe(
+          Effect.mapError(() => new InvalidProviderResponse()),
+        )
+
+        return Option.some(image)
       }),
     })
   }
