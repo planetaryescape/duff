@@ -23,6 +23,12 @@
   "contributes": {
     "commands": [
       {
+        "command": "duff.dashboard",
+        "title": "Open Pull Request Dashboard",
+        "icon": "$(home)",
+        "category": "Duff"
+      },
+      {
         "command": "duff.compare",
         "title": "Compare Current Branch Against...",
         "icon": "$(git-compare)",
@@ -196,7 +202,7 @@
     "viewsWelcome": [
       {
         "view": "duff.files",
-        "contents": "Review committed changes on your current branch.\n[Compare Against Branch](command:duff.compare)\n[Resume Review…](command:duff.resumeReview)\nClick a changed file to open its diff. Use Open Workspace File to edit and navigate."
+        "contents": "[Open Pull Request Dashboard](command:duff.dashboard)\nReview committed changes on your current branch.\n[Compare Against Branch](command:duff.compare)\n[Resume Review…](command:duff.resumeReview)\nClick a changed file to open its diff. Use Open Workspace File to edit and navigate."
       },
       {
         "view": "duff.context",
@@ -215,6 +221,11 @@
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "duff.dashboard",
+          "when": "view == duff.files || view == duff.providers",
+          "group": "navigation@0"
+        },
         {
           "command": "duff.compare",
           "when": "view == duff.files",

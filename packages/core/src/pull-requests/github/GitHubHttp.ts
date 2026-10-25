@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto'
 
 import { Clock, DateTime, Effect, Option, Redacted, Schema } from 'effect'
 
+import { HostedRepository } from '../../dashboard/Repositories'
+import { RepositoryPage } from '../../dashboard/RepositoryDirectory'
 import {
   Authentication,
   AuthenticationRequired,
@@ -384,11 +386,80 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
     })
   }
 
+  const providerIdentity = ProviderIdentity.make({
+    id: 'github',
+    displayName: 'GitHub',
+    authenticationSource: 'github',
+  })
+
+  const destination = (repository: RepositoryIdentity): Option.Option<string> => {
+    const url = `https://github.com/${repository.key}.git`
+
+    return Option.filter(
+      Option.map(recognize(url), () => url),
+      () =>
+        repository.authority === 'github.com' &&
+        Option.exists(recognize(url), (parsed) => parsed.key === repository.key),
+    )
+  }
+
   return GitHostingProvider.of({
-    identity: ProviderIdentity.make({
-      id: 'github',
-      displayName: 'GitHub',
-      authenticationSource: 'github',
+    identity: providerIdentity,
+    destination,
+    browsingScope: (repository) =>
+      Option.isSome(destination(repository)) ? (repository.key.split('/')[0] ?? '') : '',
+    browseRepositories: Effect.fn('GitHub.browseRepositories')(function* (scope, page, mode) {
+      if (!Number.isSafeInteger(page) || page < 1) return yield* new InvalidContinuation()
+
+      if (scope !== '' && !/^[a-zA-Z0-9_-]+$/.test(scope))
+        return yield* new InvalidProviderResponse()
+      const current = yield* session(mode)
+
+      if (scope === '' && Option.isNone(current)) return yield* new AuthenticationRequired()
+      const token = Option.map(current, (value) => value.token)
+
+      const headers = {
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2026-03-10',
+        'User-Agent': 'Duff',
+      }
+
+      let path = '/user/repos'
+
+      if (scope !== '') {
+        const response = yield* http.get(`https://api.github.com/users/${scope}`, token, headers)
+
+        const owner = yield* Schema.decodeUnknownEffect(
+          Schema.Struct({ type: Schema.Literals(['User', 'Organization']) }),
+        )(response.body).pipe(Effect.mapError(() => new InvalidProviderResponse()))
+
+        path = owner.type === 'Organization' ? `/orgs/${scope}/repos` : `/users/${scope}/repos`
+      }
+
+      const response = yield* http.get(
+        `https://api.github.com${path}?sort=full_name&direction=asc&per_page=30&page=${page}`,
+        token,
+        headers,
+      )
+
+      const repositories = yield* Schema.decodeUnknownEffect(Schema.Array(Repository))(
+        response.body,
+      ).pipe(Effect.mapError(() => new InvalidProviderResponse()))
+
+      if (repositories.length > 30) return yield* new InvalidProviderResponse()
+
+      return RepositoryPage.make({
+        items: repositories.map((repository) => {
+          const repositoryIdentity = identity(repository.owner.login, repository.name)
+
+          return HostedRepository.make({
+            provider: providerIdentity,
+            repository: repositoryIdentity,
+            cloneUrl: `https://github.com/${repositoryIdentity.key}.git`,
+          })
+        }),
+        hasMore: /;\s*rel="[^"]*\bnext\b[^"]*"/.test(response.headers.link ?? ''),
+      })
     }),
     recognizeRemote: (remote) => Option.map(recognize(remote.destination), bind),
   })

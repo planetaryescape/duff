@@ -1,7 +1,10 @@
+import { type RepositoryCatalog, CatalogError } from '@duff/core/dashboard-repositories'
 import { type GitContext, GitContextError } from '@duff/core/git-context'
 import { type PullRequestReview } from '@duff/core/pull-request-review'
+import { type RepositoryDirectory } from '@duff/core/repository-directory'
 import { type BranchReview, ReviewError } from '@duff/core/review'
 import { type ReviewSession } from '@duff/core/review-session'
+import { type ReviewWorkspaces } from '@duff/core/review-workspaces'
 import { type ReviewSessions } from '@duff/core/saved-review-sessions'
 import { ReviewStorageError } from '@duff/core/saved-reviews'
 import { Cause, type Effect, type ManagedRuntime, Option } from 'effect'
@@ -10,7 +13,14 @@ import * as vscode from 'vscode'
 import { observeOperation, type Operation } from './telemetry/Telemetry'
 
 export type CommandRuntime = ManagedRuntime.ManagedRuntime<
-  BranchReview | GitContext | ReviewSession | PullRequestReview | ReviewSessions,
+  | BranchReview
+  | GitContext
+  | ReviewSession
+  | PullRequestReview
+  | ReviewSessions
+  | RepositoryCatalog
+  | RepositoryDirectory
+  | ReviewWorkspaces,
   never
 >
 
@@ -20,7 +30,14 @@ export async function runOperation<A, E>(
   work: Effect.Effect<
     A,
     E,
-    BranchReview | GitContext | ReviewSession | PullRequestReview | ReviewSessions
+    | BranchReview
+    | GitContext
+    | ReviewSession
+    | PullRequestReview
+    | ReviewSessions
+    | RepositoryCatalog
+    | RepositoryDirectory
+    | ReviewWorkspaces
   >,
   onFailure?: () => void,
   signal?: AbortSignal,
@@ -42,7 +59,9 @@ export async function runOperation<A, E>(
       ? error.value.message
       : Option.isSome(error) && error.value instanceof ReviewStorageError
         ? reviewStorageMessage(error.value)
-        : 'Operation failed. Refresh to retry; provider sign-in may be unavailable in this editor.'
+        : Option.isSome(error) && error.value instanceof CatalogError
+          ? 'The shared Duff catalog could not be read or updated. Check disk access and try again. Existing data has been preserved.'
+          : 'Operation failed. Refresh to retry; provider sign-in may be unavailable in this editor.'
 
   await vscode.window.showErrorMessage(`Duff: ${message}`)
 
@@ -54,7 +73,7 @@ export function reviewStorageMessage(error: ReviewStorageError): string {
     case 'busy':
       return 'Saved reviews are in use by another window. Close that workspace window and reload to resume.'
     case 'invalid':
-      return 'Saved review data is invalid. It has been preserved; restore a valid reviews.json before reloading.'
+      return 'Saved review data is invalid. It has been preserved; restore valid review storage before reloading.'
     case 'unavailable':
       return 'Saved reviews require a workspace with local editor storage. Open a folder and try again.'
     case 'write-failed':

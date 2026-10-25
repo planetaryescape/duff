@@ -114,7 +114,7 @@ export class PullRequestItem extends vscode.TreeItem {
       title: 'Review Pull Request Locally',
       arguments: [this],
     }
-    this.tooltip = `${pullRequest.source._tag === 'Available' ? `${pullRequest.source.repository.displayName}: ${pullRequest.source.ref.name}` : 'Source unavailable'}\n→ ${pullRequest.target.ref.name}\nPrepare an immutable local review. Missing revisions require fetch consent. Never switches branches.`
+    this.tooltip = `${pullRequest.source._tag === 'Available' ? `${pullRequest.source.repository.displayName}: ${pullRequest.source.ref.name}` : 'Source unavailable'}\n→ ${pullRequest.target.ref.name}\nOpen a pinned checkout in a separate review window. Missing revisions download automatically. Your original repository stays unchanged.`
   }
 }
 

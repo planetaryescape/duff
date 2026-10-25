@@ -1,5 +1,6 @@
 import { type Effect, type Option, type Redacted, Schema } from 'effect'
 
+import { type RepositoryPage } from '../dashboard/RepositoryDirectory'
 import { type GitContextSnapshot } from '../git-context/GitContext'
 
 export type Remote = GitContextSnapshot['remotes'][number]
@@ -157,6 +158,14 @@ export const ProviderRepository = {
 export interface GitHostingProvider {
   readonly identity: ProviderIdentity
   readonly recognizeRemote: (remote: Remote) => Option.Option<ProviderRepository>
+  /** Canonical credential-free transport destination, validated by the provider. */
+  readonly destination?: (repository: RepositoryIdentity) => Option.Option<string>
+  readonly browsingScope?: (repository: RepositoryIdentity) => string
+  readonly browseRepositories?: (
+    scope: string,
+    page: number,
+    mode: 'silent' | 'connect',
+  ) => Effect.Effect<RepositoryPage, DiscoveryError>
 }
 
 /** Name a provider implementation while preserving its structural substitution seam. */

@@ -15,7 +15,10 @@
     "./provider-authentication": "./src/pull-requests/ProviderAuthentication.ts",
     "./azure-cli-authentication": "./src/pull-requests/azure-devops/AzureCliAuthentication.ts",
     "./github-credentials": "./src/pull-requests/github/GitHubCredentials.ts",
-    "./review-session": "./src/review-session/ReviewSession.ts"
+    "./review-session": "./src/review-session/ReviewSession.ts",
+    "./dashboard-repositories": "./src/dashboard/Repositories.ts",
+    "./repository-directory": "./src/dashboard/RepositoryDirectory.ts",
+    "./review-workspaces": "./src/dashboard/ReviewWorkspaces.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

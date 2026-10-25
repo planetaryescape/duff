@@ -1,5 +1,8 @@
 import { PullRequestReview, type PreparationState } from '@duff/core/pull-request-review'
+import { PullRequestSelection } from '@duff/core/pull-requests'
+import { RepositoryDirectory } from '@duff/core/repository-directory'
 import { ReviewSession } from '@duff/core/review-session'
+import { ReviewWorkspaces } from '@duff/core/review-workspaces'
 import { ReviewSessions } from '@duff/core/saved-review-sessions'
 import { type SavedReview } from '@duff/core/saved-reviews'
 import { Effect, Fiber, Option, Stream } from 'effect'
@@ -66,7 +69,39 @@ export function registerPullRequestReviewCommands(
                 restored = true
                 const root = state.snapshot.value.root
                 yield* Effect.promise(() =>
-                  runOperation(runtime, 'Duff.preparePullRequest', service.restore(root)),
+                  runOperation(
+                    runtime,
+                    'Duff.preparePullRequest',
+                    Effect.gen(function* () {
+                      const workspaces = yield* ReviewWorkspaces
+                      const prepared = yield* workspaces.load(root)
+
+                      if (Option.isNone(prepared)) return yield* service.restore(root)
+                      const sessions = yield* ReviewSessions
+                      const catalog = yield* sessions.list()
+
+                      if (catalog.sessions.length) return yield* service.restore(root)
+                      const workspace = prepared.value
+                      const target = workspace.resolved.revisions.target.remote
+                      const directory = yield* RepositoryDirectory
+
+                      const hosted = Option.flatMap(target, (remote) =>
+                        directory.recognize(remote.destination),
+                      )
+
+                      if (Option.isNone(hosted)) return
+                      yield* service.openPrepared(
+                        PullRequestSelection.make({
+                          provider: hosted.value.provider.id,
+                          repository: hosted.value.repository,
+                          id: workspace.resolved.pullRequest.id,
+                          label: `#${workspace.resolved.pullRequest.id} ${workspace.resolved.pullRequest.title}`,
+                        }),
+                        workspace.resolved,
+                        workspace.review,
+                      )
+                    }),
+                  ),
                 )
               }
             }),
@@ -153,7 +188,8 @@ export function registerPullRequestReviewCommands(
     },
     vscode.commands.registerCommand('duff.reviewPullRequest', async (item: unknown) => {
       if (!(item instanceof PullRequestItem)) return
-      await runOperation(
+
+      const hosted = await runOperation(
         runtime,
         'Duff.preparePullRequest',
         Effect.gen(function* () {
@@ -167,15 +203,24 @@ export function registerPullRequestReviewCommands(
             state.snapshot.value.root !== item.root
           )
             return
-          const service = yield* PullRequestReview
-          yield* service.repositoryChanged(
-            Option.some(state.directory),
-            Option.some(state.snapshot.value.root),
-          )
-          yield* service.start(state.snapshot.value, item.selection)
+          const directory = yield* RepositoryDirectory
+
+          for (const remote of state.snapshot.value.remotes) {
+            const hosted = directory.recognize(remote.destination)
+
+            if (
+              Option.isSome(hosted) &&
+              hosted.value.provider.id === item.selection.provider &&
+              hosted.value.repository.authority === item.selection.repository.authority &&
+              hosted.value.repository.key === item.selection.repository.key
+            )
+              return hosted.value
+          }
         }),
       )
-      await vscode.commands.executeCommand('duff.files.focus')
+
+      if (hosted)
+        await vscode.commands.executeCommand('duff.openReviewWorkspace', hosted, item.selection.id)
     }),
     vscode.commands.registerCommand('duff.fetchReviewRevisions', async () => {
       const before = await runtime.runPromise(PullRequestReview.use((service) => service.current()))
@@ -234,6 +279,30 @@ export function registerPullRequestReviewCommands(
             state.snapshot.value.root !== current.accepted.value.review.root
           )
             return
+          const accepted = current.accepted.value
+          const workspaces = yield* ReviewWorkspaces
+          const managed = yield* workspaces.load(accepted.review.root)
+
+          if (Option.isSome(managed)) {
+            const directory = yield* RepositoryDirectory
+
+            const hosted = Option.flatMap(
+              managed.value.resolved.revisions.target.remote,
+              (remote) => directory.recognize(remote.destination),
+            )
+
+            if (Option.isSome(hosted))
+              yield* Effect.promise(() =>
+                vscode.commands.executeCommand(
+                  'duff.openReviewWorkspace',
+                  hosted.value,
+                  accepted.selection.id,
+                ),
+              )
+
+            return
+          }
+
           yield* service.start(state.snapshot.value, current.accepted.value.selection, 'update')
         }),
       ),
