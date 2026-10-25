@@ -18,6 +18,7 @@
     "./review-session": "./src/review-session/ReviewSession.ts",
     "./dashboard-repositories": "./src/dashboard/Repositories.ts",
     "./dashboard-preferences": "./src/dashboard/DashboardPreferences.ts",
+    "./dashboard-data": "./src/dashboard/DashboardData.ts",
     "./repository-directory": "./src/dashboard/RepositoryDirectory.ts",
     "./review-workspaces": "./src/dashboard/ReviewWorkspaces.ts"
   },
@@ -28,6 +29,7 @@
     "@effect/platform-node": "4.0.5",
     "@effected/commands": "0.13.0",
     "@effected/git": "0.22.0",
+    "diff": "9.0.0",
     "effect": "4.0.5"
   }
 }

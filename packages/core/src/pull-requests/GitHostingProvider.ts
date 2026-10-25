@@ -69,7 +69,10 @@ export const OpenPullRequest = Schema.Struct({
 
 export interface OpenPullRequest extends Schema.Schema.Type<typeof OpenPullRequest> {}
 
-export const ChangeCount = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+export const ChangeCount = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(0),
+  Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER),
+)
 
 /** Only inert, bounded raster images cross into the editor webview. */
 export const AvatarImage = Schema.String.check(
@@ -85,6 +88,43 @@ export const PullRequestDetails = Schema.Struct({
 })
 
 export interface PullRequestDetails extends Schema.Schema.Type<typeof PullRequestDetails> {}
+
+export const ComparisonIdentity = Schema.Struct({
+  providerId: Schema.NonEmptyString,
+  authority: Schema.NonEmptyString,
+  targetRepository: RepositoryIdentity,
+  sourceRepository: RepositoryIdentity,
+  pullRequestId: Schema.NonEmptyString,
+  targetRevision: PullRequestRef.fields.revision.value,
+  sourceRevision: PullRequestRef.fields.revision.value,
+  baseRevision: PullRequestRef.fields.revision.value,
+  mode: Schema.Literals(['merge-base-v1']),
+})
+
+export interface ComparisonIdentity extends Schema.Schema.Type<typeof ComparisonIdentity> {}
+
+export const ChangeStatistics = Schema.Struct({
+  comparison: ComparisonIdentity,
+  filesChanged: Schema.Option(ChangeCount),
+  lines: Schema.Union([
+    Schema.TaggedStruct('Complete', { additions: ChangeCount, deletions: ChangeCount }),
+    Schema.TaggedStruct('Unavailable', {
+      reason: Schema.Literals([
+        'unsupported-comparison',
+        'incomplete-response',
+        'binary-content',
+        'work-limit-exceeded',
+      ]),
+    }),
+  ]),
+})
+
+export interface ChangeStatistics extends Schema.Schema.Type<typeof ChangeStatistics> {}
+
+export class ComparisonChanged extends Schema.TaggedError<ComparisonChanged>()(
+  'ComparisonChanged',
+  {},
+) {}
 
 export const PullRequestPage = Schema.Struct({
   items: Schema.Array(OpenPullRequest),
@@ -177,6 +217,12 @@ export interface ProviderRepository {
   readonly connectAuthentication: () => Effect.Effect<Authentication, AuthenticationError>
   readonly getPullRequest: (id: string) => Effect.Effect<OpenPullRequest, DiscoveryError>
   readonly getPullRequestDetails: (id: string) => Effect.Effect<PullRequestDetails, DiscoveryError>
+  readonly getPullRequestMetadata?: (
+    id: string,
+  ) => Effect.Effect<PullRequestDetails, DiscoveryError>
+  readonly getPullRequestStatistics?: (
+    expected: OpenPullRequest,
+  ) => Effect.Effect<ChangeStatistics, DiscoveryError | ComparisonChanged>
   /** The key is provider-owned, never a webview-supplied destination for authenticated HTTP. */
   readonly getAvatar: (key: string) => Effect.Effect<Option.Option<string>, DiscoveryError>
   readonly listPullRequests: (input: {

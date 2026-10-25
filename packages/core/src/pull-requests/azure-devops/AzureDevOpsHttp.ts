@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 
-import { Clock, DateTime, Effect, Option, Redacted, Schema } from 'effect'
+import { Cache, Clock, DateTime, Effect, Option, Redacted, Schema } from 'effect'
 
 import { HostedRepository } from '../../dashboard/Repositories'
 import { RepositoryPage } from '../../dashboard/RepositoryDirectory'
@@ -9,6 +9,9 @@ import {
   AuthenticationRequired,
   AvatarImage,
   ChangeCount,
+  type ChangeStatistics,
+  type ComparisonIdentity,
+  type DiscoveryError,
   GitHostingProvider,
   InvalidContinuation,
   InvalidProviderResponse,
@@ -22,7 +25,8 @@ import {
   RepositoryIdentity,
 } from '../GitHostingProvider'
 import { ProviderAuthentication } from '../ProviderAuthentication'
-import { ProviderHttp } from '../ProviderHttp'
+import { ProviderHttp, type ProviderResponse } from '../ProviderHttp'
+import { azureStatistics } from './AzureStatistics'
 
 const scopes = ['499b84ac-1321-427f-aa17-267ca6975798/user_impersonation']
 
@@ -174,6 +178,26 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
 > {
   const authentication = yield* ProviderAuthentication
   const http = yield* ProviderHttp
+
+  const completed = yield* Cache.make<string, ChangeStatistics>({
+    capacity: 100,
+    lookup: () => Effect.die(new Error('Completed comparison missing.')),
+  })
+
+  const comparisonKey = (value: ComparisonIdentity) =>
+    JSON.stringify([
+      value.providerId,
+      value.authority,
+      value.targetRepository.authority,
+      value.targetRepository.key,
+      value.sourceRepository.authority,
+      value.sourceRepository.key,
+      value.pullRequestId,
+      value.targetRevision,
+      value.sourceRevision,
+      value.baseRevision,
+      value.mode,
+    ])
 
   const continuations = new Map<
     string,
@@ -458,6 +482,76 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
         inspectAuthentication: () => inspect('silent'),
         connectAuthentication: () => inspect('connect'),
         listPullRequests: (input) => read(input).pipe(Effect.map((result) => result.page)),
+        getPullRequestStatistics: Effect.fn('AzureDevOps.getPullRequestStatistics')(
+          function* (expected) {
+            if (
+              expected.target.repository.key !== boundIdentity.key ||
+              !/^[1-9][0-9]*$/.test(expected.id)
+            )
+              return yield* new InvalidProviderResponse()
+            const session = yield* authentication.session('microsoft', scopes, 'silent')
+
+            if (Option.isNone(session)) return yield* new AuthenticationRequired()
+
+            const guarded = Effect.fn('AzureDevOps.statisticsRequest')(function* (
+              request: Effect.Effect<ProviderResponse, DiscoveryError>,
+            ) {
+              const now = yield* Clock.currentTimeMillis
+              const cooldown = cooldowns.get(boundIdentity.key) ?? 0
+
+              if (cooldown > now)
+                return yield* new RateLimited({
+                  retryAfterSeconds: Option.some((cooldown - now) / 1000),
+                })
+
+              return yield* request.pipe(
+                Effect.tapError(
+                  Effect.fn('AzureDevOps.statisticsRateLimit')(function* (error) {
+                    if (error._tag === 'RateLimited' && Option.isSome(error.retryAfterSeconds))
+                      cooldowns.set(
+                        boundIdentity.key,
+                        (yield* Clock.currentTimeMillis) + error.retryAfterSeconds.value * 1000,
+                      )
+                  }),
+                ),
+              )
+            })
+
+            const post = http.post
+
+            return yield* azureStatistics(
+              {
+                get: (url, token, headers, format, maxResponseBytes) =>
+                  guarded(http.get(url, token, headers, format, maxResponseBytes)),
+                post: (url, token, body) => guarded(post(url, token, body)),
+              },
+              Option.some(session.value.token),
+              endpoint,
+              expected,
+              {
+                get: (comparison) => Cache.getOption(completed, comparisonKey(comparison)),
+                set: (value) => Cache.set(completed, comparisonKey(value.comparison), value),
+              },
+            )
+          },
+        ),
+        getPullRequestMetadata: Effect.fn('AzureDevOps.getPullRequestMetadata')(function* (id) {
+          const result = yield* read(
+            { scope: 'repository', state: 'open', cursor: Option.none() },
+            id,
+          )
+
+          const pullRequest = result.page.items[0]
+
+          if (!pullRequest) return yield* new InvalidProviderResponse()
+
+          return PullRequestDetails.make({
+            pullRequest,
+            description: result.description,
+            filesChanged: Option.none(),
+            linesChanged: Option.none(),
+          })
+        }),
         getPullRequestDetails: Effect.fn('AzureDevOps.getPullRequestDetails')(function* (id) {
           const result = yield* read(
             { scope: 'repository', state: 'open', cursor: Option.none() },

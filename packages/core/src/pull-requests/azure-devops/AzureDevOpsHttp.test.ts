@@ -53,13 +53,13 @@ const make = Effect.fn('AzureDevOps.Test.make')(function* (
   auth: ProviderAuthentication['Service'] = {
     session: () => Effect.succeed(Option.some(session())),
   },
-  http: ProviderHttp['Service'] = {
+  http: Pick<ProviderHttp['Service'], 'get'> = {
     get: () => Effect.succeed({ body: { count: 0, value: [] }, headers: {} }),
   },
 ) {
   return yield* makeAzureDevOpsHttp.pipe(
     Effect.provideService(ProviderAuthentication, auth),
-    Effect.provideService(ProviderHttp, http),
+    Effect.provideService(ProviderHttp, { ...http, post: () => Effect.die('Unexpected POST') }),
   )
 })
 

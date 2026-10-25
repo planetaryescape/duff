@@ -27,6 +27,12 @@ export class ProviderHttp extends Context.Service<
       token: Option.Option<Redacted.Redacted>,
       headers?: Readonly<Record<string, string>>,
       format?: 'json' | 'image',
+      maxResponseBytes?: number,
+    ) => Effect.Effect<ProviderResponse, DiscoveryError>
+    readonly post: (
+      url: string,
+      token: Option.Option<Redacted.Redacted>,
+      body: Schema.Json,
     ) => Effect.Effect<ProviderResponse, DiscoveryError>
   }
 >()('duff/ProviderHttp') {
@@ -41,10 +47,24 @@ export class ProviderHttp extends Context.Service<
           token: Option.Option<Redacted.Redacted>,
           headers: Readonly<Record<string, string>> = {},
           format: 'json' | 'image' = 'json',
+          body?: Schema.Json,
+          maxResponseBytes: number = 4 * 1024 * 1024,
         ) {
-          let request = HttpClientRequest.get(url).pipe(
-            HttpClientRequest.setHeaders({ Accept: 'application/json', ...headers }),
+          if (
+            !Number.isSafeInteger(maxResponseBytes) ||
+            maxResponseBytes < 1 ||
+            maxResponseBytes > 4 * 1024 * 1024
           )
+            return yield* new InvalidProviderResponse()
+
+          let request = (
+            body === undefined ? HttpClientRequest.get(url) : HttpClientRequest.post(url)
+          ).pipe(HttpClientRequest.setHeaders({ Accept: 'application/json', ...headers }))
+
+          if (body !== undefined)
+            request = yield* HttpClientRequest.bodyJson(request, body).pipe(
+              Effect.mapError(() => new InvalidProviderResponse()),
+            )
 
           if (Option.isSome(token))
             request = request.pipe(HttpClientRequest.bearerToken(token.value))
@@ -89,7 +109,7 @@ export class ProviderHttp extends Context.Service<
           if (response.status >= 500 || response.status === 408)
             return yield* new ProviderUnavailable()
 
-          if (format === 'json' && [301, 302, 307, 308].includes(response.status))
+          if (format === 'json' && [301, 302, 303, 307, 308].includes(response.status))
             return yield* new ProviderRedirected(
               response.headers.location
                 ? { location: Redacted.make(response.headers.location) }
@@ -97,6 +117,16 @@ export class ProviderHttp extends Context.Service<
             )
 
           if (response.status < 200 || response.status >= 300)
+            return yield* new InvalidProviderResponse()
+
+          const declaredLength = response.headers['content-length']
+
+          if (
+            format === 'json' &&
+            declaredLength !== undefined &&
+            /^\d+$/.test(declaredLength) &&
+            Number(declaredLength) > maxResponseBytes
+          )
             return yield* new InvalidProviderResponse()
 
           if (format === 'image') {
@@ -110,7 +140,8 @@ export class ProviderHttp extends Context.Service<
             yield* Stream.runForEach(response.stream, (chunk) => {
               bytes += chunk.byteLength
 
-              if (bytes > 256 * 1024) return Effect.fail(new InvalidProviderResponse())
+              if (bytes > Math.min(256 * 1024, maxResponseBytes))
+                return Effect.fail(new InvalidProviderResponse())
               chunks.push(chunk)
 
               return Effect.void
@@ -124,16 +155,31 @@ export class ProviderHttp extends Context.Service<
             })
           }
 
-          const body = yield* response.json.pipe(
-            Effect.mapError(() => new InvalidProviderResponse()),
-          )
+          const chunks: Uint8Array[] = []
+          let bytes = 0
+          yield* Stream.runForEach(response.stream, (chunk) => {
+            bytes += chunk.byteLength
 
-          return ProviderResponse.make({ body, headers: response.headers })
+            if (bytes > maxResponseBytes) return Effect.fail(new InvalidProviderResponse())
+            chunks.push(chunk)
+
+            return Effect.void
+          }).pipe(Effect.mapError(() => new InvalidProviderResponse()))
+
+          const decoded = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(
+            Buffer.concat(chunks).toString('utf8'),
+          ).pipe(Effect.mapError(() => new InvalidProviderResponse()))
+
+          return ProviderResponse.make({ body: decoded, headers: response.headers })
         },
         Effect.timeoutOrElse({ duration: '20 seconds', orElse: () => new ProviderUnavailable() }),
       )
 
-      return ProviderHttp.of({ get })
+      return ProviderHttp.of({
+        get: (url, token, headers, format, maxResponseBytes) =>
+          get(url, token, headers, format, undefined, maxResponseBytes),
+        post: (url, token, body) => get(url, token, {}, 'json', body),
+      })
     }),
   )
 }

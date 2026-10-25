@@ -75,3 +75,9 @@ Status: implemented on the feature branch under D013; verification and delivery 
 Scope: provider-neutral directory/catalog/workspace services, bulk local/remote repository picker, lazy collection suggestions, repository-first full-screen dashboard, host-local cross-editor SQLite storage, automatic pinned downloads and dedicated editable review windows.
 Acceptance: add several repositories together; retain local-only entries; browse supported providers without UI provider routing; open historical and current PRs in complete detached checkouts; preserve edits on unchanged reopen and separate new revisions; share watchlist/progress between editor profiles without storing credentials; reject stale progress writes and preserve files on cancellation/failure.
 Qualification: real temporary Git and SQLite tests plus installed-artifact Linux VSCodium checks. Windows/macOS native behavior and authenticated Azure discovery remain unqualified. No cloud sync, automatic cleanup, dependency installation, submodules, provider mutations or guaranteed language-server setup.
+
+## S11: Lazy PR statistics and focus refresh
+
+Status: implemented locally under [D015](blueprint/02-decision-log.md#d015-lazy-pr-statistics-and-focus-triggered-refresh); not committed or released. See [delivery evidence](implementation-log.md#2026-10-25-lazy-pr-statistics-and-focus-refresh).
+Scope: selected-only Azure line totals, independent metadata loading, bounded revision-keyed in-memory caching, retained refresh/stale state, and shared freshness checks on dashboard/window focus and repository selection.
+Acceptance: the [accepted facts](../goals/azure-pr-statistics/facts.md) and [approved plan](../goals/azure-pr-statistics/plan.md) define observable behavior and verification. Live API qualification is distinct from supplied-service tests; partial provider responses must never appear as complete totals.

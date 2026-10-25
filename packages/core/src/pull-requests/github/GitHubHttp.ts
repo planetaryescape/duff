@@ -9,6 +9,8 @@ import {
   AuthenticationRequired,
   AvatarImage,
   ChangeCount,
+  ChangeStatistics,
+  ComparisonChanged,
   GitHubAuthenticationError,
   InvalidContinuation,
   InvalidProviderResponse,
@@ -432,6 +434,79 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
           description: fields.body ?? '',
           filesChanged: Option.some(fields.changed_files),
           linesChanged: Option.some({ additions: fields.additions, deletions: fields.deletions }),
+        })
+      }),
+      getPullRequestStatistics: Effect.fn('GitHub.getPullRequestStatistics')(function* (expected) {
+        if (
+          expected.source._tag !== 'Available' ||
+          Option.isNone(expected.source.ref.revision) ||
+          Option.isNone(expected.target.ref.revision)
+        )
+          return yield* new ComparisonChanged()
+
+        const { page, body } = yield* read(
+          { scope: 'repository', state: 'open', cursor: Option.none() },
+          expected.id,
+        )
+
+        const actual = page.items[0]
+
+        if (
+          !actual ||
+          actual.source._tag !== 'Available' ||
+          actual.source.repository.key !== expected.source.repository.key ||
+          !Option.contains(actual.source.ref.revision, expected.source.ref.revision.value) ||
+          !Option.contains(actual.target.ref.revision, expected.target.ref.revision.value)
+        )
+          return yield* new ComparisonChanged()
+
+        const fields = yield* Schema.decodeUnknownEffect(DetailFields)(body).pipe(
+          Effect.mapError(() => new InvalidProviderResponse()),
+        )
+
+        const current = yield* session('silent')
+
+        const response = yield* http
+          .get(
+            `https://api.github.com/repos/${repository.key}/compare/${expected.target.ref.revision.value}...${expected.source.ref.revision.value}?per_page=1`,
+            Option.map(current, (value) => value.token),
+            {
+              Accept: 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2026-03-10',
+              'User-Agent': 'Duff',
+            },
+          )
+          .pipe(
+            Effect.tapError(
+              Effect.fn('GitHub.statisticsRateLimit')(function* (error) {
+                if (error._tag === 'RateLimited' && Option.isSome(error.retryAfterSeconds))
+                  cooldown = (yield* Clock.currentTimeMillis) + error.retryAfterSeconds.value * 1000
+              }),
+            ),
+          )
+
+        const comparison = yield* Schema.decodeUnknownEffect(
+          Schema.Struct({
+            merge_base_commit: Schema.Struct({
+              sha: Schema.String.check(Schema.isPattern(/^[a-f0-9]{40}$/i)),
+            }),
+          }),
+        )(response.body).pipe(Effect.mapError(() => new InvalidProviderResponse()))
+
+        return ChangeStatistics.make({
+          comparison: {
+            providerId: 'github',
+            authority: repository.authority,
+            sourceRepository: expected.source.repository,
+            targetRepository: repository,
+            pullRequestId: expected.id,
+            sourceRevision: expected.source.ref.revision.value,
+            targetRevision: expected.target.ref.revision.value,
+            baseRevision: comparison.merge_base_commit.sha,
+            mode: 'merge-base-v1',
+          },
+          filesChanged: Option.some(fields.changed_files),
+          lines: { _tag: 'Complete', additions: fields.additions, deletions: fields.deletions },
         })
       }),
       getAvatar: Effect.fn('GitHub.getAvatar')(function* (key) {

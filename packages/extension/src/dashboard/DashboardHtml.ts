@@ -1,3 +1,4 @@
+import { dashboardDetailsScript } from './DashboardDetailsHtml'
 import { dashboardLayoutScript, dashboardLayoutStyle, dashboardSplitters } from './DashboardLayout'
 import { descriptionMarkdownStyle } from './DescriptionMarkdownStyle'
 import { repositoryOrderingScript, repositoryOrderingStyle } from './RepositoryOrdering'
@@ -57,15 +58,7 @@ const safe=typeof image==='string'&&/^data:image\\/(?:png|jpeg|gif|webp);base64,
 return '<span class="avatar" aria-hidden="true" title="Opened by '+escape(name)+'" data-avatar="'+escape(pr.id)+'">'+escape(initials)+(safe?'<img alt="" src="'+escape(image)+'">':'')+'</span>';
 };
 const branch=(ref)=>ref.name.replace('refs/heads/','');
-const metadata=(pr)=>{
-const state=model.details;
-if(state?._tag==='Failed')return '<div class="detail-status" role="status">Could not load PR details. '+button('Retry','details',pr.id)+'</div>';
-if(state?._tag!=='Loaded'||state.value.pullRequest.id!==pr.id)return '<p class="muted detail-status" role="status">Loading PR details…</p>';
-const details=state.value;
-const files=details.filesChanged._tag==='Some'?details.filesChanged.value:undefined;
-const lines=details.linesChanged._tag==='Some'?details.linesChanged.value:undefined;
-return '<dl class="change-stats" aria-label="Change summary"><div><dt>Files changed</dt><dd>'+escape(files??'—')+'</dd></div><div><dt>Lines added</dt><dd class="'+(lines?'added':'muted')+'">'+(lines?'+'+escape(lines.additions):'—')+'</dd></div><div><dt>Lines deleted</dt><dd class="'+(lines?'deleted':'muted')+'">'+(lines?'−'+escape(lines.deletions):'—')+'</dd></div></dl>'+(files===undefined?'<small>File count unavailable.</small>':'')+(!lines?'<p class="muted">Line totals unavailable from this provider.</p>':'')+'<h3>Description</h3><div class="description">'+state.descriptionHtml+'</div>';
-};
+${dashboardDetailsScript}
 const render=()=>{
 if(!model||draggedRepository)return;
 const focusedRepository=document.activeElement?.dataset?.action==='repository'?document.activeElement.dataset.id:undefined;
@@ -145,7 +138,7 @@ const scope=JSON.stringify([model.mode,model.repositoryId,model.filter]);
 if(scope!==queryScope){query=model.mode==='dashboard'?(model.query??''):'';queryScope=scope;}
 render();
 }});
-document.addEventListener('click',(event)=>{const target=event.target.closest('[data-action]');if(target&&!target.disabled){if(['repository','source','browse','suggestion','state','picker','dashboard','add'].includes(target.dataset.action))query='';send(target.dataset.action,target.dataset.id);}});
+document.addEventListener('click',(event)=>{const target=event.target.closest('[data-action]');if(target&&!target.disabled){if(['source','browse','suggestion','state','picker','dashboard','add'].includes(target.dataset.action)||(target.dataset.action==='repository'&&target.dataset.id!==model.repositoryId))query='';send(target.dataset.action,target.dataset.id);}});
 document.addEventListener('change',(event)=>{if(event.target.dataset.select)send('toggle',event.target.dataset.select);});
 document.addEventListener('error',(event)=>{if(event.target.tagName==='IMG')event.target.remove();},true);
 document.addEventListener('input',(event)=>{if(event.target.id==='filter'){const caret=event.target.selectionStart;query=event.target.value.slice(0,1000);if(model.mode==='dashboard'&&model.repositoryId)bridge.postMessage({action:'preference',change:{_tag:'SetQuery',repositoryId:model.repositoryId,query}});render();const input=document.getElementById('filter');input?.focus();if(input&&caret!==null)input.setSelectionRange(caret,caret);}});

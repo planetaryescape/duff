@@ -1,0 +1,10 @@
+# Accepted facts
+
+- The selected Azure DevOps PR shows accurate files changed, lines added, and lines deleted when Azure supplies a complete comparison. Implementation first verifies the file-diff endpoint and comparison semantics using the existing authentication path.
+- Expensive statistics are fetched only for the selected PR, never eagerly for every PR or repository. Metadata and description remain usable while statistics load.
+- A bounded in-memory cache reuses successful statistics for the same provider, repository, PR, and exact comparison revisions. Cached results display immediately when returning to a selection; restarting the extension may clear the cache.
+- Freshness checks run when the dashboard becomes active, when its editor window regains focus while the dashboard is active, and when a repository is selected or reselected. Merely moving keyboard focus across repository buttons does not fetch data.
+- Focus and repository selection share a freshness policy, proposed at 60 seconds, and suppress duplicate concurrent requests. Refresh checks current PR metadata and recomputes statistics only when the comparison changes or a previous statistics attempt was unavailable. Explicit Refresh bypasses the freshness delay.
+- Missing, partial, binary-only, unsupported, or failed statistics are never presented as a complete zero total. A refresh failure retains the last successful result with a stale indication; results from known different revisions are not labelled current.
+- Switching PRs or repositories cannot let a late response overwrite the current selection. Closing the dashboard or deactivating the extension releases owned background work. No periodic polling runs while the dashboard is hidden.
+- Delivery includes provider and cache lifecycle tests, passing repository check/test/build commands, and a clean VSCodium dashboard exercise covering focus, repository switching, cached rendering, and failure states. Existing GitHub statistics and immutable review behavior remain intact.

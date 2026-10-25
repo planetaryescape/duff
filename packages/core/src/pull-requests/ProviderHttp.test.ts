@@ -5,6 +5,50 @@ import { TestClock } from 'effect/testing'
 
 import { ProviderHttp } from './ProviderHttp'
 
+it.effect(
+  'enforces the caller JSON response bound before decoding and refuses invalid bounds',
+  () =>
+    Effect.gen(function* () {
+      let requests = 0
+
+      const client = HttpClient.make((request) => {
+        requests++
+        expect(request.method).toBe('GET')
+
+        return Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            new Response(JSON.stringify({ content: 'x'.repeat(100) })),
+          ),
+        )
+      })
+
+      yield* Effect.gen(function* () {
+        const http = yield* ProviderHttp
+        expect(
+          yield* http
+            .get('https://example.invalid/items', Option.none(), {}, 'json', 32)
+            .pipe(Effect.result),
+        ).toMatchObject({ _tag: 'Failure', failure: { _tag: 'InvalidProviderResponse' } })
+        expect(
+          yield* http
+            .get('https://example.invalid/items', Option.none(), {}, 'json', 256)
+            .pipe(Effect.result),
+        ).toMatchObject({ _tag: 'Success' })
+
+        for (const bound of [0, -1, 1.5, 4 * 1024 * 1024 + 1])
+          yield* http
+            .get('https://example.invalid/items', Option.none(), {}, 'json', bound)
+            .pipe(Effect.result)
+        expect(requests).toBe(2)
+      }).pipe(
+        Effect.provide(
+          ProviderHttp.layer.pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client))),
+        ),
+      )
+    }),
+)
+
 it.effect('classifies HTTP failures before decoding and hides raw response diagnostics', () =>
   Effect.gen(function* () {
     const fixtures: ReadonlyArray<
