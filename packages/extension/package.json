@@ -17,6 +17,7 @@
   ],
   "activationEvents": [
     "onStartupFinished",
+    "onWebviewPanel:duff.dashboard",
     "onView:duff.files"
   ],
   "main": "./dist/extension.js",

@@ -1,5 +1,6 @@
 import { dashboardLayoutScript, dashboardLayoutStyle, dashboardSplitters } from './DashboardLayout'
 import { descriptionMarkdownStyle } from './DescriptionMarkdownStyle'
+import { repositoryOrderingScript, repositoryOrderingStyle } from './RepositoryOrdering'
 
 /** A local-only webview with escaped labels and host-rendered, inert description Markdown. */
 export function dashboardHtml(nonce: string): string {
@@ -14,6 +15,7 @@ export function dashboardHtml(nonce: string): string {
 .author{display:flex;align-items:center;gap:8px;margin-top:8px}.avatar{position:relative;display:inline-grid;place-items:center;flex:none;width:28px;height:28px;border-radius:50%;background:var(--vscode-badge-background,#555);color:var(--vscode-badge-foreground,#fff);font-size:11px;overflow:hidden}.avatar img{position:absolute;width:100%;height:100%;object-fit:cover}.author small{margin:0}.change-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:24px 0 8px}.change-stats div{display:flex;flex-direction:column-reverse}.change-stats dt{font-size:11px;color:var(--vscode-descriptionForeground)}.change-stats dd{margin:0;font-size:20px;font-variant-numeric:tabular-nums}.added{color:var(--vscode-gitDecoration-addedResourceForeground,#81b88b)}.deleted{color:var(--vscode-gitDecoration-deletedResourceForeground,#c74e39)}.description{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6;margin:8px 0 24px}.detail-status{padding:16px 0}.detail-author{margin:16px 0}
 ${dashboardLayoutStyle}
 ${descriptionMarkdownStyle}
+${repositoryOrderingStyle}
 </style></head><body><div id="app"></div><script nonce="${nonce}">
 {
 const bridge=acquireVsCodeApi();
@@ -21,6 +23,8 @@ ${dashboardLayoutScript}
 let model;
 let query='';
 let avatarObserver;
+let queryScope;
+${repositoryOrderingScript}
 const requestedAvatars=new Set();
 const escape=(value)=>String(value??'').replace(/[&<>"']/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const hosted=(repo)=>repo.hosting._tag==='Some'?repo.hosting.value:undefined;
@@ -44,7 +48,8 @@ const lines=details.linesChanged._tag==='Some'?details.linesChanged.value:undefi
 return '<dl class="change-stats" aria-label="Change summary"><div><dt>Files changed</dt><dd>'+escape(files??'—')+'</dd></div><div><dt>Lines added</dt><dd class="'+(lines?'added':'muted')+'">'+(lines?'+'+escape(lines.additions):'—')+'</dd></div><div><dt>Lines deleted</dt><dd class="'+(lines?'deleted':'muted')+'">'+(lines?'−'+escape(lines.deletions):'—')+'</dd></div></dl>'+(files===undefined?'<small>File count unavailable.</small>':'')+(!lines?'<p class="muted">Line totals unavailable from this provider.</p>':'')+'<h3>Description</h3><div class="description">'+state.descriptionHtml+'</div>';
 };
 const render=()=>{
-if(!model)return;
+if(!model||draggedRepository)return;
+const focusedRepository=document.activeElement?.dataset?.action==='repository'?document.activeElement.dataset.id:undefined;
 if(!model.pulls.length)requestedAvatars.clear();
 const scroll=Object.entries({
 nav:model.mode,
@@ -64,7 +69,8 @@ nav+='<button data-action="source" data-id="local" aria-current="'+(model.source
 for(const provider of model.providers)nav+='<button data-action="browse" data-id="'+escape(provider.id)+'" aria-current="'+model.sources.some((source)=>source.id===model.sourceId&&source.providerId===provider.id)+'">'+escape(provider.displayName)+'</button>';
 if(model.sources.length){nav+='<h3>Collections</h3>';for(const source of model.sources)nav+=button(source.label,'suggestion',source.id,source.id===model.sourceId?'selected':'');nav+='<small>Suggested from Git remotes or browsed by you. Explore to load repositories; nothing is added automatically.</small>';}
 }else{
-for(const repo of model.repositories)nav+='<button data-action="repository" data-id="'+escape(repo.id)+'" aria-current="'+(repo.id===model.repositoryId)+'">'+escape(repo.name)+(hosted(repo)?'':' <small>Local only</small>')+'</button>';
+nav+='<p class="sr-only" id="repository-order-help">Drag to reorder repositories, or focus a repository and press Alt plus Up or Down.</p><div class="sr-only" id="repository-order-status" role="status" aria-live="polite"></div>';
+for(const repo of model.repositories)nav+='<button class="repository-button" draggable="true" data-action="repository" data-id="'+escape(repo.id)+'" aria-describedby="repository-order-help" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown" aria-current="'+(repo.id===model.repositoryId)+'"><span class="repository-grip" aria-hidden="true">⠿</span><span class="repository-label">'+escape(repo.name)+(hosted(repo)?'':' <small>Local only</small>')+'</span></button>';
 nav+=button('+ Add repositories','picker',undefined,'wide');
 }
 let body='';let detail='';
@@ -101,6 +107,7 @@ else detail='<h2>'+escape(current.name)+'</h2><p class="muted">Choose a pull req
 const notice=model.message?'<div class="notice '+(model.error?'error':'')+'" role="status">'+escape(model.message)+'</div>':'';
 document.getElementById('app').innerHTML='<header class="header"><div><small>Duff</small><h1>'+escape(heading)+'</h1><p class="muted">'+(picker?'Remote and local repositories, in one watchlist.':'Your repositories. Your reviews.')+'</p></div>'+button(picker?'Back to dashboard':'Add repositories',picker?'dashboard':'picker')+'</header><div class="layout"><nav id="dashboard-navigation" aria-label="'+(picker?'Repository sources':'Watched repositories')+'">'+nav+'</nav>${dashboardSplitters.navigation}<main>'+notice+body+'</main>${dashboardSplitters.details}<aside id="dashboard-details">'+detail+'</aside></div>'+(picker?'<footer class="footer"><small>Shared for this OS user on this extension host. Credentials stay with their existing authentication sources.</small><div>'+button('Cancel','dashboard')+' '+button('Add '+model.checked.length+' repositories','add',undefined,'primary')+'</div></footer>':'');
 applyLayout();
+restoreRepositoryFocus(focusedRepository);
 const add=document.querySelector('[data-action="add"]');if(add)add.disabled=!model.checked.length||model.busy;
 for(const control of document.querySelectorAll('[data-action="review"],[data-action="more"]'))control.disabled=model.busy;
 for(const position of scroll){
@@ -113,11 +120,17 @@ avatarObserver=new IntersectionObserver((entries)=>{for(const entry of entries){
 for(const element of document.querySelectorAll('[data-avatar]'))avatarObserver.observe(element);
 }
 };
-window.addEventListener('message',(event)=>{if(event.data.type==='state'){model=event.data.value;render();}});
+window.addEventListener('message',(event)=>{if(event.data.type==='state'){
+if(!model){widths.navigation=event.data.value.columnWidths?.navigation;widths.details=event.data.value.columnWidths?.details;bridge.setState?.({...bridge.getState?.(),initialized:true});}
+model=event.data.value;
+const scope=JSON.stringify([model.mode,model.repositoryId,model.filter]);
+if(scope!==queryScope){query=model.mode==='dashboard'?(model.query??''):'';queryScope=scope;}
+render();
+}});
 document.addEventListener('click',(event)=>{const target=event.target.closest('[data-action]');if(target&&!target.disabled){if(['repository','source','browse','suggestion','state','picker','dashboard','add'].includes(target.dataset.action))query='';send(target.dataset.action,target.dataset.id);}});
 document.addEventListener('change',(event)=>{if(event.target.dataset.select)send('toggle',event.target.dataset.select);});
 document.addEventListener('error',(event)=>{if(event.target.tagName==='IMG')event.target.remove();},true);
-document.addEventListener('input',(event)=>{if(event.target.id==='filter'){const caret=event.target.selectionStart;query=event.target.value;render();const input=document.getElementById('filter');input?.focus();if(input&&caret!==null)input.setSelectionRange(caret,caret);}});
+document.addEventListener('input',(event)=>{if(event.target.id==='filter'){const caret=event.target.selectionStart;query=event.target.value.slice(0,1000);if(model.mode==='dashboard'&&model.repositoryId)bridge.postMessage({action:'preference',change:{_tag:'SetQuery',repositoryId:model.repositoryId,query}});render();const input=document.getElementById('filter');input?.focus();if(input&&caret!==null)input.setSelectionRange(caret,caret);}});
 send('ready');
 }
 </script></body></html>`

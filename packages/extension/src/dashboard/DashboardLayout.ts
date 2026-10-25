@@ -50,7 +50,12 @@ handle.setAttribute('aria-valuemax',maximum);
 handle.setAttribute('aria-valuenow',Math.round(side==='navigation'?navigation:details));
 }
 };
-const saveLayout=()=>bridge.setState?.({...bridge.getState?.(),columnWidths:{...widths}});
+const saveLayout=()=>{
+const columnWidths={};
+for(const side of ['navigation','details'])if(validWidth(widths[side]))columnWidths[side]=widths[side];
+bridge.setState?.({...bridge.getState?.(),columnWidths});
+bridge.postMessage({action:'preference',change:{_tag:'ResizeColumns',columnWidths}});
+};
 const resizeColumn=(side,value)=>{
 const layout=document.querySelector('.layout');
 if(!layout||window.innerWidth<=560||(side==='details'&&window.innerWidth<=1000))return;

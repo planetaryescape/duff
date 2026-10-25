@@ -1,8 +1,17 @@
 import { Script } from 'node:vm'
 
+import { DashboardPreferenceChange } from '@duff/core/dashboard-preferences'
+import { Schema } from 'effect'
 import { expect, it } from 'vitest'
 
 import { dashboardLayoutScript } from './DashboardLayout'
+
+const PreferenceMessage = Schema.Struct({
+  action: Schema.Literal('preference'),
+  change: DashboardPreferenceChange,
+})
+
+interface PreferenceMessage extends Schema.Schema.Type<typeof PreferenceMessage> {}
 
 interface SavedLayout {
   readonly otherState?: string
@@ -21,6 +30,7 @@ interface EventValues {
 }
 
 function layoutFixture(saved?: SavedLayout) {
+  const messages: unknown[] = []
   const properties = new Map<string, string>()
   const captured = new Set<number>()
   const classes = new Set<string>()
@@ -61,6 +71,8 @@ function layoutFixture(saved?: SavedLayout) {
 
   new Script(dashboardLayoutScript + '\napplyLayout();').runInNewContext({
     bridge: {
+      postMessage: (message: PreferenceMessage) =>
+        messages.push(Schema.decodeUnknownSync(PreferenceMessage)(message)),
       getState: () => state,
       setState: (value: SavedLayout) => {
         state = value
@@ -87,6 +99,7 @@ function layoutFixture(saved?: SavedLayout) {
   })
 
   return {
+    messages,
     layout,
     window,
     captured,
@@ -126,6 +139,10 @@ it('drags both dividers, bounds widths, and restores the saved layout', () => {
   expect(fixture.state()).toEqual({
     otherState: 'preserved',
     columnWidths: { navigation: 340, details: 770 },
+  })
+  expect(fixture.messages[fixture.messages.length - 1]).toEqual({
+    action: 'preference',
+    change: { _tag: 'ResizeColumns', columnWidths: { navigation: 340, details: 770 } },
   })
 
   const restored = layoutFixture(fixture.state())

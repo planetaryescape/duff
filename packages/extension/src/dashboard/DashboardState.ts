@@ -1,3 +1,7 @@
+import {
+  type DashboardPreferences,
+  defaultDashboardPreferences,
+} from '@duff/core/dashboard-preferences'
 import { type WatchedRepository } from '@duff/core/dashboard-repositories'
 import {
   type OpenPullRequest,
@@ -36,10 +40,20 @@ export class DashboardState {
   sourceId = 'local'
   sourceLabel = 'Local repositories'
   filter: PullRequestState = 'open'
+  query = ''
+  columnWidths = defaultDashboardPreferences.columnWidths
   message = ''
   error = false
   busy = false
   more = false
+
+  restore(preferences: DashboardPreferences): void {
+    this.repositoryId = preferences.repositoryId
+    this.pullRequestId = preferences.pullRequestId
+    this.filter = preferences.filter
+    this.query = preferences.query
+    this.columnWidths = preferences.columnWidths
+  }
 
   updateRepositories(repositories: ReadonlyArray<WatchedRepository>): boolean {
     this.repositories = repositories
@@ -50,6 +64,7 @@ export class DashboardState {
     this.repositoryId = repositoryId
     this.pulls = []
     this.pullRequestId = ''
+    this.query = ''
     this.clearDetails()
     this.avatars = {}
 
