@@ -13,6 +13,7 @@ export function dashboardHtml(nonce: string): string {
 @media(max-width:1000px){#app>.layout{grid-template-rows:repeat(2,minmax(0,1fr))}.layout>nav{grid-row:1 / -1}}
 @media(max-width:560px){#app>.layout{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,.5fr) minmax(0,1fr) minmax(0,1.5fr)}.layout>nav{grid-row:auto}.layout>aside{grid-column:1}}
 .author{display:flex;align-items:center;gap:8px;margin-top:8px}.avatar{position:relative;display:inline-grid;place-items:center;flex:none;width:28px;height:28px;border-radius:50%;background:var(--vscode-badge-background,#555);color:var(--vscode-badge-foreground,#fff);font-size:11px;overflow:hidden}.avatar img{position:absolute;width:100%;height:100%;object-fit:cover}.author small{margin:0}.change-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:24px 0 8px}.change-stats div{display:flex;flex-direction:column-reverse}.change-stats dt{font-size:11px;color:var(--vscode-descriptionForeground)}.change-stats dd{margin:0;font-size:20px;font-variant-numeric:tabular-nums}.added{color:var(--vscode-gitDecoration-addedResourceForeground,#81b88b)}.deleted{color:var(--vscode-gitDecoration-deletedResourceForeground,#c74e39)}.description{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6;margin:8px 0 24px}.detail-status{padding:16px 0}.detail-author{margin:16px 0}
+.pull-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px 8px;padding:7px 10px;overflow-wrap:normal}.pull-row:not(.selected):hover{background:var(--vscode-list-hoverBackground)}.pull-row.selected{box-shadow:inset 2px 0 var(--vscode-focusBorder)}.pull-title,.pull-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pull-meta{grid-column:1 / -1;display:flex;align-items:center;gap:6px;min-width:0;font-size:12px;color:var(--vscode-descriptionForeground)}.pull-row.selected .pull-meta{color:inherit;opacity:.8}.pull-meta .avatar{width:16px;height:16px;font-size:8px}
 ${dashboardLayoutStyle}
 ${descriptionMarkdownStyle}
 ${repositoryOrderingStyle}
@@ -31,14 +32,17 @@ const hosted=(repo)=>repo.hosting._tag==='Some'?repo.hosting.value:undefined;
 const repositoryName=(name)=>{const slash=name.lastIndexOf('/');return slash<0?escape(name):'<span class="muted">'+escape(name.slice(0,slash+1))+'</span>'+escape(name.slice(slash+1));};
 const send=(action,id)=>bridge.postMessage({action,id});
 const button=(label,action,id,kind='')=>'<button class="'+kind+'" data-action="'+action+'"'+(id!==undefined?' data-id="'+escape(id)+'"':'')+'>'+escape(label)+'</button>';
-const author=(pr)=>{
-const name=pr.author??'Unknown author';
+const authorName=(pr)=>pr.author??'Unknown author';
+const avatar=(pr)=>{
+const name=authorName(pr);
 const initials=name.split(/\\s+/).filter(Boolean).slice(0,2).map((part)=>Array.from(part)[0]).join('').toUpperCase();
 const key=pr.authorAvatarKey;
 const image=key&&Object.hasOwn(model.avatars??{},key)?model.avatars[key]:undefined;
 const safe=typeof image==='string'&&/^data:image\\/(?:png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+=*$/.test(image);
-return '<span class="author"><span class="avatar" aria-hidden="true" data-avatar="'+escape(pr.id)+'">'+escape(initials)+(safe?'<img alt="" src="'+escape(image)+'">':'')+'</span><small>Opened by '+escape(name)+'</small></span>';
+return '<span class="avatar" aria-hidden="true" title="Opened by '+escape(name)+'" data-avatar="'+escape(pr.id)+'">'+escape(initials)+(safe?'<img alt="" src="'+escape(image)+'">':'')+'</span>';
 };
+const author=(pr)=>'<span class="author">'+avatar(pr)+'<small>Opened by '+escape(authorName(pr))+'</small></span>';
+const branch=(ref)=>ref.name.replace('refs/heads/','');
 const metadata=(pr)=>{
 const state=model.details;
 if(state?._tag==='Failed')return '<div class="detail-status" role="status">Could not load PR details. '+button('Retry','details',pr.id)+'</div>';
@@ -98,7 +102,7 @@ body='<div class="toolbar"><div class="tabs" role="group" aria-label="Pull reque
 for(const state of ['open','merged','closed'])body+='<button data-action="state" data-id="'+state+'" aria-pressed="'+(model.filter===state)+'">'+state[0].toUpperCase()+state.slice(1)+'</button>';
 body+='</div><input id="filter" type="search" aria-label="Filter pull requests" placeholder="Filter loaded PRs by title or number…" value="'+escape(query)+'"><button class="icon" data-action="refresh" aria-label="Refresh" title="Refresh">↻</button>'+button('Connect','connect',undefined,'quiet')+'</div>'+(model.filter==='closed'?'<p class="muted">Closed without merging</p>':'')+'<div class="rows">';
 const visible=model.pulls.filter((pr)=>(pr.title+' #'+pr.id).toLowerCase().includes(query.toLowerCase()));
-for(const pr of visible)body+='<button class="row '+(pr.id===model.pullRequestId?'selected':'')+'" data-action="pull" data-id="'+escape(pr.id)+'"><span class="muted nowrap">#'+escape(pr.id)+'</span><span class="copy">'+escape(pr.title)+author(pr)+'<small>'+escape(pr.source._tag==='Available'?pr.source.ref.name.replace('refs/heads/',''):'Source unavailable')+' → '+escape(pr.target.ref.name.replace('refs/heads/',''))+'</small></span><span class="tag">'+escape(pr.state??'open')+'</span></button>';
+for(const pr of visible)body+='<button class="row pull-row '+(pr.id===model.pullRequestId?'selected':'')+'" data-action="pull" data-id="'+escape(pr.id)+'" title="'+escape(pr.title)+'"><span class="pull-title"><span class="muted">#'+escape(pr.id)+'</span> '+escape(pr.title)+'</span>'+(pr.draft?'<span class="tag">Draft</span>':'')+'<span class="pull-meta">'+avatar(pr)+'<span class="pull-text">'+escape(authorName(pr))+' · '+escape(pr.source._tag==='Available'?branch(pr.source.ref):'Source unavailable')+' → '+escape(branch(pr.target.ref))+'</span></span></button>';
 body+='</div>';
 if(!visible.length&&!model.busy&&!model.error)body+='<div class="empty"><h2>No matching pull requests</h2><p>Try another state or search. Search covers loaded pages only.</p></div>';
 if(model.more)body+=button('Load more pull requests','more',undefined,'wide');
