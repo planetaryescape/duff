@@ -133,3 +133,13 @@ Alternatives: a provider-specific dashboard would duplicate orchestration; edito
 Consequences: core owns RepositoryDirectory, RepositoryCatalog and ReviewWorkspaces contracts; provider adapters own repository browsing and clone destinations; extension owns the webview and SQLite storage adapters. OS-user storage is independent of editor profiles but local to the extension host, not cross-machine sync. SQLite transactions merge watchlist updates and reject stale progress writes. Full source does not promise a working AST without language extensions, dependencies and SDKs. Checkouts use independent Git repositories, consume disk per revision, and have no automatic deletion, dependency installation or submodule initialization. Only trusted system/global credential settings cross the managed Git configuration boundary; hooks, filters and templates stay disabled during acquisition/checkout.
 Revisit when: measured disk cost warrants a shared object cache, or the owner requests hosted synchronization, cleanup policy or additional providers.
 References: [dashboard architecture](01-architecture.md#repository-dashboard-and-managed-reviews), [S10](../implementation-plan.md#s10-repository-dashboard-and-managed-review-windows).
+
+## D014: Opt-in local telemetry for the installed extension
+
+Status: owner-confirmed behavior implemented. Date: 2026-10-25.
+
+Chosen: the installed extension exports only after the user sets `duff.telemetry` to `local`. Export goes to the local Tempo and Alloy endpoints with the existing privacy projection and `deployment.environment.name=production`. Development hosts keep `DUFF_TELEMETRY`; extension tests never export.
+Reason: the owner wants operational evidence from daily use without sending anything off the machine by default.
+Alternatives: Hetzner export with a keychain-stored token adds secret handling and a remote destination; reading the token from the environment fails for normal Dock launches.
+Consequences: supersedes the rule that production mode never has an exporter. The setting is application-scoped, defaults to `off`, and needs a window reload, which Duff offers when it changes. A missing local stack only drops telemetry and never blocks Git operations.
+Revisit when: the owner wants installed telemetry in Hetzner or wants it to follow VS Code's global telemetry level.

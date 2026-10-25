@@ -88,7 +88,7 @@ Hetzner mode exports to `https://otel.planetaryescape.co.za/v1/traces` and `/v1/
 Follow the owner's planetaryescape-observability skill. `bun run dev` scopes the SOPS-decrypted ingestion token to the development process, without a plaintext file or token argument.
 Hetzner export requires `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer TOKEN`. Without it, export is disabled; malformed headers or an invalid destination produce a safe warning and disable export.
 View both signals in [Grafana](https://grafana.planetaryescape.co.za): Tempo query `{ resource.service.name = "duff" }`, Loki query `{service_name="duff"}`.
-Production and extension-test modes install no exporter. Backend outages must not gate local Git operations. No infrastructure changes are required.
+Production mode installs no exporter by default. The `duff.telemetry` application setting (`off` by default, or `local`) opts the installed extension into local export with the same privacy projection, tagged `deployment.environment.name=production`; it never reads `DUFF_TELEMETRY` or remote headers, and changes apply after a window reload (D014). Extension-test mode installs no exporter. Backend outages must not gate local Git operations. No infrastructure changes are required.
 The current collector attaches tunnel pod metadata to external logs; those Kubernetes labels do not describe Duff's host. Use the service name and development environment to find Duff.
 
 Exported spans keep stable names, IDs, timing, parent links, and status codes. Attributes, events, links, and exception messages/stacks are stripped at serialization.

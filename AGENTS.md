@@ -19,7 +19,7 @@ Use the owner's `maintaining-blueprints` skill in `~/dotfiles` when maintaining 
 - Review views live under `packages/extension/src/review`. Clicking opens immutable diffs; opening a workspace file is a separate action.
 - Keep expected failures typed. Do not turn failed comparisons into empty successful reviews.
 - Name meaningful service and adapter operations with `Effect.fn("Domain.operation")`. Use `fnUntraced` only deliberately for small helpers. Observe workflow outcomes at the integration boundary.
-- Follow the planetaryescape-observability skill for authenticated Hetzner export. Never export identities, config origins, URLs, file contents, argv, or raw exception text. Production extension mode has no exporter.
+- Follow the planetaryescape-observability skill for authenticated Hetzner export. Never export identities, config origins, URLs, file contents, argv, or raw exception text. Production extension mode exports only when the owner opts in through `duff.telemetry`, and only to the local stack.
 - Keep UI native. Do not add cloud infrastructure, provider integrations, notes, or commit navigation without a request.
 - Do not use assertions, explicit any, non-null assertions, or unowned Promises. Do not bypass checks or hooks.
 

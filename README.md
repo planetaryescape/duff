@@ -43,7 +43,7 @@ This starts an isolated VSCodium development host with `DUFF_TELEMETRY=local`: t
 Close every window using the development profile before relaunching so it inherits the selected destination. Run `bun run watch` separately for rebuilds, then reload the development window after edits.
 
 In `https://grafana.localhost`, search Tempo with `{ resource.service.name = "duff" }` and Loki with `{service_name="duff"}`. Operation logs include a safe error type and trace correlation, never raw exceptions or repository content.
-`bun run dev` keeps authenticated Hetzner export. `DUFF_TELEMETRY=off bun run dev` disables export. Installed extensions and extension-test mode never export, even when these variables are set.
+`bun run dev` keeps authenticated Hetzner export. `DUFF_TELEMETRY=off bun run dev` disables export. Installed extensions ignore these variables and export nothing unless you opt in with the `duff.telemetry` setting. Its only export option is `local`, which sends the same projected spans and logs to the local stack tagged `deployment.environment.name=production`. Extension-test mode never exports.
 
 ## Pull request dashboard
 
