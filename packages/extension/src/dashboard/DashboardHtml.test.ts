@@ -33,8 +33,8 @@ function renderDashboard(
       addEventListener: () => {},
     },
     window: {
-      addEventListener: (_event: string, receive: (event: { data: unknown }) => void) => {
-        receive({ data: { type: 'state', value } })
+      addEventListener: (event: string, receive: (event: { data: unknown }) => void) => {
+        if (event === 'message') receive({ data: { type: 'state', value } })
       },
     },
   })
@@ -184,8 +184,9 @@ it('keeps column positions on background updates and resets only the changed sel
       addEventListener: () => {},
     },
     window: {
-      addEventListener: (_event: string, receive: (typeof listeners)[number]) =>
-        listeners.push(receive),
+      addEventListener: (event: string, receive: (typeof listeners)[number]) => {
+        if (event === 'message') listeners.push(receive)
+      },
     },
   })
 

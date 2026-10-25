@@ -1,3 +1,5 @@
+import { dashboardLayoutScript, dashboardLayoutStyle, dashboardSplitters } from './DashboardLayout'
+
 /** A local-only webview. All repository content enters through escaped text, never executable HTML. */
 export function dashboardHtml(nonce: string): string {
   return `<!doctype html>
@@ -9,9 +11,11 @@ export function dashboardHtml(nonce: string): string {
 @media(max-width:1000px){#app>.layout{grid-template-rows:repeat(2,minmax(0,1fr))}.layout>nav{grid-row:1 / -1}}
 @media(max-width:560px){#app>.layout{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,.5fr) minmax(0,1fr) minmax(0,1.5fr)}.layout>nav{grid-row:auto}.layout>aside{grid-column:1}}
 .author{display:flex;align-items:center;gap:8px;margin-top:8px}.avatar{position:relative;display:inline-grid;place-items:center;flex:none;width:28px;height:28px;border-radius:50%;background:var(--vscode-badge-background,#555);color:var(--vscode-badge-foreground,#fff);font-size:11px;overflow:hidden}.avatar img{position:absolute;width:100%;height:100%;object-fit:cover}.author small{margin:0}.change-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:24px 0 8px}.change-stats div{display:flex;flex-direction:column-reverse}.change-stats dt{font-size:11px;color:var(--vscode-descriptionForeground)}.change-stats dd{margin:0;font-size:20px;font-variant-numeric:tabular-nums}.added{color:var(--vscode-gitDecoration-addedResourceForeground,#81b88b)}.deleted{color:var(--vscode-gitDecoration-deletedResourceForeground,#c74e39)}.description{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6;margin:8px 0 24px}.detail-status{padding:16px 0}.detail-author{margin:16px 0}
+${dashboardLayoutStyle}
 </style></head><body><div id="app"></div><script nonce="${nonce}">
 {
 const bridge=acquireVsCodeApi();
+${dashboardLayoutScript}
 let model;
 let query='';
 let avatarObserver;
@@ -93,7 +97,8 @@ if(selected){detail='<small>#'+escape(selected.id)+' · '+escape(selected.state?
 else detail='<h2>'+escape(current.name)+'</h2><p class="muted">Choose a pull request to prepare an isolated review workspace.</p>'+button('Remove from watchlist','remove',current.id,'wide');
 }
 const notice=model.message?'<div class="notice '+(model.error?'error':'')+'" role="status">'+escape(model.message)+'</div>':'';
-document.getElementById('app').innerHTML='<header class="header"><div><small>Duff</small><h1>'+escape(heading)+'</h1><p class="muted">'+(picker?'Remote and local repositories, in one watchlist.':'Your repositories. Your reviews.')+'</p></div>'+button(picker?'Back to dashboard':'Add repositories',picker?'dashboard':'picker')+'</header><div class="layout"><nav aria-label="'+(picker?'Repository sources':'Watched repositories')+'">'+nav+'</nav><main>'+notice+body+'</main><aside>'+detail+'</aside></div>'+(picker?'<footer class="footer"><small>Shared for this OS user on this extension host. Credentials stay with their existing authentication sources.</small><div>'+button('Cancel','dashboard')+' '+button('Add '+model.checked.length+' repositories','add',undefined,'primary')+'</div></footer>':'');
+document.getElementById('app').innerHTML='<header class="header"><div><small>Duff</small><h1>'+escape(heading)+'</h1><p class="muted">'+(picker?'Remote and local repositories, in one watchlist.':'Your repositories. Your reviews.')+'</p></div>'+button(picker?'Back to dashboard':'Add repositories',picker?'dashboard':'picker')+'</header><div class="layout"><nav id="dashboard-navigation" aria-label="'+(picker?'Repository sources':'Watched repositories')+'">'+nav+'</nav>${dashboardSplitters.navigation}<main>'+notice+body+'</main>${dashboardSplitters.details}<aside id="dashboard-details">'+detail+'</aside></div>'+(picker?'<footer class="footer"><small>Shared for this OS user on this extension host. Credentials stay with their existing authentication sources.</small><div>'+button('Cancel','dashboard')+' '+button('Add '+model.checked.length+' repositories','add',undefined,'primary')+'</div></footer>':'');
+applyLayout();
 const add=document.querySelector('[data-action="add"]');if(add)add.disabled=!model.checked.length||model.busy;
 for(const control of document.querySelectorAll('[data-action="review"],[data-action="more"]'))control.disabled=model.busy;
 for(const position of scroll){
