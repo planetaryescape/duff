@@ -8,11 +8,7 @@ import {
   WatchedRepository,
 } from '@duff/core/dashboard-repositories'
 import { GitContext } from '@duff/core/git-context'
-import {
-  type OpenPullRequest,
-  type ProviderIdentity,
-  PullRequestState,
-} from '@duff/core/git-hosting-provider'
+import { PullRequestState } from '@duff/core/git-hosting-provider'
 import { RepositoryDirectory, RepositorySource } from '@duff/core/repository-directory'
 import { ReviewWorkspaces } from '@duff/core/review-workspaces'
 import { Data, Effect, Option, type Redacted, Schema } from 'effect'
@@ -20,6 +16,7 @@ import * as vscode from 'vscode'
 
 import { type CommandRuntime, runOperation } from '../Operations'
 import { dashboardHtml } from './DashboardHtml'
+import { DashboardState } from './DashboardState'
 
 const Message = Schema.Struct({
   action: Schema.Literals([
@@ -47,26 +44,6 @@ const Message = Schema.Struct({
   id: Schema.optionalKey(Schema.String),
 })
 
-class DashboardState {
-  mode: 'dashboard' | 'picker' = 'dashboard'
-  repositories: ReadonlyArray<WatchedRepository> = []
-  repositoryId = ''
-  pullRequestId = ''
-  pulls: ReadonlyArray<OpenPullRequest> = []
-  candidates: ReadonlyArray<WatchedRepository> = []
-  selections: ReadonlyArray<WatchedRepository> = []
-  providers: ReadonlyArray<ProviderIdentity> = []
-  sources: ReadonlyArray<RepositorySource> = []
-  checked: ReadonlyArray<string> = []
-  sourceId = 'local'
-  sourceLabel = 'Local repositories'
-  filter: PullRequestState = 'open'
-  message = ''
-  error = false
-  busy = false
-  more = false
-}
-
 class DashboardEvent extends Data.Class<{
   readonly type: 'state'
   readonly value: DashboardState
@@ -93,7 +70,6 @@ export function registerDashboardCommands(
   const candidates = new Map<string, WatchedRepository>()
   const local = new Map<string, WatchedRepository>()
   const sources = new Map<string, RepositorySource>()
-  const checked = new Set<string>()
   let cursor: Option.Option<Redacted.Redacted> = Option.none()
   let page = 1
   let activeSource: RepositorySource | undefined
@@ -102,7 +78,6 @@ export function registerDashboardCommands(
   let preparing = false
 
   const render = async () => {
-    state.checked = [...checked]
     state.selections = [...candidates.values()]
     state.sources = [...sources.values()]
     await panel?.webview.postMessage(new DashboardEvent({ type: 'state', value: state }))
@@ -151,14 +126,8 @@ export function registerDashboardCommands(
     )
 
     if (!repositories) return
-    state.repositories = repositories
 
-    if (!repositories.some((item) => item.id === state.repositoryId)) {
-      reset()
-      state.repositoryId = repositories[0]?.id ?? ''
-      state.pulls = []
-      state.pullRequestId = ''
-    }
+    if (state.updateRepositories(repositories)) reset()
 
     const directory = await runtime.runPromise(RepositoryDirectory)
     state.providers = directory.providers
@@ -185,7 +154,8 @@ export function registerDashboardCommands(
       ),
     )
 
-    if (current !== generation) return
+    if (current !== generation) return []
+    const inspected = new Map<string, WatchedRepository>()
     let found = 0
 
     for (const result of results) {
@@ -214,6 +184,7 @@ export function registerDashboardCommands(
         )
 
         local.set(repository.id, repository)
+        inspected.set(repository.id, repository)
       }
 
       for (const hosted of recognized) {
@@ -230,6 +201,7 @@ export function registerDashboardCommands(
         )
 
         local.set(repository.id, repository)
+        inspected.set(repository.id, repository)
       }
 
       found++
@@ -239,6 +211,8 @@ export function registerDashboardCommands(
     state.message = found
       ? ''
       : 'No Git repositories found. Choose repository folders or a parent containing them.'
+
+    return [...inspected.values()]
   }
 
   const loadPullRequests = async (more = false) => {
@@ -451,9 +425,10 @@ export function registerDashboardCommands(
             paths.push(vscode.Uri.joinPath(folder, name).fsPath)
       }
 
-      await inspectLocal(paths)
+      const inspected = await inspectLocal(paths)
 
       if (current !== generation) return
+      state.selectRepositories(inspected)
       state.busy = false
     } else if (action === 'source') {
       reset()
@@ -506,15 +481,16 @@ export function registerDashboardCommands(
           repository,
           ...state.candidates.filter((item) => item.id !== repository.id),
         ]
-        checked.add(repository.id)
+        state.selectRepositories([repository])
       }
     } else if (action === 'toggle') {
       if (!candidates.has(id)) return
 
-      if (checked.has(id)) checked.delete(id)
-      else checked.add(id)
+      state.checked = state.checked.includes(id)
+        ? state.checked.filter((item) => item !== id)
+        : [...state.checked, id]
     } else if (action === 'add') {
-      const selected = [...checked].flatMap((id) => {
+      const selected = state.checked.flatMap((id) => {
         const item = candidates.get(id)
 
         return item ? [item] : []
@@ -529,7 +505,7 @@ export function registerDashboardCommands(
       )
 
       if (added) {
-        checked.clear()
+        state.checked = []
         state.mode = 'dashboard'
         state.repositoryId = selected[0]?.id ?? ''
         await refreshCatalog()

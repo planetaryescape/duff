@@ -55,6 +55,7 @@ export type PullRequestState = Schema.Schema.Type<typeof PullRequestState>
 export const OpenPullRequest = Schema.Struct({
   id: Schema.NonEmptyString,
   title: Schema.String,
+  author: Schema.optional(Schema.NonEmptyString),
   state: Schema.optionalKey(PullRequestState),
   url: Schema.String.check(Schema.isPattern(/^https:\/\//)),
   draft: Schema.Boolean,

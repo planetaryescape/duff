@@ -40,6 +40,7 @@ const url = (page: number) =>
 const pull = {
   number: 17,
   title: 'A pull request',
+  user: { login: 'original-author' },
   draft: true,
   state: 'open',
   merged_at: null,
@@ -155,7 +156,7 @@ it.effect('normalizes drafts, fork identities, full refs and revisions, and dele
           })
 
           return {
-            body: [pull, { ...pull, number: 18, head: { ...pull.head, repo: null } }],
+            body: [pull, { ...pull, number: 18, user: null, head: { ...pull.head, repo: null } }],
             headers: {},
           }
         }),
@@ -165,6 +166,7 @@ it.effect('normalizes drafts, fork identities, full refs and revisions, and dele
     expect(page.items[0]).toEqual({
       id: '17',
       title: pull.title,
+      author: 'original-author',
       draft: true,
       state: 'open',
       url: 'https://github.com/owner/repo/pull/17',
@@ -183,6 +185,7 @@ it.effect('normalizes drafts, fork identities, full refs and revisions, and dele
       },
     })
     expect(page.items[1]?.source).toEqual({ _tag: 'Unavailable' })
+    expect(page.items[1]?.author).toBeUndefined()
     expect(Option.isNone(page.next)).toBe(true)
   }),
 )

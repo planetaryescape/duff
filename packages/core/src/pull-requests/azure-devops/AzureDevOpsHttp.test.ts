@@ -186,6 +186,10 @@ describe('AzureDevOps', () => {
                 value: [
                   {
                     ...pullRequest(),
+                    createdBy: {
+                      displayName: 'Original Author',
+                      uniqueName: 'private@example.test',
+                    },
                     url: 'https://evil.test',
                     lastMergeTargetCommit: { commitId: 'b'.repeat(40) },
                     lastMergeSourceCommit: { commitId: 'a'.repeat(40) },
@@ -198,7 +202,7 @@ describe('AzureDevOps', () => {
                     },
                   },
                   pullRequest(2),
-                  { ...pullRequest(3), forkSource: { repository: null } },
+                  { ...pullRequest(3), createdBy: null, forkSource: { repository: null } },
                 ],
               },
             }
@@ -212,6 +216,7 @@ describe('AzureDevOps', () => {
       ])
       expect(page.items[0]).toMatchObject({
         id: '1',
+        author: 'Original Author',
         state: 'open',
         draft: true,
         url: `${destination}/pullrequest/1`,
@@ -230,6 +235,8 @@ describe('AzureDevOps', () => {
         target: { ref: { revision: Option.none() } },
       })
       expect(page.items[2]?.source).toEqual({ _tag: 'Unavailable' })
+      expect(page.items[1]?.author).toBeUndefined()
+      expect(page.items[2]?.author).toBeUndefined()
       expect(Option.isNone(page.next)).toBe(true)
     }),
   )

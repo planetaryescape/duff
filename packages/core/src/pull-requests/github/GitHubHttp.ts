@@ -64,6 +64,7 @@ const PullRequests = Schema.Array(
     draft: Schema.Boolean,
     state: Schema.Literals(['open', 'closed']),
     merged_at: Schema.NullOr(Schema.NonEmptyString),
+    user: Schema.optionalKey(Schema.NullOr(Schema.Struct({ login: Schema.NonEmptyString }))),
     head: Ref,
     base: Ref,
   }),
@@ -323,6 +324,7 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
           return yield* Schema.decodeUnknownEffect(OpenPullRequest)({
             id: String(pull.number),
             title: pull.title,
+            author: pull.user?.login,
             draft: pull.draft,
             state: pull.merged_at !== null ? 'merged' : pull.state,
             url: `https://github.com/${repository.key}/pull/${pull.number}`,
