@@ -3,7 +3,7 @@ import { expect, it } from '@effect/vitest'
 import { ConfigProvider, Effect, Layer, Ref, Schema } from 'effect'
 import { HttpClient, HttpClientResponse } from 'effect/http'
 
-import { observabilityLayer, observeOperation } from './Telemetry'
+import { installedObservabilityLayer, observabilityLayer, observeOperation } from './Telemetry'
 
 const TracePayload = Schema.Struct({
   resourceSpans: Schema.Array(
@@ -236,5 +236,46 @@ it.effect('does not export when disabled, unconfigured, or given an invalid dest
         observeOperation('Duff.dashboard', Effect.void).pipe(Effect.provide(layer)),
       )
     }
+  }),
+)
+
+it.effect('exports opted-in installed telemetry only to the local stack as production', () =>
+  Effect.gen(function* () {
+    const deliveries = yield* Ref.make<Array<{ url: string; body: string }>>([])
+
+    const client = HttpClient.make((request) =>
+      Effect.gen(function* () {
+        expect(request.headers.authorization).toBeUndefined()
+
+        if (request.body._tag !== 'Uint8Array') return yield* Effect.die('Expected JSON body')
+        const body = new TextDecoder().decode(request.body.body)
+        yield* Ref.update(deliveries, (entries) => [...entries, { url: request.url, body }])
+
+        return HttpClientResponse.fromWeb(request, new Response('{}'))
+      }),
+    )
+
+    const layer = installedObservabilityLayer.pipe(
+      Layer.provide(Layer.succeed(HttpClient.HttpClient, client)),
+      Layer.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromUnknown({
+            DUFF_TELEMETRY: 'hetzner',
+            OTEL_EXPORTER_OTLP_HEADERS: 'Authorization=Bearer canary-remote-credential',
+          }),
+        ),
+      ),
+    )
+
+    yield* Effect.scoped(
+      observeOperation('Duff.dashboard', Effect.void).pipe(Effect.provide(layer)),
+    )
+
+    const sent = yield* Ref.get(deliveries)
+    expect(new Set(sent.map(({ url }) => url))).toEqual(
+      new Set(['http://127.0.0.1:14318/v1/traces', 'http://127.0.0.1:14320/v1/logs']),
+    )
+    expect(JSON.stringify(sent)).toContain('production')
+    expect(JSON.stringify(sent)).not.toContain('canary-remote-credential')
   }),
 )

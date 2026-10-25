@@ -29,9 +29,14 @@ const OperationError = Schema.Union([
   ReviewStorageError,
 ])
 
-const resource = {
+const developmentResource = {
   serviceName: 'duff',
   attributes: { 'deployment.environment.name': 'development' },
+}
+
+const productionResource = {
+  serviceName: 'duff',
+  attributes: { 'deployment.environment.name': 'production' },
 }
 
 class ExportedResourceSpans extends Data.Class<OtlpTracer.ResourceSpan> {}
@@ -117,6 +122,17 @@ const serialization = Layer.succeed(
   }),
 )
 
+const localExport = (resource: typeof developmentResource) =>
+  Layer.merge(
+    OtlpTracer.layer({
+      url: 'http://127.0.0.1:14318/v1/traces',
+      resource,
+    }),
+    OtlpLogger.layer({ url: 'http://127.0.0.1:14320/v1/logs', resource }),
+  ).pipe(Layer.provide(serialization))
+
+export const installedObservabilityLayer = localExport(productionResource)
+
 export const observabilityLayer = Layer.unwrap(
   Effect.gen(function* () {
     const destination = yield* Config.Literals(['local', 'hetzner', 'off'], 'DUFF_TELEMETRY').pipe(
@@ -125,11 +141,7 @@ export const observabilityLayer = Layer.unwrap(
 
     if (destination === 'off') return Layer.empty
 
-    if (destination === 'local')
-      return Layer.merge(
-        OtlpTracer.layer({ url: 'http://127.0.0.1:14318/v1/traces', resource }),
-        OtlpLogger.layer({ url: 'http://127.0.0.1:14320/v1/logs', resource }),
-      ).pipe(Layer.provide(serialization))
+    if (destination === 'local') return localExport(developmentResource)
 
     const configured = yield* Config.option(Config.Redacted('OTEL_EXPORTER_OTLP_HEADERS'))
 
@@ -142,8 +154,16 @@ export const observabilityLayer = Layer.unwrap(
     const headers = { Authorization: header.slice('Authorization='.length) }
 
     return Layer.merge(
-      OtlpTracer.layer({ url: 'https://otel.planetaryescape.co.za/v1/traces', headers, resource }),
-      OtlpLogger.layer({ url: 'https://otel.planetaryescape.co.za/v1/logs', headers, resource }),
+      OtlpTracer.layer({
+        url: 'https://otel.planetaryescape.co.za/v1/traces',
+        headers,
+        resource: developmentResource,
+      }),
+      OtlpLogger.layer({
+        url: 'https://otel.planetaryescape.co.za/v1/logs',
+        headers,
+        resource: developmentResource,
+      }),
     ).pipe(Layer.provide(serialization))
   }).pipe(
     Effect.catch(() =>

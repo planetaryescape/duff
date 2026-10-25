@@ -23,7 +23,7 @@ import { authenticationLayer } from './pull-requests/ProviderAuthentication'
 import { registerPullRequestCommands } from './pull-requests/PullRequestCommands'
 import { registerReviewCommands } from './review/ReviewCommands'
 import { makeSavedReviewStoreLayer } from './review/SavedReviewStore'
-import { observabilityLayer } from './telemetry/Telemetry'
+import { installedObservabilityLayer, observabilityLayer } from './telemetry/Telemetry'
 
 let disposeRuntime: (() => Promise<void>) | undefined
 
@@ -50,10 +50,14 @@ export function activate(context: vscode.ExtensionContext) {
     !managedPath.startsWith('..') &&
     !isAbsolute(managedPath)
 
+  const telemetry = vscode.workspace.getConfiguration('duff').get<string>('telemetry')
+
   const observability =
     context.extensionMode === vscode.ExtensionMode.Development
       ? observabilityLayer.pipe(Layer.provide(FetchHttpClient.layer))
-      : Layer.empty
+      : context.extensionMode === vscode.ExtensionMode.Production && telemetry === 'local'
+        ? installedObservabilityLayer.pipe(Layer.provide(FetchHttpClient.layer))
+        : Layer.empty
 
   const gitContextLayer = makeGitContextLayer(process.env)
 
@@ -158,6 +162,19 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration('duff.automaticDiscovery')) resetInspection('configuration')
+
+      if (event.affectsConfiguration('duff.telemetry'))
+        runtime.runFork(
+          Effect.promise(async () => {
+            const choice = await vscode.window.showInformationMessage(
+              'Duff: Reload the window to apply the telemetry setting.',
+              'Reload Window',
+            )
+
+            if (choice === 'Reload Window')
+              await vscode.commands.executeCommand('workbench.action.reloadWindow')
+          }),
+        )
     }),
   )
 
