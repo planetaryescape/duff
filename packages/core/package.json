@@ -17,6 +17,7 @@
     "./github-credentials": "./src/pull-requests/github/GitHubCredentials.ts",
     "./review-session": "./src/review-session/ReviewSession.ts",
     "./dashboard-repositories": "./src/dashboard/Repositories.ts",
+    "./dashboard-preferences": "./src/dashboard/DashboardPreferences.ts",
     "./repository-directory": "./src/dashboard/RepositoryDirectory.ts",
     "./review-workspaces": "./src/dashboard/ReviewWorkspaces.ts"
   },

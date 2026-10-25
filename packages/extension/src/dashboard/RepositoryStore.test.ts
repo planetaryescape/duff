@@ -10,7 +10,7 @@ import {
   hostedRepositoryId,
 } from '@duff/core/dashboard-repositories'
 import { expect, it } from '@effect/vitest'
-import { Context, Effect, Layer, Option, Scope } from 'effect'
+import { Context, Effect, Layer, Option, Scope, Schema } from 'effect'
 
 import { dashboardDataDirectory } from './DataDirectory'
 import { makeRepositoryStoreLayer } from './RepositoryStore'
@@ -29,6 +29,75 @@ const openStore = Effect.fn('Test.openRepositoryStore')(function* (path: string)
 
 const repository = (id: string, localPaths: ReadonlyArray<string> = []) =>
   WatchedRepository.make({ id, name: id, hosting: Option.none(), localPaths })
+
+it.effect(
+  'migrates the existing watchlist and restores independent preference edits after reopening',
+  () =>
+    Effect.gen(function* () {
+      const path = yield* directory
+      const database = new DatabaseSync(join(path, 'repositories.sqlite'))
+      database.exec(
+        'CREATE TABLE repositories (id TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL) STRICT; PRAGMA user_version = 1',
+      )
+      const codec = Schema.fromJsonString(Schema.toCodecJson(WatchedRepository))
+
+      for (const id of ['a', 'b', 'c']) {
+        const value = yield* Schema.encodeEffect(codec)(repository(id))
+
+        database.prepare('INSERT INTO repositories (id, value) VALUES (?, ?)').run(id, value)
+      }
+
+      database.close()
+      const first = yield* openStore(path)
+      const second = yield* openStore(path)
+
+      expect((yield* first.list()).map((repository) => repository.id)).toEqual(['a', 'b', 'c'])
+      yield* first.changePreferences({ _tag: 'FocusRepository', repositoryId: 'b' })
+      yield* first.changePreferences({ _tag: 'SetFilter', repositoryId: 'b', filter: 'closed' })
+      yield* first.changePreferences({
+        _tag: 'FocusPullRequest',
+        repositoryId: 'b',
+        filter: 'closed',
+        pullRequestId: '7',
+      })
+      yield* first.changePreferences({ _tag: 'SetQuery', repositoryId: 'b', query: 'fix' })
+      yield* second.changePreferences({
+        _tag: 'MoveRepository',
+        repositoryId: 'c',
+        targetId: 'a',
+        placement: 'before',
+      })
+      yield* second.changePreferences({
+        _tag: 'ResizeColumns',
+        columnWidths: { navigation: 260, details: 420 },
+      })
+      const reopened = yield* openStore(path)
+
+      expect(yield* reopened.preferences()).toEqual({
+        repositoryOrder: ['c', 'a', 'b'],
+        repositoryId: 'b',
+        pullRequestId: '7',
+        filter: 'closed',
+        query: 'fix',
+        columnWidths: { navigation: 260, details: 420 },
+      })
+      expect((yield* reopened.list()).map((repository) => repository.id)).toEqual(['c', 'a', 'b'])
+      yield* first.add([repository('new')])
+      expect((yield* reopened.list()).map((repository) => repository.id)).toEqual([
+        'c',
+        'a',
+        'b',
+        'new',
+      ])
+      yield* second.remove('b')
+      expect(yield* reopened.preferences()).toMatchObject({
+        repositoryId: 'c',
+        pullRequestId: '',
+        query: '',
+        repositoryOrder: ['c', 'a', 'new'],
+      })
+    }),
+)
 
 it.effect(
   'atomically relocates watchlist membership, merges paths, and never resurrects removed entries',
@@ -68,8 +137,8 @@ it.effect(
       expect((yield* Effect.flip(store.relocate('another', hosting))).reason).toBe('write-failed')
       expect(yield* store.list()).toEqual([
         moved,
-        repository('another', ['/keep']),
         repository('other'),
+        repository('another', ['/keep']),
       ])
     }),
 )

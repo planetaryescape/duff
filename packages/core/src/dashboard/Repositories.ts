@@ -1,6 +1,7 @@
 import { Context, type Effect, Schema } from 'effect'
 
 import { ProviderIdentity, RepositoryIdentity } from '../pull-requests/GitHostingProvider'
+import { type DashboardPreferences, type DashboardPreferenceChange } from './DashboardPreferences'
 
 export const HostedRepository = Schema.Struct({
   provider: ProviderIdentity,
@@ -27,6 +28,10 @@ export class RepositoryCatalog extends Context.Service<
   RepositoryCatalog,
   {
     readonly list: () => Effect.Effect<ReadonlyArray<WatchedRepository>, CatalogError>
+    readonly preferences: () => Effect.Effect<DashboardPreferences, CatalogError>
+    readonly changePreferences: (
+      change: DashboardPreferenceChange,
+    ) => Effect.Effect<DashboardPreferences, CatalogError>
     readonly add: (
       repositories: ReadonlyArray<WatchedRepository>,
     ) => Effect.Effect<void, CatalogError>

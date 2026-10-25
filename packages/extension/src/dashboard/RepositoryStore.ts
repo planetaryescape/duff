@@ -12,12 +12,19 @@ import { join, resolve } from 'node:path'
 import { DatabaseSync, type StatementSync } from 'node:sqlite'
 
 import {
+  DashboardPreferences,
+  changeDashboardPreferences,
+  reconcileDashboardPreferences,
+} from '@duff/core/dashboard-preferences'
+import {
   CatalogError,
   RepositoryCatalog,
   WatchedRepository,
   hostedRepositoryId,
 } from '@duff/core/dashboard-repositories'
-import { Effect, Layer, Option, Schema } from 'effect'
+import { Effect, Layer, Option, Schema, Struct } from 'effect'
+
+import { readDashboardPreferences, writeDashboardPreferences } from './DashboardPreferenceStorage'
 
 const failure = (reason: CatalogError['reason']) => new CatalogError({ reason })
 
@@ -111,6 +118,10 @@ export const makeRepositoryStoreLayer = (directory: string): Layer.Layer<Reposit
                 )
               }
 
+              database.exec(
+                'CREATE TABLE IF NOT EXISTS dashboard_preferences (id INTEGER PRIMARY KEY CHECK (id = 1), value TEXT NOT NULL) STRICT',
+              )
+
               // Refuse malformed catalogs even for mutations, rather than repairing them silently.
               database.prepare('SELECT id, value FROM repositories').all().forEach(parseRepository)
               const result = operation(database)
@@ -143,8 +154,22 @@ export const makeRepositoryStoreLayer = (directory: string): Layer.Layer<Reposit
       })
 
     return RepositoryCatalog.of({
+      preferences: Effect.fn('RepositoryCatalog.preferences')(() =>
+        transaction(readDashboardPreferences, 'unavailable'),
+      ),
+      changePreferences: Effect.fn('RepositoryCatalog.changePreferences')((change) =>
+        transaction(
+          (database) =>
+            writeDashboardPreferences(
+              database,
+              changeDashboardPreferences(readDashboardPreferences(database), change),
+            ),
+          'write-failed',
+        ),
+      ),
       relocate: Effect.fn('RepositoryCatalog.relocate')((id, hosting) =>
         transaction((database) => {
+          const preferences = readDashboardPreferences(database)
           const select = database.prepare('SELECT id, value FROM repositories WHERE id = ?')
           const row = select.get(id)
 
@@ -168,22 +193,45 @@ export const makeRepositoryStoreLayer = (directory: string): Layer.Layer<Reposit
             .run(repository.id, Schema.encodeSync(codec)(repository))
 
           if (id !== canonicalId) database.prepare('DELETE FROM repositories WHERE id = ?').run(id)
+          writeDashboardPreferences(
+            database,
+            DashboardPreferences.make(
+              Struct.assign(preferences, {
+                repositoryOrder: [
+                  ...new Set(
+                    preferences.repositoryOrder.map((entry) =>
+                      entry === id ? canonicalId : entry,
+                    ),
+                  ),
+                ],
+                repositoryId:
+                  preferences.repositoryId === id ? canonicalId : preferences.repositoryId,
+              }),
+            ),
+          )
 
           return repository
         }, 'write-failed'),
       ),
       list: Effect.fn('RepositoryCatalog.list')(() =>
-        transaction(
-          (database) =>
-            database
-              .prepare('SELECT id, value FROM repositories ORDER BY id')
-              .all()
-              .map(parseRepository),
-          'unavailable',
-        ),
+        transaction((database) => {
+          const preferences = readDashboardPreferences(database)
+
+          const repositories = database
+            .prepare('SELECT id, value FROM repositories ORDER BY id')
+            .all()
+            .map(parseRepository)
+
+          return repositories.sort(
+            (left, right) =>
+              preferences.repositoryOrder.indexOf(left.id) -
+              preferences.repositoryOrder.indexOf(right.id),
+          )
+        }, 'unavailable'),
       ),
       add: Effect.fn('RepositoryCatalog.add')((repositories: ReadonlyArray<WatchedRepository>) =>
         transaction((database) => {
+          const preferences = readDashboardPreferences(database)
           const select = database.prepare('SELECT id, value FROM repositories WHERE id = ?')
 
           const upsert = database.prepare(
@@ -203,11 +251,20 @@ export const makeRepositoryStoreLayer = (directory: string): Layer.Layer<Reposit
 
             upsert.run(merged.id, Schema.encodeSync(codec)(merged))
           }
+
+          writeDashboardPreferences(
+            database,
+            reconcileDashboardPreferences(preferences, [
+              ...preferences.repositoryOrder,
+              ...repositories.map((repository) => repository.id),
+            ]),
+          )
         }, 'write-failed'),
       ),
       remove: Effect.fn('RepositoryCatalog.remove')((id: string) =>
         transaction((database) => {
           database.prepare('DELETE FROM repositories WHERE id = ?').run(id)
+          writeDashboardPreferences(database, readDashboardPreferences(database))
         }, 'write-failed'),
       ),
     })
