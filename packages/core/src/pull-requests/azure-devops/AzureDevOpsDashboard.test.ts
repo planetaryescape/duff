@@ -53,6 +53,7 @@ it.effect(
                   }
                 }),
               post: () => Effect.die('Unexpected POST'),
+              mutate: () => Effect.die('Unexpected mutation'),
             }),
           )
 

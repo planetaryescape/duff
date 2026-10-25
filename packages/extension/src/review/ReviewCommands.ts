@@ -1,9 +1,10 @@
+import { type DiscussionReview } from '@duff/core/discussion'
 import {
   PullRequestReview,
   type PreparationState,
   type PreparedReview,
 } from '@duff/core/pull-request-review'
-import { BranchReview, type Review, ReviewError, Snapshot } from '@duff/core/review'
+import { BranchReview, type Review, type FileChange, ReviewError } from '@duff/core/review'
 import { fileSnapshots, ReviewProgress, ViewedFiles } from '@duff/core/review-progress'
 import { ReviewSessions } from '@duff/core/saved-review-sessions'
 import { Effect, Match, Option, Schema } from 'effect'
@@ -14,7 +15,9 @@ import { providerError } from '../pull-requests/ProviderError'
 import { registerPullRequestReviewCommands } from '../pull-requests/PullRequestReviewCommands'
 import { chooseDirectory } from '../Repository'
 import { observeOperation } from '../telemetry/Telemetry'
+import { registerDiscussionCommands, discussionReview } from './DiscussionCommands'
 import { ReviewFile, ReviewFolder, ReviewView, snapshotUri } from './ReviewView'
+import { commentableDocument, decodeSnapshotDocument, snapshotDocument } from './SnapshotDocument'
 import { registerSnapshotNavigation } from './SnapshotNavigation'
 
 class BranchChoice implements vscode.QuickPickItem {
@@ -38,6 +41,7 @@ export function registerReviewCommands(
 ) {
   const savedLayout = context.workspaceState.get<unknown>('reviewLayout')
   const provider = new ReviewView(savedLayout === 'tree' ? 'tree' : 'list')
+  const discussion = registerDiscussionCommands(context, runtime)
 
   const view = vscode.window.createTreeView('duff.files', {
     treeDataProvider: provider,
@@ -51,6 +55,21 @@ export function registerReviewCommands(
   let preparation: PreparationState | undefined
   let localGeneration = 0
 
+  const diffUris = (
+    current: Review,
+    change: FileChange,
+    accepted: Option.Option<DiscussionReview>,
+  ) => {
+    const [base, head] = fileSnapshots(current, change)
+
+    return Option.isSome(accepted)
+      ? [
+          snapshotUri(base, snapshotDocument(accepted.value, change, 'base')),
+          snapshotUri(head, snapshotDocument(accepted.value, change, 'head')),
+        ]
+      : [snapshotUri(base), snapshotUri(head)]
+  }
+
   const activeFile = () => {
     const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input
 
@@ -60,13 +79,23 @@ export function registerReviewCommands(
       input.modified.scheme !== 'duff-snapshot'
     )
       return
-    const decode = Schema.decodeUnknownOption(Schema.fromJsonString(Snapshot))
-    const original = decode(input.original.query)
-    const modified = decode(input.modified.query)
+    const original = decodeSnapshotDocument(input.original.query)
+    const modified = decodeSnapshotDocument(input.modified.query)
 
     if (Option.isNone(original) || Option.isNone(modified)) return
 
-    return progress?.activeFile(original.value, modified.value)
+    const accepted = discussion.current()
+
+    if (
+      [original.value, modified.value].some(
+        (document) =>
+          document._tag === 'PrReview' &&
+          (Option.isNone(accepted) || !commentableDocument(document, accepted.value)),
+      )
+    )
+      return
+
+    return progress?.activeFile(original.value.snapshot, modified.value.snapshot)
   }
 
   const updateActive = async () => {
@@ -90,7 +119,11 @@ export function registerReviewCommands(
     if (!progress) return
     const current = progress.review
     const paths = progress.saved().paths
-    provider.setReview(current, paths)
+    provider.setReview(
+      current,
+      paths,
+      prepared ? Option.getOrUndefined(discussionReview(prepared)) : undefined,
+    )
 
     const summary =
       current.files.length === 0
@@ -228,6 +261,7 @@ export function registerReviewCommands(
 
     if (!left) return
     prepared = undefined
+    await discussion.accept(Option.none())
     localReview = next
     await showReview(next)
     await vscode.commands.executeCommand('duff.files.focus')
@@ -241,6 +275,9 @@ export function registerReviewCommands(
       const previous = prepared
       prepared = accepted
 
+      if (accepted?.review !== previous?.review || accepted?.saved.key !== previous?.saved.key)
+        await discussion.accept(accepted ? discussionReview(accepted) : Option.none())
+
       if (accepted) {
         await showReview(accepted.review)
 
@@ -250,11 +287,11 @@ export function registerReviewCommands(
           const change = accepted.review.files.find((file) => file.path === path)
 
           if (change) {
-            const [base, head] = fileSnapshots(accepted.review, change)
+            const [base, head] = diffUris(accepted.review, change, discussionReview(accepted))
             await vscode.commands.executeCommand(
               'vscode.diff',
-              snapshotUri(base),
-              snapshotUri(head),
+              base,
+              head,
               `${change.path}: ${accepted.review.baseCommit.slice(0, 8)} ↔ ${accepted.review.headCommit.slice(0, 8)}`,
               { preview: false, preserveFocus: true },
             )
@@ -343,11 +380,11 @@ export function registerReviewCommands(
     vscode.commands.registerCommand('duff.openDiff', async (item: unknown) => {
       if (!(item instanceof ReviewFile)) return
       const { review: current, change } = item
-      const [base, head] = fileSnapshots(current, change)
+      const [base, head] = diffUris(current, change, Option.fromUndefinedOr(item.discussion))
       await vscode.commands.executeCommand(
         'vscode.diff',
-        snapshotUri(base),
-        snapshotUri(head),
+        base,
+        head,
         `${change.path}: ${current.baseCommit.slice(0, 8)} ↔ ${current.headCommit.slice(0, 8)}`,
         { preview: false, preserveFocus: true },
       )
@@ -370,8 +407,10 @@ export function registerReviewCommands(
               : vscode.window.activeTextEditor?.document.uri
 
           if (uri?.scheme !== 'duff-snapshot') return
-          const value: unknown = JSON.parse(uri.query)
-          const snapshot = Schema.decodeUnknownSync(Snapshot)(value)
+          const decoded = decodeSnapshotDocument(uri.query)
+
+          if (Option.isNone(decoded)) return
+          const snapshot = decoded.value.snapshot
 
           if (snapshot.path === undefined) {
             await vscode.window.showInformationMessage(
@@ -402,13 +441,13 @@ export function registerReviewCommands(
         if (token.isCancellationRequested) abort.abort()
 
         try {
-          const input = Schema.decodeUnknownEffect(Schema.fromJsonString(Snapshot))(uri.query).pipe(
-            Effect.mapError(
-              () =>
+          const document = decodeSnapshotDocument(uri.query)
+
+          const input = Option.isSome(document)
+            ? BranchReview.use((service) => service.read(document.value.snapshot))
+            : Effect.fail(
                 new ReviewError({ operation: 'read snapshot', message: 'Invalid snapshot URI.' }),
-            ),
-            Effect.flatMap((snapshot) => BranchReview.use((service) => service.read(snapshot))),
-          )
+              )
 
           return await runtime.runPromise(observeOperation('Duff.readSnapshot', input), {
             signal: abort.signal,

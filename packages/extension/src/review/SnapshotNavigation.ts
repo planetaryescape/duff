@@ -1,7 +1,7 @@
-import { Snapshot } from '@duff/core/review'
-import { Option, Schema } from 'effect'
+import { Option } from 'effect'
 import * as vscode from 'vscode'
 
+import { decodeSnapshotDocument } from './SnapshotDocument'
 import { workspaceLine } from './SnapshotPosition'
 
 class WorkspacePosition {
@@ -25,7 +25,10 @@ export function registerSnapshotNavigation(context: vscode.ExtensionContext) {
     position: vscode.Position,
     token: vscode.CancellationToken,
   ) => {
-    const snapshot = Schema.decodeUnknownOption(Schema.fromJsonString(Snapshot))(document.uri.query)
+    const snapshot = Option.map(
+      decodeSnapshotDocument(document.uri.query),
+      (value) => value.snapshot,
+    )
 
     if (
       Option.isNone(snapshot) ||

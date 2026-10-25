@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./discussion": "./src/pull-requests/Discussion.ts",
+    "./discussion-drafts": "./src/review/DiscussionDrafts.ts",
+    "./discussions": "./src/review/Discussions.ts",
+    "./discussion-placement": "./src/review/DiscussionPlacement.ts",
     "./review": "./src/review/BranchReview.ts",
     "./review-progress": "./src/review/ReviewProgress.ts",
     "./saved-reviews": "./src/review/SavedReviews.ts",

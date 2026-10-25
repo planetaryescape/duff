@@ -65,6 +65,7 @@ it.effect(
         recognizeRemote: () =>
           Option.some(
             ProviderRepository.of({
+              discussion: Option.none(),
               identity: hosted.repository,
               inspectAuthentication: () =>
                 Effect.succeed({ _tag: 'Authenticated', account: Option.none() }),

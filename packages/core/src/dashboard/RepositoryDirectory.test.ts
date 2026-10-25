@@ -31,7 +31,11 @@ const make = Effect.fn('RepositoryDirectoryTest.make')(function* (
   },
 ) {
   const providers = yield* Effect.all([makeGitHubHttp, makeAzureDevOpsHttp]).pipe(
-    Effect.provideService(ProviderHttp, { ...http, post: () => Effect.die('Unexpected POST') }),
+    Effect.provideService(ProviderHttp, {
+      ...http,
+      post: () => Effect.die('Unexpected POST'),
+      mutate: () => Effect.die('Unexpected mutation'),
+    }),
     Effect.provideService(ProviderAuthentication, authentication),
   )
 

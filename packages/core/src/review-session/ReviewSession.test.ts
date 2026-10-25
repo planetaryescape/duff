@@ -46,6 +46,7 @@ const testLayer = (
     identity: { id: 'fixture', displayName: 'Fixture', authenticationSource: 'editor' },
     recognizeRemote: () =>
       Option.some({
+        discussion: Option.none(),
         identity,
         inspectAuthentication: () => Effect.succeed({ _tag: 'Unauthenticated' }),
         connectAuthentication: () =>
@@ -334,6 +335,7 @@ it.effect(
         identity: { id: 'fixture', displayName: 'Fixture', authenticationSource: 'editor' },
         recognizeRemote: (remote) =>
           Option.some({
+            discussion: Option.none(),
             identity: { ...identity, key: remote.name, displayName: remote.name },
             inspectAuthentication: () => Effect.succeed({ _tag: 'Unauthenticated' }),
             connectAuthentication: () =>

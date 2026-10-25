@@ -63,7 +63,11 @@ const make = Effect.fn('GitHubTest.make')(function* (
     Effect.provideService(ProviderAuthentication, ProviderAuthentication.of(auth)),
     Effect.provideService(
       ProviderHttp,
-      ProviderHttp.of({ ...http, post: () => Effect.die('Unexpected POST') }),
+      ProviderHttp.of({
+        ...http,
+        post: () => Effect.die('Unexpected POST'),
+        mutate: () => Effect.die('Unexpected mutation'),
+      }),
     ),
   )
 

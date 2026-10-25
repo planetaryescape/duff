@@ -39,8 +39,8 @@ Built-in GitHub and Azure DevOps adapters live in core and use one job-shaped co
 
 ## Non-goals for these slices
 
-No merge, push, original-repository checkout changes, credential mutation, approval submission, comment sync, or cloud infrastructure. Managed review checkouts are in scope under D013.
-Commit-story navigation, review notes, binary rendering, and provider write operations remain outside the current scope.
+No merge, push, original-repository checkout changes, credential mutation, approval submission, or cloud infrastructure. Managed review checkouts are in scope under D013.
+Commit-story navigation, review notes, and binary rendering remain outside the current scope. The [inline discussion workstream](../../.specs/inline-pr-comments/PROGRESS.md) adds explicit provider comment creation, replies, resolution and reopening; it is under integration review, not merged or released. It does not submit pending provider reviews.
 
 ## Settled discovery choices
 

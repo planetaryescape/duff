@@ -26,6 +26,7 @@ import {
 } from '../GitHostingProvider'
 import { ProviderAuthentication } from '../ProviderAuthentication'
 import { ProviderHttp, type ProviderResponse } from '../ProviderHttp'
+import { makeAzureDiscussion } from './AzureDiscussion'
 import { azureStatistics } from './AzureStatistics'
 
 const scopes = ['499b84ac-1321-427f-aa17-267ca6975798/user_impersonation']
@@ -478,6 +479,13 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
       })
 
       return ProviderRepository.of({
+        discussion: Option.some(
+          makeAzureDiscussion(boundIdentity, endpoint, repositoryUrl(address), http, () =>
+            authentication
+              .session('microsoft', scopes, 'silent')
+              .pipe(Effect.map((session) => Option.map(session, (value) => value.token))),
+          ),
+        ),
         identity: boundIdentity,
         inspectAuthentication: () => inspect('silent'),
         connectAuthentication: () => inspect('connect'),

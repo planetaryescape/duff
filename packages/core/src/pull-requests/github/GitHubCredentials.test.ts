@@ -138,6 +138,7 @@ it.effect(
           Effect.provideService(ProviderAuthentication, { session: () => credentials.session() }),
           Effect.provideService(ProviderHttp, {
             post: () => Effect.die('Unexpected POST'),
+            mutate: () => Effect.die('Unexpected mutation'),
             get: (url, token) => {
               expect(Option.map(token, Redacted.value)).toEqual(Option.some('primary_canary'))
 

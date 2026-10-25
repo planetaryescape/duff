@@ -70,7 +70,7 @@ const FileDiffs = Schema.Struct({
 })
 
 export const azureStatistics = Effect.fn('AzureDevOps.statistics')(function* (
-  http: ProviderHttp['Service'],
+  http: Pick<ProviderHttp['Service'], 'get' | 'post'>,
   token: Option.Option<Redacted.Redacted>,
   endpoint: string,
   expected: OpenPullRequest,

@@ -26,6 +26,7 @@ import {
 } from '../GitHostingProvider'
 import { ProviderAuthentication } from '../ProviderAuthentication'
 import { ProviderHttp } from '../ProviderHttp'
+import { makeGitHubDiscussion } from './GitHubDiscussion'
 
 const Segment = Schema.String.check(Schema.isPattern(/^(?!\.{1,2}$)[a-zA-Z0-9_.-]+$/))
 
@@ -399,6 +400,13 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
     })
 
     return ProviderRepository.of({
+      discussion: Option.some(
+        makeGitHubDiscussion(repository, http, () =>
+          session('silent').pipe(
+            Effect.map((current) => Option.map(current, (value) => value.token)),
+          ),
+        ),
+      ),
       identity: repository,
       inspectAuthentication: () => authentication('silent'),
       connectAuthentication: () => authentication('connect'),

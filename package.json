@@ -14,7 +14,7 @@
     "format": "oxfmt --write packages .vscode .oxlintrc.json .oxfmtrc.json",
     "format:check": "oxfmt --check packages .vscode .oxlintrc.json .oxfmtrc.json",
     "check": "bun run format:check && bun run typecheck && bun run lint",
-    "test:app": "vitest run packages/core packages/extension",
+    "test:app": "vitest run packages/core packages/extension --maxWorkers=1",
     "test": "bun run test:app && bun run --cwd packages/anti-slop test",
     "package": "bun run build && bun run --cwd packages/extension package",
     "prepare": "effect-tsgo patch --typescript --oxlint"

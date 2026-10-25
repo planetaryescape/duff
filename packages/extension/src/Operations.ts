@@ -1,5 +1,6 @@
 import { type DashboardData } from '@duff/core/dashboard-data'
 import { type RepositoryCatalog, CatalogError } from '@duff/core/dashboard-repositories'
+import { type Discussions } from '@duff/core/discussions'
 import { type GitContext, GitContextError } from '@duff/core/git-context'
 import { DiscoveryError } from '@duff/core/git-hosting-provider'
 import { type PullRequestReview } from '@duff/core/pull-request-review'
@@ -24,7 +25,8 @@ export type CommandRuntime = ManagedRuntime.ManagedRuntime<
   | RepositoryCatalog
   | RepositoryDirectory
   | ReviewWorkspaces
-  | DashboardData,
+  | DashboardData
+  | Discussions,
   never
 >
 

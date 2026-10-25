@@ -45,7 +45,7 @@ const physicalLines = (text: string) =>
   text === '' ? 0 : text.split('\n').length - (text.endsWith('\n') ? 1 : 0)
 
 export const makeAzureContentStatistics = Effect.fn('AzureDevOps.makeContentStatistics')(function* (
-  http: ProviderHttp['Service'],
+  http: Pick<ProviderHttp['Service'], 'get' | 'post'>,
   token: Option.Option<Redacted.Redacted>,
   repositoryEndpoint: string,
   comparison: ComparisonIdentity,
