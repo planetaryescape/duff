@@ -14,6 +14,7 @@ export function dashboardHtml(nonce: string): string {
 @media(max-width:560px){#app>.layout{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,.5fr) minmax(0,1fr) minmax(0,1.5fr)}.layout>nav{grid-row:auto}.layout>aside{grid-column:1}}
 .avatar{position:relative;display:inline-grid;place-items:center;flex:none;width:28px;height:28px;border-radius:50%;background:var(--vscode-badge-background,#555);color:var(--vscode-badge-foreground,#fff);font-size:11px;overflow:hidden}.avatar img{position:absolute;width:100%;height:100%;object-fit:cover}.change-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:20px 0 8px;padding:12px 0;border-top:1px solid var(--vscode-widget-border,#7775);border-bottom:1px solid var(--vscode-widget-border,#7775)}.change-stats div{display:flex;flex-direction:column-reverse}.change-stats dt{font-size:11px;color:var(--vscode-descriptionForeground)}.change-stats dd{margin:0;font-size:20px;font-variant-numeric:tabular-nums}.added{color:var(--vscode-gitDecoration-addedResourceForeground,#81b88b)}.deleted{color:var(--vscode-gitDecoration-deletedResourceForeground,#c74e39)}.description{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6;margin:8px 0 24px}.detail-status{padding:16px 0}.detail-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--vscode-descriptionForeground)}.detail-meta .mono{overflow-wrap:anywhere}
 .pull-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:2px 8px;padding:7px 10px;overflow-wrap:normal}.pull-row:not(.selected):hover{background:var(--vscode-list-hoverBackground)}.pull-row.selected{box-shadow:inset 2px 0 var(--vscode-focusBorder)}.pull-title,.pull-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pull-meta{grid-column:1 / -1;display:flex;align-items:center;gap:6px;min-width:0;font-size:12px;color:var(--vscode-descriptionForeground)}.pull-row.selected .pull-meta{color:inherit;opacity:.8}.pull-meta .avatar{width:16px;height:16px;font-size:8px}
+.nav-item{display:flex;align-items:center;gap:8px}.nav-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.nav-hint{display:block;padding:6px 8px 0}
 ${dashboardLayoutStyle}
 ${descriptionMarkdownStyle}
 ${repositoryOrderingStyle}
@@ -39,6 +40,7 @@ github:brand('github','M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 1
 'azure-devops':brand('azure-devops','M0 8.877L2.247 5.91l8.405-3.416V.022l7.37 5.393L2.966 8.338v8.225L0 15.707zm24-4.45v14.651l-5.753 4.9-9.303-3.057v3.056l-5.978-7.416 15.057 1.798V5.415z'),
 };
 const providerIcon=(id)=>Object.hasOwn(providerIcons,id)?providerIcons[id]:repositoryIcon;
+const navItem=(icon,label,action,id,current)=>'<button class="nav-item" data-action="'+action+'" data-id="'+escape(id)+'" aria-current="'+current+'" title="'+escape(label)+'"><span class="repository-lead" aria-hidden="true">'+icon+'</span><span class="nav-label">'+escape(label)+'</span></button>';
 const send=(action,id)=>bridge.postMessage({action,id});
 const button=(label,action,id,kind='')=>'<button class="'+kind+'" data-action="'+action+'"'+(id!==undefined?' data-id="'+escape(id)+'"':'')+'>'+escape(label)+'</button>';
 const authorName=(pr)=>pr.author??'Unknown author';
@@ -78,9 +80,9 @@ const selected=model.pulls.find((pr)=>pr.id===model.pullRequestId);
 const heading=picker?'Add repositories':(current?.name??'Your repositories');
 let nav='<h3>'+(picker?'Sources':'Repositories')+'</h3>';
 if(picker){
-nav+='<button data-action="source" data-id="local" aria-current="'+(model.sourceId==='local')+'">Local repositories</button><h3>Remote repositories</h3>';
-for(const provider of model.providers)nav+='<button data-action="browse" data-id="'+escape(provider.id)+'" aria-current="'+model.sources.some((source)=>source.id===model.sourceId&&source.providerId===provider.id)+'">'+escape(provider.displayName)+'</button>';
-if(model.sources.length){nav+='<h3>Collections</h3>';for(const source of model.sources)nav+=button(source.label,'suggestion',source.id,source.id===model.sourceId?'selected':'');nav+='<small>Suggested from Git remotes or browsed by you. Explore to load repositories; nothing is added automatically.</small>';}
+nav+=navItem(folderIcon,'Local repositories','source','local',model.sourceId==='local')+'<h3>Remote repositories</h3>';
+for(const provider of model.providers)nav+=navItem(providerIcon(provider.id),provider.displayName,'browse',provider.id,model.sources.some((source)=>source.id===model.sourceId&&source.providerId===provider.id));
+if(model.sources.length){nav+='<h3>Collections</h3>';for(const source of model.sources)nav+=navItem(providerIcon(source.providerId),source.label,'suggestion',source.id,source.id===model.sourceId);nav+='<small class="nav-hint">Suggested from your Git remotes and browsing.</small>';}
 }else{
 nav+='<p class="sr-only" id="repository-order-help">Drag to reorder repositories, or focus a repository and press Alt plus Up or Down.</p><div class="sr-only" id="repository-order-status" role="status" aria-live="polite"></div>';
 for(const repo of model.repositories)nav+='<button class="repository-button" draggable="true" data-action="repository" data-id="'+escape(repo.id)+'" aria-describedby="repository-order-help" aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown" aria-current="'+(repo.id===model.repositoryId)+'"><span class="repository-lead" aria-hidden="true">'+(hosted(repo)?providerIcon(hosted(repo).provider.id):folderIcon)+'<span class="repository-grip">⠿</span></span><span class="repository-label" title="'+escape(repo.name)+'">'+repositoryName(repo.name)+(hosted(repo)?'':' <small>Local only</small>')+'</span></button>';
