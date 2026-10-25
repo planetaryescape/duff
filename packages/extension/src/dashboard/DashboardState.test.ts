@@ -90,7 +90,11 @@ it('keeps late PR details from replacing a newer selection or repository', () =>
   expect(state.details).toEqual({ _tag: 'Loading' })
   expect(state.finishDetails(first, details('first'))).toBe(false)
   expect(state.finishDetails(second, details('second'))).toBe(true)
-  expect(state.details).toEqual({ _tag: 'Loaded', value: details('second') })
+  expect(state.details).toEqual({
+    _tag: 'Loaded',
+    value: details('second'),
+    descriptionHtml: '<p>Selected PR description</p>\n',
+  })
 
   const pending = state.beginDetails('first')
   state.updateRepositories([repository('another')])
@@ -109,5 +113,9 @@ it('exposes detail failures and replaces them when retry succeeds', () => {
   const retry = state.beginDetails('first')
   state.finishDetails(retry, details('first'))
 
-  expect(state.details).toEqual({ _tag: 'Loaded', value: details('first') })
+  expect(state.details).toEqual({
+    _tag: 'Loaded',
+    value: details('first'),
+    descriptionHtml: '<p>Selected PR description</p>\n',
+  })
 })

@@ -6,7 +6,7 @@ import { Option } from 'effect'
 import { expect, it } from 'vitest'
 
 import { dashboardHtml } from './DashboardHtml'
-import { type DashboardState } from './DashboardState'
+import { DashboardState } from './DashboardState'
 
 it('ships executable dashboard JavaScript inside its nonce-bound document', () => {
   const html = dashboardHtml('fixture-nonce')
@@ -96,20 +96,26 @@ it('renders escaped authors in PR rows and labels unavailable authors', () => {
 it('shows descriptions, independent change counts and inert avatars for any forge', () => {
   const details = PullRequestDetails.make({
     pullRequest: pull,
-    description: '<script>alert(1)</script>\nReview details',
+    description: '<script>alert(1)</script>\nReview details\n\n**NOTE**: Keep `AppDelegate`.',
     filesChanged: Option.some(7),
     linesChanged: Option.some({ additions: 53, deletions: 0 }),
   })
+
+  const state = new DashboardState()
+  const version = state.beginDetails('17')
+  state.finishDetails(version, details)
 
   const html = renderDashboard({
     ...model,
     pullRequestId: '17',
     pulls: [{ ...pull, author: 'Original Author', authorAvatarKey: 'author' }],
     avatars: { author: 'data:image/png;base64,aW1hZ2U=' },
-    details: { _tag: 'Loaded', value: details },
+    details: state.details,
   })
 
-  expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;\nReview details')
+  expect(html).toContain('&lt;script&gt;alert(1)&lt;/script&gt;')
+  expect(html).toContain('Review details')
+  expect(html).toContain('<strong>NOTE</strong>: Keep <code>AppDelegate</code>.')
   expect(html).not.toContain('<script>')
   expect(html).toContain('<dd>7</dd>')
   expect(html).toContain('+53')
@@ -121,6 +127,7 @@ it('shows descriptions, independent change counts and inert avatars for any forg
     pullRequestId: '17',
     details: {
       _tag: 'Loaded',
+      descriptionHtml: '<p>No description provided.</p>\n',
       value: {
         ...details,
         description: '',

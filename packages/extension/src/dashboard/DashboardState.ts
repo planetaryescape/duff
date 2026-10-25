@@ -7,10 +7,16 @@ import {
 } from '@duff/core/git-hosting-provider'
 import { type RepositorySource } from '@duff/core/repository-directory'
 
+import { descriptionMarkdown } from './DescriptionMarkdown'
+
 type DetailState =
   | { readonly _tag: 'Idle' }
   | { readonly _tag: 'Loading' }
-  | { readonly _tag: 'Loaded'; readonly value: PullRequestDetails }
+  | {
+      readonly _tag: 'Loaded'
+      readonly value: PullRequestDetails
+      readonly descriptionHtml: string
+    }
   | { readonly _tag: 'Failed' }
 
 export class DashboardState {
@@ -67,7 +73,7 @@ export class DashboardState {
     if (version !== this.#detailVersion) return false
     this.details =
       value && value.pullRequest.id === this.pullRequestId
-        ? { _tag: 'Loaded', value }
+        ? { _tag: 'Loaded', value, descriptionHtml: descriptionMarkdown(value.description) }
         : { _tag: 'Failed' }
 
     return true

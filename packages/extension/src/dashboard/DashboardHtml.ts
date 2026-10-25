@@ -1,6 +1,7 @@
 import { dashboardLayoutScript, dashboardLayoutStyle, dashboardSplitters } from './DashboardLayout'
+import { descriptionMarkdownStyle } from './DescriptionMarkdownStyle'
 
-/** A local-only webview. All repository content enters through escaped text, never executable HTML. */
+/** A local-only webview with escaped labels and host-rendered, inert description Markdown. */
 export function dashboardHtml(nonce: string): string {
   return `<!doctype html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -12,6 +13,7 @@ export function dashboardHtml(nonce: string): string {
 @media(max-width:560px){#app>.layout{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,.5fr) minmax(0,1fr) minmax(0,1.5fr)}.layout>nav{grid-row:auto}.layout>aside{grid-column:1}}
 .author{display:flex;align-items:center;gap:8px;margin-top:8px}.avatar{position:relative;display:inline-grid;place-items:center;flex:none;width:28px;height:28px;border-radius:50%;background:var(--vscode-badge-background,#555);color:var(--vscode-badge-foreground,#fff);font-size:11px;overflow:hidden}.avatar img{position:absolute;width:100%;height:100%;object-fit:cover}.author small{margin:0}.change-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:24px 0 8px}.change-stats div{display:flex;flex-direction:column-reverse}.change-stats dt{font-size:11px;color:var(--vscode-descriptionForeground)}.change-stats dd{margin:0;font-size:20px;font-variant-numeric:tabular-nums}.added{color:var(--vscode-gitDecoration-addedResourceForeground,#81b88b)}.deleted{color:var(--vscode-gitDecoration-deletedResourceForeground,#c74e39)}.description{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.6;margin:8px 0 24px}.detail-status{padding:16px 0}.detail-author{margin:16px 0}
 ${dashboardLayoutStyle}
+${descriptionMarkdownStyle}
 </style></head><body><div id="app"></div><script nonce="${nonce}">
 {
 const bridge=acquireVsCodeApi();
@@ -39,7 +41,7 @@ if(state?._tag!=='Loaded'||state.value.pullRequest.id!==pr.id)return '<p class="
 const details=state.value;
 const files=details.filesChanged._tag==='Some'?details.filesChanged.value:undefined;
 const lines=details.linesChanged._tag==='Some'?details.linesChanged.value:undefined;
-return '<dl class="change-stats" aria-label="Change summary"><div><dt>Files changed</dt><dd>'+escape(files??'—')+'</dd></div><div><dt>Lines added</dt><dd class="'+(lines?'added':'muted')+'">'+(lines?'+'+escape(lines.additions):'—')+'</dd></div><div><dt>Lines deleted</dt><dd class="'+(lines?'deleted':'muted')+'">'+(lines?'−'+escape(lines.deletions):'—')+'</dd></div></dl>'+(files===undefined?'<small>File count unavailable.</small>':'')+(!lines?'<p class="muted">Line totals unavailable from this provider.</p>':'')+'<h3>Description</h3><div class="description">'+escape(details.description.trim()?details.description:'No description provided.')+'</div>';
+return '<dl class="change-stats" aria-label="Change summary"><div><dt>Files changed</dt><dd>'+escape(files??'—')+'</dd></div><div><dt>Lines added</dt><dd class="'+(lines?'added':'muted')+'">'+(lines?'+'+escape(lines.additions):'—')+'</dd></div><div><dt>Lines deleted</dt><dd class="'+(lines?'deleted':'muted')+'">'+(lines?'−'+escape(lines.deletions):'—')+'</dd></div></dl>'+(files===undefined?'<small>File count unavailable.</small>':'')+(!lines?'<p class="muted">Line totals unavailable from this provider.</p>':'')+'<h3>Description</h3><div class="description">'+state.descriptionHtml+'</div>';
 };
 const render=()=>{
 if(!model)return;
