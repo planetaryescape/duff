@@ -3,7 +3,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
-import { RepositoryCatalog, WatchedRepository } from '@duff/core/dashboard-repositories'
+import {
+  RepositoryCatalog,
+  WatchedRepository,
+  HostedRepository,
+  hostedRepositoryId,
+} from '@duff/core/dashboard-repositories'
 import { expect, it } from '@effect/vitest'
 import { Context, Effect, Layer, Option, Scope } from 'effect'
 
@@ -24,6 +29,50 @@ const openStore = Effect.fn('Test.openRepositoryStore')(function* (path: string)
 
 const repository = (id: string, localPaths: ReadonlyArray<string> = []) =>
   WatchedRepository.make({ id, name: id, hosting: Option.none(), localPaths })
+
+it.effect(
+  'atomically relocates watchlist membership, merges paths, and never resurrects removed entries',
+  () =>
+    Effect.gen(function* () {
+      const path = yield* directory
+      const store = yield* openStore(path)
+
+      const hosting = HostedRepository.make({
+        provider: { id: 'github', displayName: 'GitHub', authenticationSource: 'github' },
+        repository: { authority: 'github.com', key: 'new/repo', displayName: 'new/repo' },
+        cloneUrl: 'https://github.com/new/repo.git',
+      })
+
+      const id = hostedRepositoryId(hosting)
+
+      yield* store.add([repository('old', ['/old']), repository(id, ['/new']), repository('other')])
+      const moved = yield* store.relocate('old', hosting)
+      const reopened = yield* openStore(path)
+
+      expect(moved).toEqual({
+        id,
+        name: 'new/repo',
+        hosting: Option.some(hosting),
+        localPaths: ['/old', '/new'],
+      })
+      expect(yield* reopened.list()).toEqual([moved, repository('other')])
+      expect((yield* Effect.flip(store.relocate('old', hosting))).reason).toBe('unavailable')
+
+      yield* store.add([repository('another', ['/keep'])])
+      const database = new DatabaseSync(join(path, 'repositories.sqlite'))
+      database.exec(
+        "CREATE TRIGGER reject_move BEFORE DELETE ON repositories WHEN OLD.id = 'another' BEGIN SELECT RAISE(ABORT, 'rejected'); END",
+      )
+      database.close()
+
+      expect((yield* Effect.flip(store.relocate('another', hosting))).reason).toBe('write-failed')
+      expect(yield* store.list()).toEqual([
+        moved,
+        repository('another', ['/keep']),
+        repository('other'),
+      ])
+    }),
+)
 
 it.effect(
   'shares updates, deduplicates paths and preserves unrelated writes from stale readers',

@@ -1,15 +1,5 @@
-import {
-  Clock,
-  Context,
-  DateTime,
-  Effect,
-  Layer,
-  Option,
-  type Redacted,
-  Schema,
-  Stream,
-} from 'effect'
-import { HttpClient, HttpClientRequest } from 'effect/http'
+import { Clock, Context, DateTime, Effect, Layer, Option, Redacted, Schema, Stream } from 'effect'
+import { FetchHttpClient, HttpClient, HttpClientRequest } from 'effect/http'
 
 import {
   AuthenticationRequired,
@@ -59,9 +49,10 @@ export class ProviderHttp extends Context.Service<
           if (Option.isSome(token))
             request = request.pipe(HttpClientRequest.bearerToken(token.value))
 
-          const response = yield* client
-            .execute(request)
-            .pipe(Effect.mapError(() => new ProviderUnavailable()))
+          const response = yield* client.execute(request).pipe(
+            Effect.provideService(FetchHttpClient.RequestInit, { redirect: 'manual' }),
+            Effect.mapError(() => new ProviderUnavailable()),
+          )
 
           const delay = response.headers['retry-after']
           const now = yield* Clock.currentTimeMillis
@@ -99,7 +90,11 @@ export class ProviderHttp extends Context.Service<
             return yield* new ProviderUnavailable()
 
           if (format === 'json' && [301, 302, 307, 308].includes(response.status))
-            return yield* new ProviderRedirected()
+            return yield* new ProviderRedirected(
+              response.headers.location
+                ? { location: Redacted.make(response.headers.location) }
+                : {},
+            )
 
           if (response.status < 200 || response.status >= 300)
             return yield* new InvalidProviderResponse()

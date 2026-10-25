@@ -31,6 +31,10 @@ export class RepositoryCatalog extends Context.Service<
       repositories: ReadonlyArray<WatchedRepository>,
     ) => Effect.Effect<void, CatalogError>
     readonly remove: (id: string) => Effect.Effect<void, CatalogError>
+    readonly relocate: (
+      id: string,
+      hosting: HostedRepository,
+    ) => Effect.Effect<WatchedRepository, CatalogError>
   }
 >()('duff/RepositoryCatalog') {}
 

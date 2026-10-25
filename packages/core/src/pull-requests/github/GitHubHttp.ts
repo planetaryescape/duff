@@ -474,6 +474,36 @@ export const makeGitHubHttp = Effect.gen(function* (): Effect.gen.Return<
   return GitHostingProvider.of({
     identity: providerIdentity,
     destination,
+    refreshRepository: Effect.fn('GitHub.refreshRepository')(function* (repository) {
+      if (Option.isNone(destination(repository))) return yield* new InvalidProviderResponse()
+      const current = yield* session('silent')
+      const token = Option.map(current, (value) => value.token)
+      const headers = { Accept: 'application/vnd.github+json', 'User-Agent': 'Duff' }
+      let redirectedId: string | undefined
+
+      const response = yield* http
+        .get(`https://api.github.com/repos/${repository.key}`, token, headers)
+        .pipe(
+          Effect.catchTag('ProviderRedirected', (error) => {
+            const location = error.location ? Redacted.value(error.location) : ''
+            const match = /^https:\/\/api\.github\.com\/repositories\/([1-9]\d*)$/.exec(location)
+
+            if (!match?.[1]) return Effect.fail(error)
+            redirectedId = match[1]
+
+            return http.get(location, token, headers)
+          }),
+        )
+
+      const canonical = yield* Schema.decodeUnknownEffect(
+        Schema.Struct({ ...Repository.fields, id: UserId }),
+      )(response.body).pipe(Effect.mapError(() => new InvalidProviderResponse()))
+
+      if (redirectedId !== undefined && String(canonical.id) !== redirectedId)
+        return yield* new InvalidProviderResponse()
+
+      return identity(canonical.owner.login, canonical.name)
+    }),
     browsingScope: (repository) =>
       Option.isSome(destination(repository)) ? (repository.key.split('/')[0] ?? '') : '',
     browseRepositories: Effect.fn('GitHub.browseRepositories')(function* (scope, page, mode) {

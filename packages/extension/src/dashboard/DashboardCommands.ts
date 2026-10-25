@@ -9,7 +9,11 @@ import {
 } from '@duff/core/dashboard-repositories'
 import { GitContext } from '@duff/core/git-context'
 import { PullRequestState } from '@duff/core/git-hosting-provider'
-import { RepositoryDirectory, RepositorySource } from '@duff/core/repository-directory'
+import {
+  RepositoryDirectory,
+  RepositorySource,
+  type RepositoryPullRequestPage,
+} from '@duff/core/repository-directory'
 import { ReviewWorkspaces } from '@duff/core/review-workspaces'
 import { Data, Effect, Option, type Redacted, Schema } from 'effect'
 import * as vscode from 'vscode'
@@ -49,6 +53,12 @@ const Message = Schema.Struct({
 class DashboardEvent extends Data.Class<{
   readonly type: 'state'
   readonly value: DashboardState
+}> {}
+
+class LoadedPullRequests extends Data.Class<{
+  readonly page: RepositoryPullRequestPage
+  readonly watched: WatchedRepository
+  readonly moved: boolean
 }> {}
 
 class DashboardCommands {
@@ -295,10 +305,18 @@ export function registerDashboardCommands(
 
     const result = await runOperation(
       runtime,
-      'Duff.dashboard',
-      RepositoryDirectory.use((directory) =>
-        directory.list(hosted, filter, more ? cursor : Option.none()),
-      ),
+      'Duff.loadDashboardPullRequests',
+      Effect.gen(function* () {
+        const directory = yield* RepositoryDirectory
+        const page = yield* directory.list(hosted, filter, more ? cursor : Option.none())
+        const moved = hostedRepositoryId(page.hosting) !== hostedRepositoryId(hosted)
+
+        const watched = moved
+          ? yield* RepositoryCatalog.use((catalog) => catalog.relocate(repository.id, page.hosting))
+          : repository
+
+        return new LoadedPullRequests({ page, watched, moved })
+      }),
       async () => {
         if (current !== generation) return
         state.busy = false
@@ -317,18 +335,29 @@ export function registerDashboardCommands(
     state.error = !result
 
     if (result) {
+      if (result.moved) {
+        state.repositories = state.repositories.filter(
+          (item) => item.id !== repository.id && item.id !== result.watched.id,
+        )
+        state.repositories = [...state.repositories, result.watched]
+        state.repositoryId = result.watched.id
+        state.pulls = []
+        state.pullRequestId = ''
+        state.avatars = {}
+      }
+
       const items = new Map(state.pulls.map((pr) => [pr.id, pr]))
 
-      for (const pr of result.items) items.set(pr.id, pr)
+      for (const pr of result.page.items) items.set(pr.id, pr)
       state.pulls = [...items.values()]
-      cursor = result.next
+      cursor = result.page.next
       state.more = Option.isSome(cursor)
       state.pullRequestId ||= state.pulls[0]?.id ?? ''
     }
 
     await render()
 
-    if (!more && state.pullRequestId) await loadDetails(state.pullRequestId)
+    if ((!more || result?.moved) && state.pullRequestId) await loadDetails(state.pullRequestId)
   }
 
   const browse = async (source: RepositorySource, more = false) => {

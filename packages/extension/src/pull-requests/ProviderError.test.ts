@@ -7,12 +7,12 @@ import { expect, it } from 'vitest'
 
 import { providerError } from './ProviderError'
 
-it('explains moved repositories without suggesting account changes or following redirects', () => {
+it('explains when automatic repository relocation could not resolve the current address', () => {
   const message = providerError(new ProviderRedirected())
 
   expect(message).toContain('moved or been renamed')
   expect(message).toContain('add its current URL')
-  expect(message).toContain('does not follow authenticated redirects')
+  expect(message).toContain('could not resolve its current address')
   expect(message).not.toContain('sign-in')
   expect(providerError(new InvalidProviderResponse())).toContain('invalid data')
 })

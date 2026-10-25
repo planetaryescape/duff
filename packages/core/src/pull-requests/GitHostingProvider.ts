@@ -121,7 +121,7 @@ export class InvalidProviderResponse extends Schema.TaggedError<InvalidProviderR
 
 export class ProviderRedirected extends Schema.TaggedError<ProviderRedirected>()(
   'ProviderRedirected',
-  {},
+  { location: Schema.optionalKey(Schema.Redacted(Schema.String)) },
 ) {}
 
 export class InvalidContinuation extends Schema.TaggedError<InvalidContinuation>()(
@@ -193,6 +193,9 @@ export const ProviderRepository = {
 
 export interface GitHostingProvider {
   readonly identity: ProviderIdentity
+  readonly refreshRepository?: (
+    repository: RepositoryIdentity,
+  ) => Effect.Effect<RepositoryIdentity, DiscoveryError>
   readonly recognizeRemote: (remote: Remote) => Option.Option<ProviderRepository>
   /** Canonical credential-free transport destination, validated by the provider. */
   readonly destination?: (repository: RepositoryIdentity) => Option.Option<string>

@@ -15,6 +15,7 @@ import {
   CatalogError,
   RepositoryCatalog,
   WatchedRepository,
+  hostedRepositoryId,
 } from '@duff/core/dashboard-repositories'
 import { Effect, Layer, Option, Schema } from 'effect'
 
@@ -142,6 +143,35 @@ export const makeRepositoryStoreLayer = (directory: string): Layer.Layer<Reposit
       })
 
     return RepositoryCatalog.of({
+      relocate: Effect.fn('RepositoryCatalog.relocate')((id, hosting) =>
+        transaction((database) => {
+          const select = database.prepare('SELECT id, value FROM repositories WHERE id = ?')
+          const row = select.get(id)
+
+          if (!row) throw failure('unavailable')
+          const previous = parseRepository(row)
+          const canonicalId = hostedRepositoryId(hosting)
+          const existing = select.get(canonicalId)
+          const canonical = existing ? parseRepository(existing) : undefined
+
+          const repository = WatchedRepository.make({
+            id: canonicalId,
+            name: hosting.repository.displayName,
+            hosting: Option.some(hosting),
+            localPaths: [...new Set([...previous.localPaths, ...(canonical?.localPaths ?? [])])],
+          })
+
+          database
+            .prepare(
+              'INSERT INTO repositories (id, value) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value = excluded.value',
+            )
+            .run(repository.id, Schema.encodeSync(codec)(repository))
+
+          if (id !== canonicalId) database.prepare('DELETE FROM repositories WHERE id = ?').run(id)
+
+          return repository
+        }, 'write-failed'),
+      ),
       list: Effect.fn('RepositoryCatalog.list')(() =>
         transaction(
           (database) =>

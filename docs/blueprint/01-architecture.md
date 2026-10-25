@@ -142,6 +142,8 @@ Core's [RepositoryDirectory](../../packages/core/src/dashboard/RepositoryDirecto
 
 Core's [RepositoryCatalog](../../packages/core/src/dashboard/Repositories.ts) is the replaceable watchlist boundary. The extension's [RepositoryStore](../../packages/extension/src/dashboard/RepositoryStore.ts) persists identities/local paths in host-local SQLite, independent of editor profiles. Transactions merge individual entries instead of overwriting a stale catalog. The [data-directory adapter](../../packages/extension/src/dashboard/DataDirectory.ts) supplies the OS-specific user path at activation. Credentials are not stored there.
 
+When GitHub redirects a dashboard PR request, the directory resolves the repository's current identity through GitHub metadata and retries the first page. Metadata resolution accepts one redirect to an HTTPS `api.github.com/repositories/<id>` endpoint and checks that the returned numeric ID matches. Other redirect destinations remain refused. Once loading succeeds, the catalog atomically replaces the old watchlist identity, merging local paths if the destination is already watched. A removed entry is not recreated by a late request. Local Git remotes and immutable saved reviews are not rewritten.
+
 The [dashboard controller](../../packages/extension/src/dashboard/DashboardCommands.ts) owns native dialogs, bulk selections across sources, generation-guarded async reads and a nonce/CSP-protected editor webview. It does not branch on provider IDs. Local inspection is bounded to explicitly chosen folders and one child level; a local-only entry remains useful without provider access. Window focus rereads the shared catalog; there is no background sync service.
 
 ```text

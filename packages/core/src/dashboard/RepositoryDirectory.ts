@@ -9,7 +9,7 @@ import {
   type ProviderIdentity,
   type ProviderRepository,
   type PullRequestDetails,
-  type PullRequestPage,
+  PullRequestPage,
   type PullRequestState,
   type RepositoryIdentity,
   RepositoryUnavailable,
@@ -24,6 +24,15 @@ export const RepositoryPage = Schema.Struct({
 })
 
 export interface RepositoryPage extends Schema.Schema.Type<typeof RepositoryPage> {}
+
+export const RepositoryPullRequestPage = Schema.Struct({
+  ...PullRequestPage.fields,
+  hosting: HostedRepository,
+})
+
+export interface RepositoryPullRequestPage extends Schema.Schema.Type<
+  typeof RepositoryPullRequestPage
+> {}
 
 export const RepositorySource = Schema.Struct({
   id: Schema.String,
@@ -50,7 +59,7 @@ export class RepositoryDirectory extends Context.Service<
       hosted: HostedRepository,
       state: PullRequestState,
       cursor: Option.Option<Redacted.Redacted>,
-    ) => Effect.Effect<PullRequestPage, DiscoveryError>
+    ) => Effect.Effect<RepositoryPullRequestPage, DiscoveryError>
     readonly details: (
       hosted: HostedRepository,
       id: string,
@@ -162,9 +171,48 @@ export const makeRepositoryDirectoryLayer = (providers: ReadonlyArray<GitHosting
           return yield* provider.browseRepositories(scope, page, mode)
         }),
         list: Effect.fn('RepositoryDirectory.list')(function* (hosted, state, cursor) {
-          const { repository } = yield* bind(hosted)
+          const { provider, repository } = yield* bind(hosted)
 
-          return yield* repository.listPullRequests({ scope: 'repository', state, cursor })
+          return yield* repository.listPullRequests({ scope: 'repository', state, cursor }).pipe(
+            Effect.map((page) =>
+              RepositoryPullRequestPage.make({
+                items: page.items,
+                next: page.next,
+                hosting: hosted,
+              }),
+            ),
+            Effect.catchTag(
+              'ProviderRedirected',
+              Effect.fn('RepositoryDirectory.recoverMoved')(function* (error) {
+                if (!provider.refreshRepository) return yield* error
+                const identity = yield* provider.refreshRepository(hosted.repository)
+                const destination = provider.destination?.(identity)
+
+                if (!destination || Option.isNone(destination)) return yield* error
+                const canonical = recognize(destination.value)
+
+                if (Option.isNone(canonical) || same(canonical.value.repository, hosted.repository))
+                  return yield* error
+                const refreshed = yield* bind(canonical.value)
+
+                const page = yield* refreshed.repository.listPullRequests({
+                  scope: 'repository',
+                  state,
+                  cursor: Option.none(),
+                })
+
+                return RepositoryPullRequestPage.make({
+                  items: page.items,
+                  next: page.next,
+                  hosting: HostedRepository.make({
+                    provider: provider.identity,
+                    repository: identity,
+                    cloneUrl: destination.value,
+                  }),
+                })
+              }),
+            ),
+          )
         }),
         details: Effect.fn('RepositoryDirectory.details')(function* (hosted, id) {
           const { repository } = yield* bind(hosted)

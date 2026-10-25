@@ -49,7 +49,7 @@ export function providerError(error: SessionProblem): string {
     case 'ProviderUnavailable':
       return 'Provider or authentication service unavailable. Refresh to retry.'
     case 'ProviderRedirected':
-      return 'The provider redirected this request. The repository may have moved or been renamed. Remove its old watchlist entry and add its current URL. Duff does not follow authenticated redirects.'
+      return 'The repository may have moved or been renamed, but Duff could not resolve its current address. Check access or add its current URL.'
     case 'InvalidProviderResponse':
       return 'Provider returned invalid data. Refresh to retry.'
     case 'InvalidContinuation':
