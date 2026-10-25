@@ -131,6 +131,10 @@
       "rules": { "anti-slop/no-unknown-parameters": "off" }
     },
     {
+      "files": ["packages/extension/src/dashboard/DashboardCommands.ts"],
+      "rules": { "unicorn/require-post-message-target-origin": "off" }
+    },
+    {
       "files": [
         "packages/core/src/review/BranchReview.ts",
         "packages/core/src/pull-requests/azure-devops/AzureDevOpsHttp.ts"

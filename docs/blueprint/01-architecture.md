@@ -131,3 +131,31 @@ The native UI was exercised in an isolated Extension Development Host.
 Historical-document language intelligence is limited; full LSP behavior across languages was not verified.
 Binary rendering, large-repository behavior, and automatic branch-change refresh were not verified.
 Identity inspection is partial; see the [strategy contract](03-identity-and-provider-strategies.md) for remaining gaps. The current capability/session cutover passes check, 40 tests, packaging and native supplied-service UI verification. Real provider requests and native sign-in remain unverified. See the [delivery log](../implementation-log.md#2026-10-10-core-owned-pull-requests-and-review-session).
+
+## Repository dashboard and managed reviews
+
+Status: implemented on the feature branch under [D013](02-decision-log.md#d013-repository-command-center-and-isolated-review-windows). This extends the earlier local-review flow above; it does not replace branch comparison.
+
+Core's [RepositoryDirectory](../../packages/core/src/dashboard/RepositoryDirectory.ts) owns provider-neutral recognition, collection suggestions, browsing, PR listing and exact-revision resolution. The same built-in adapter instances supply it and existing PullRequests discovery. Adapters own provider-specific collection parsing, repository pagination and credential-free clone destinations. Recognition/suggestions are local; browsing is explicit and cancellable. GitHub uses account/owner lists; Azure retrieves its documented unpaged collection and slices it locally.
+
+Core's [RepositoryCatalog](../../packages/core/src/dashboard/Repositories.ts) is the replaceable watchlist boundary. The extension's [RepositoryStore](../../packages/extension/src/dashboard/RepositoryStore.ts) persists identities/local paths in host-local SQLite, independent of editor profiles. Transactions merge individual entries instead of overwriting a stale catalog. The [data-directory adapter](../../packages/extension/src/dashboard/DataDirectory.ts) supplies the OS-specific user path at activation. Credentials are not stored there.
+
+The [dashboard controller](../../packages/extension/src/dashboard/DashboardCommands.ts) owns native dialogs, bulk selections across sources, generation-guarded async reads and a nonce/CSP-protected editor webview. It does not branch on provider IDs. Local inspection is bounded to explicitly chosen folders and one child level; a local-only entry remains useful without provider access. Window focus rereads the shared catalog; there is no background sync service.
+
+```text
+Dashboard → RepositoryDirectory → provider adapters → pinned source/target revisions
+    ↓                                      ↓
+RepositoryCatalog                    ReviewWorkspaces.prepare
+    ↓                                      ↓
+Shared SQLite                       full detached Git checkout
+                                           ↓
+                                  separate editor window
+                                           ↓
+                                existing native review tools
+```
+
+[ReviewWorkspaces](../../packages/core/src/dashboard/ReviewWorkspaces.ts) owns complete detached checkouts keyed by target identity/PR and both revisions. It configures separate fork/source and target transports, calls BranchReview's bounded acquisition, disables checkout hooks/filters/templates and publishes staging plus metadata atomically. Trusted system/global credential settings alone are forwarded through child environments. Cross-process SQLite locks serialize preparation. Reopening verifies identity/HEAD but never resets edits; invalid existing directories fail untouched. Changed revisions use new directories. Checkouts are independent repositories rather than worktrees or a shared object cache.
+
+On first managed activation, PullRequestReview.openPrepared accepts the immutable snapshot into native review/progress. Later activation respects persisted active/inactive selection. [SharedReviewStore](../../packages/extension/src/dashboard/SharedReviewStore.ts) gives each checkout shared progress with optimistic revision checks; stale saves fail busy and require window reload. Legacy unmanaged sessions retain their workspace-local adapter. The composition root owns both adapters and one disposed ManagedRuntime.
+
+No cloud sync, automatic pruning, setup scripts, dependency installation, submodule initialization or provider writes are included. Full source enables editor tooling but does not guarantee an AST without the relevant SDKs/dependencies/extensions. POSIX storage and real-Git behavior have tests; platform and live-provider qualification belongs in the [delivery log](../implementation-log.md).

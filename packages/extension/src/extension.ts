@@ -1,3 +1,6 @@
+import { homedir } from 'node:os'
+import { join, relative, isAbsolute } from 'node:path'
+
 import { makeAzureCliAuthenticationLayer } from '@duff/core/azure-cli-authentication'
 import { makeGitContextLayer } from '@duff/core/git-context'
 import { makeGitHubCredentialsLayer } from '@duff/core/github-credentials'
@@ -5,11 +8,16 @@ import { pullRequestsLayer } from '@duff/core/pull-request-providers'
 import { PullRequestReview } from '@duff/core/pull-request-review'
 import { makeGitReviewLayer } from '@duff/core/review'
 import { ReviewSession } from '@duff/core/review-session'
+import { makeReviewWorkspacesLayer } from '@duff/core/review-workspaces'
 import { ReviewSessions } from '@duff/core/saved-review-sessions'
 import { Effect, Layer, ManagedRuntime } from 'effect'
 import { FetchHttpClient } from 'effect/http'
 import * as vscode from 'vscode'
 
+import { registerDashboardCommands } from './dashboard/DashboardCommands'
+import { dashboardDataDirectory } from './dashboard/DataDirectory'
+import { makeRepositoryStoreLayer } from './dashboard/RepositoryStore'
+import { makeSharedReviewStoreLayer } from './dashboard/SharedReviewStore'
 import { registerGitContextCommands } from './git-context/GitContextCommands'
 import { authenticationLayer } from './pull-requests/ProviderAuthentication'
 import { registerPullRequestCommands } from './pull-requests/PullRequestCommands'
@@ -20,6 +28,28 @@ import { observabilityLayer } from './telemetry/Telemetry'
 let disposeRuntime: (() => Promise<void>) | undefined
 
 export function activate(context: vscode.ExtensionContext) {
+  const dataDirectory = dashboardDataDirectory({
+    platform: process.platform,
+    homedir: homedir(),
+    environment: process.env,
+  })
+
+  const folder =
+    vscode.workspace.workspaceFolders?.length === 1
+      ? vscode.workspace.workspaceFolders[0]?.uri
+      : undefined
+
+  const managedPath =
+    folder?.scheme === 'file'
+      ? relative(join(dataDirectory, 'review-workspaces'), folder.fsPath)
+      : undefined
+
+  const managed =
+    managedPath !== undefined &&
+    managedPath !== '' &&
+    !managedPath.startsWith('..') &&
+    !isAbsolute(managedPath)
+
   const observability =
     context.extensionMode === vscode.ExtensionMode.Development
       ? observabilityLayer.pipe(Layer.provide(FetchHttpClient.layer))
@@ -47,7 +77,14 @@ export function activate(context: vscode.ExtensionContext) {
   const reviewLayer = makeGitReviewLayer(process.env)
 
   const savedSessions = ReviewSessions.layer.pipe(
-    Layer.provide(Layer.merge(reviewLayer, makeSavedReviewStoreLayer(context.storageUri?.fsPath))),
+    Layer.provide(
+      Layer.merge(
+        reviewLayer,
+        managed && folder
+          ? makeSharedReviewStoreLayer(dataDirectory, folder.fsPath)
+          : makeSavedReviewStoreLayer(context.storageUri?.fsPath),
+      ),
+    ),
   )
 
   const preparation = PullRequestReview.layer.pipe(
@@ -55,13 +92,21 @@ export function activate(context: vscode.ExtensionContext) {
   )
 
   const runtime = ManagedRuntime.make(
-    Layer.mergeAll(reviewLayer, gitContextLayer, sessionLayer, preparation, savedSessions).pipe(
-      Layer.provideMerge(observability),
-    ),
+    Layer.mergeAll(
+      reviewLayer,
+      gitContextLayer,
+      sessionLayer,
+      preparation,
+      savedSessions,
+      providers,
+      makeRepositoryStoreLayer(dataDirectory),
+      makeReviewWorkspacesLayer(dataDirectory, process.env),
+    ).pipe(Layer.provideMerge(observability)),
   )
 
   disposeRuntime = () => runtime.dispose()
   registerPullRequestCommands(context, runtime)
+  const dashboard = registerDashboardCommands(context, runtime)
 
   const startInspection = (root?: string) =>
     runtime.runFork(Effect.promise(() => gitContext.inspect(root, false)))
@@ -117,6 +162,7 @@ export function activate(context: vscode.ExtensionContext) {
   )
 
   if (vscode.workspace.workspaceFolders?.length === 1) startInspection()
+  else if (!vscode.workspace.workspaceFolders?.length) dashboard.open()
 }
 
 export async function deactivate() {

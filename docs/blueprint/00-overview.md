@@ -4,12 +4,12 @@ Status: local branch and exact-revision PR review, conservative Git-context insp
 
 ## Goal
 
-Make local code review easy inside VS Code, regardless of the remote provider.
-Choose a branch, browse changed files, open a native diff, and navigate the real code.
+Make Duff a repository-first pull-request command center inside VS Code, regardless of the remote provider.
+Watch remote and local repositories, choose the next review, and open its full pinned source in a dedicated window with native diffs and real-file navigation.
 
 ## Principles
 
-- Keep the editor and UI native to VS Code.
+- Keep review tools native to VS Code; use an editor webview for the full-screen dashboard.
 - Use Effect for Git workflows, typed failures, service dependencies, and resource ownership.
 - Use rat-stack as a reference, not as a requirement to copy its entire template.
 - Enforce important rules with types, lint, tests, and hooks.
@@ -26,7 +26,9 @@ Choose a branch, browse changed files, open a native diff, and navigate the real
 - Open the real workspace file separately for editing and language navigation.
 - Open the current working-tree file from a Duff diff's toolbar or the Duff: Open Workspace File command, including uncommitted contents.
 - Refresh comparison explicitly; choose a repository in multi-folder workspaces.
-- Select a GitHub or Azure PR for an exact-revision local review, with explicit consent before acquiring missing Git objects through matched configured remotes.
+- Bulk-select local and remote repositories in a dashboard, with lazy provider browsing and remote-derived collection suggestions.
+- Share watchlist and managed-review progress across editor profiles on the same OS user/host.
+- Select a GitHub or Azure PR for an exact-revision detached checkout in a dedicated window, downloading missing objects automatically under D013. Legacy unmanaged reviews retain their existing consent flow.
 - Refresh PR snapshots explicitly, cancel preparation without replacing the review, and exit back to the prior local comparison.
 - Bun watch build and F5 development configuration, with manual extension reload.
 
@@ -37,7 +39,7 @@ Built-in GitHub and Azure DevOps adapters live in core and use one job-shaped co
 
 ## Non-goals for these slices
 
-No merge, push, checkout, credential mutation, approval submission, comment sync, or cloud infrastructure.
+No merge, push, original-repository checkout changes, credential mutation, approval submission, comment sync, or cloud infrastructure. Managed review checkouts are in scope under D013.
 Commit-story navigation, review notes, binary rendering, and provider write operations remain outside the current scope.
 
 ## Settled discovery choices

@@ -65,6 +65,11 @@ export class PullRequestReview extends Context.Service<
     readonly cancel: () => Effect.Effect<void>
     readonly exit: () => Effect.Effect<void, ReviewStorageError>
     readonly restore: (root: string) => Effect.Effect<void, ReviewStorageError | ReviewError>
+    readonly openPrepared: (
+      selection: PullRequestSelection,
+      resolved: ResolvedPullRequest,
+      review: Review,
+    ) => Effect.Effect<void, ReviewStorageError | ReviewError>
     readonly resume: (key: string) => Effect.Effect<void, ReviewStorageError | ReviewError>
     readonly mark: (
       review: Review,
@@ -326,6 +331,25 @@ export class PullRequestReview extends Context.Service<
         Effect.uninterruptible,
       )
 
+      const openPrepared = Effect.fn('PullRequestReview.openPrepared')(
+        function* (selection: PullRequestSelection, resolved: ResolvedPullRequest, review: Review) {
+          yield* FiberMap.clear(jobs)
+          const saved = yield* sessions.accept(selection, resolved, review)
+          directory = Option.some(review.root)
+          durableActive = true
+          yield* SubscriptionRef.set(
+            state,
+            new PreparationState({
+              root: Option.some(review.root),
+              activity: Activity.Idle(),
+              accepted: Option.some(accepted(saved)),
+            }),
+          )
+        },
+        gate.withPermits(1),
+        Effect.uninterruptible,
+      )
+
       return PullRequestReview.of({
         changes: SubscriptionRef.changes(state),
         current: () => SubscriptionRef.get(state),
@@ -335,6 +359,7 @@ export class PullRequestReview extends Context.Service<
         exit,
         repositoryChanged,
         restore,
+        openPrepared,
         resume: (key) => resume(key).pipe(gate.withPermits(1), Effect.uninterruptible),
         mark,
       })

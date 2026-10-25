@@ -68,3 +68,10 @@ Evidence: [persistent session delivery](implementation-log.md#2026-10-15-persist
 Status: implemented on the feature branch under D012; delivery evidence is recorded in the implementation log.
 Scope: on-demand Git Diagnostics, PR rows without routine authentication metadata, native Open/Merged/Closed filter, state-bound provider pagination and existing immutable review for historical selections.
 Acceptance: both providers distinguish merged from closed without merging; switching filters cancels pending reads and clears old rows; refresh and pagination keep the filter; past PRs open without checkout or worktree creation. Missing revisions retain the existing explicit acquisition consent and typed failures.
+
+## S10: Repository dashboard and managed review windows
+
+Status: implemented on the feature branch under D013; verification and delivery limits are recorded in the implementation log.
+Scope: provider-neutral directory/catalog/workspace services, bulk local/remote repository picker, lazy collection suggestions, repository-first full-screen dashboard, host-local cross-editor SQLite storage, automatic pinned downloads and dedicated editable review windows.
+Acceptance: add several repositories together; retain local-only entries; browse supported providers without UI provider routing; open historical and current PRs in complete detached checkouts; preserve edits on unchanged reopen and separate new revisions; share watchlist/progress between editor profiles without storing credentials; reject stale progress writes and preserve files on cancellation/failure.
+Qualification: real temporary Git and SQLite tests plus installed-artifact Linux VSCodium checks. Windows/macOS native behavior and authenticated Azure discovery remain unqualified. No cloud sync, automatic cleanup, dependency installation, submodules, provider mutations or guaranteed language-server setup.

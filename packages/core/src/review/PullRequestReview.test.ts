@@ -351,3 +351,29 @@ it.effect('exit clears durable selection after repository reset without an accep
     ),
   ),
 )
+
+it.effect(
+  'publishes a prepared checkout and restores it without provider or revision acquisition',
+  () =>
+    Effect.gen(function* () {
+      const service = yield* PullRequestReview
+      const prepared = review('b'.repeat(40))
+      yield* service.openPrepared(selection('b'), resolved('b'), prepared)
+      const first = (yield* service.current()).accepted
+      expect(Option.map(first, (value) => value.review)).toEqual(Option.some(prepared))
+      yield* service.repositoryChanged(Option.none(), Option.none())
+      yield* service.repositoryChanged(Option.some('/fixture'), Option.some('/fixture'))
+      yield* service.restore('/fixture')
+      expect((yield* service.current()).accepted).toEqual(first)
+      yield* service.exit()
+      yield* service.restore('/fixture')
+      expect((yield* service.current()).accepted).toEqual(Option.none())
+    }).pipe(
+      Effect.provide(
+        testLayer(
+          () => Effect.die('prepared checkout must not resolve a provider'),
+          () => Effect.die('prepared checkout must not acquire revisions'),
+        ),
+      ),
+    ),
+)

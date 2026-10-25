@@ -1,6 +1,6 @@
 # Duff
 
-Review committed changes on your current Git branch inside VS Code.
+Find pull requests across repositories and review their pinned source in VS Code.
 Source: [planetaryescape/duff](https://github.com/planetaryescape/duff).
 
 ## Install the latest release
@@ -35,6 +35,21 @@ After source edits, run **Developer: Reload Window** in the development window.
 For manifest changes, stop the debug session and press F5 again.
 Rebuilds are automatic; extension-host hot reload is not implemented.
 Alternatively, run `bun run watch` and launch the development host yourself.
+
+## Pull request dashboard
+
+Run **Duff: Open Pull Request Dashboard** for a repository-first editor dashboard.
+Use **Add repositories** to select several remote repositories or local folders at once.
+Browse GitHub accounts/organizations or Azure DevOps organizations/projects; local Git remotes suggest collections without loading them automatically.
+Local-only repositories remain available for branch comparison. Discovery inspects selected folders and one level of children, not your whole disk.
+
+Select a watched repository, choose Open, Merged or Closed, then **Open review in new window**.
+Duff downloads missing objects automatically and opens a complete detached checkout at the pinned PR HEAD in a separate editor window. It never switches your original repository.
+Reopening the same revisions preserves edits and untracked files; newer source or target revisions get another directory. Duff does not install dependencies, initialize submodules or run setup scripts. Language navigation still needs the appropriate editor extensions, SDKs and dependencies.
+
+The watchlist and managed-review progress are shared across VS Code/VSCodium profiles for the same OS user on the same extension host. They are not cloud-synced.
+Storage is independent of editor profiles: `$XDG_DATA_HOME/duff/dashboard` (or `~/.local/share/duff/dashboard`) on Linux, `~/Library/Application Support/Duff/dashboard` on macOS, and `%LOCALAPPDATA%/Duff/dashboard` on Windows.
+SQLite stores metadata; Git stores review source in `review-workspaces`. Removing a watched repository does not delete its local files or managed checkouts. Concurrent progress conflicts fail instead of overwriting; reload the review window before retrying.
 
 ## Review a branch
 
@@ -82,7 +97,7 @@ to GitHub Releases; it does not publish to an extension marketplace. See the
 
 ## Git context and pull requests
 
-Duff opens with Changed Files and Pull Requests, not Git configuration. **Duff: Show Git Diagnostics** reveals local identity and safe credential configuration when you need to troubleshoot. Local inspection still supplies repository context for discovery. Git helpers are never executed. Configured Git identity and provider API authentication are separate.
+Duff opens with Changed Files and Pull Requests, not Git configuration. **Duff: Show Git Diagnostics** reveals local identity and safe credential configuration when you need to troubleshoot. Local inspection still supplies repository context for discovery and never executes credential helpers. Git acquisition can use configured helpers. Configured Git identity and provider API authentication are separate.
 
 For github.com, Duff uses `GH_TOKEN`, then `GITHUB_TOKEN`, then the active `gh` login for github.com. Empty variables count as absent. The CLI runs outside the workspace with an explicit host; `GH_HOST` cannot redirect credentials. If these sources are absent, an already-authorized VS Code session is the last authenticated fallback, followed by anonymous public reads. **Use VS Code account…** explicitly requests editor sign-in after a permission warning. Duff never runs `gh auth login`, switches CLI accounts, or retries rejected credentials under another identity.
 
@@ -92,7 +107,7 @@ The built-in GitHub and Azure DevOps adapters share one job-shaped contract in t
 
 Use the Pull Requests toolbar's search button or **Duff: Search Pull Requests…** in the command palette to find PRs by title, number, repository or source/target branch within the selected state. Search filters loaded pages across the selected repository's remote groups, not all PRs on the hosting service. **Load More Pull Requests** stays visible even when nothing matches; it adds the next page without clearing your query. GitHub merged/closed filtering can leave an empty page with more results still available; use Load More to continue. **Check Pull Requests** refreshes discovery, and selecting a PR uses the same immutable local review flow as the tree.
 
-Duff rereads the selected PR's details and pins the exact source and target commit IDs. It compares their unique common ancestor to the source commit, never your checkout's HEAD or a synthetic provider merge commit. Forks are matched by repository identity, not branch name. Available local objects need no fetch permission. If objects are missing, **Fetch PR Revisions…** asks before downloading through an existing matched Git remote. It uses your Git credentials, not the provider API token. Without a matching source remote, add one outside Duff or obtain the objects yourself, refresh Git context, and retry.
+Duff rereads the selected PR's details and pins the exact source and target commit IDs. It compares their unique common ancestor to the source commit, never your checkout's HEAD or a synthetic provider merge commit. New PR selections open managed review windows, configuring independent source/target remotes for forks and automatically acquiring exact revisions. Git authentication remains separate from provider API authentication. Legacy saved reviews in an existing workspace retain their consent-gated acquisition flow.
 
 An approved fetch updates only two bounded acquisition refs under `refs/duff/reviews/`, without tags, FETCH_HEAD, remote-tracking updates, submodule recursion or checkout changes. Accepting a saved PR review also creates session retention refs, described below. If a fallback branch moved from the pinned SHA, preparation fails rather than silently changing the snapshot. Missing/shallow history and ambiguous common ancestors fail explicitly; Duff does not unshallow repositories. **Cancel PR Preparation** and failures retain the prior review. **Refresh PR Review** explicitly rereads and prepares a new snapshot; **Exit PR Review** restores the previous local comparison when available. **Open Workspace File** opens the current checkout directly, without confirmation; its content can differ from the reviewed revision.
 
@@ -100,11 +115,11 @@ An approved fetch updates only two bounded acquisition refs under `refs/duff/rev
 
 Duff saves multiple PR sessions locally, for both Azure DevOps and GitHub. Reopening the same single-folder workspace automatically restores the last active PR's exact snapshot, viewed marks and last opened diff. **Resume Review…** lists saved reviews for the selected repository, most recently reviewed first, independently of the live open-PR list. Resume reads local Git objects and needs neither provider authentication nor a fetch. Normal background discovery remains controlled by `duff.automaticDiscovery`.
 
-Clicking an already saved PR resumes it; **Refresh PR Review** explicitly checks for newer revisions. There is one current snapshot per PR, not a history. On update, only previously viewed files whose change kind, old/new paths, both object IDs and both file modes are unchanged stay viewed. Changed/new diffs are unviewed; removed files leave the list. Rebased commits can retain marks when their full file comparisons are identical. Failed preparation or saving keeps the accepted review. Opening a diff never marks it viewed.
+New PR selections resolve the latest revisions into managed windows; **Resume Review…** restores a saved snapshot without updating it. **Refresh PR Review** checks for newer revisions: managed reviews open another checkout, leaving the old window and its edits intact. Legacy unmanaged sessions keep one current snapshot per PR. Their updates retain viewed marks only when change kind, old/new paths, both object IDs and both modes are unchanged. Failed preparation or saving keeps the accepted review. Opening a diff never marks it viewed.
 
 **Exit PR Review** retains the session but clears its active selection, so the next restart stays inactive. **Forget Saved Review…** asks before deleting progress and releasing that session's pins. Neither action changes the provider, checkout or branches. Changes are saved during review; a crash before a write completes can lose that unacknowledged change. Missing Git objects or invalid storage produce an error without deleting saved progress. A second window using the same workspace storage reports it busy rather than overwriting the first window's progress.
 
-**Storage and garbage collection:** metadata lives in `reviews.json` under VS Code/VSCodium's workspace-scoped `ExtensionContext.storageUri`, outside the repository. This contains PR labels, immutable commit IDs, file/object metadata, viewed paths and the last file, never file contents or credentials. Each session protects its base/source/target commits under `refs/duff/sessions/<workspace-owner>/<session>/<snapshot>/` in Git; linked worktrees use distinct root identities and share Git's ref storage safely.
+**Storage and garbage collection:** managed review metadata uses per-checkout SQLite databases in the shared user directory above. Legacy unmanaged reviews use `reviews.json` under VS Code/VSCodium's workspace-scoped `ExtensionContext.storageUri`, outside the repository. Metadata contains PR labels, immutable commit IDs, file/object metadata, viewed paths and the last file, never file contents or credentials. Each session protects its base/source/target commits under `refs/duff/sessions/<workspace-owner>/<session>/<snapshot>/` in Git; linked worktrees use distinct root identities and share Git's ref storage safely. Managed checkouts remain on disk until manually removed; Forget deletes progress, not checkout files.
 
 There is no age-based expiry or automatic session limit. Update and Forget durably record the metadata change before releasing only obsolete owned session refs. A recovery journal retries unfinished releases on later session operations; failures prefer retained objects over lost work. Duff never runs `git gc`, `prune` or `repack`. Git may reclaim released objects through normal maintenance only when no branch, acquisition ref, other session, reflog or other root still retains them. Clearing the editor's workspace storage manually can orphan pins; use Forget first. Session storage does not sync between devices, and moving a repository/workspace does not migrate its sessions.
 

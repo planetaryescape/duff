@@ -2,6 +2,8 @@ import { createHash, randomUUID } from 'node:crypto'
 
 import { Clock, DateTime, Effect, Option, Redacted, Schema } from 'effect'
 
+import { HostedRepository } from '../../dashboard/Repositories'
+import { RepositoryPage } from '../../dashboard/RepositoryDirectory'
 import {
   Authentication,
   AuthenticationRequired,
@@ -326,11 +328,103 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
       })
     })
 
+  const providerIdentity = ProviderIdentity.make({
+    id: 'azure-devops',
+    displayName: 'Azure DevOps',
+    authenticationSource: 'azure-cli',
+  })
+
   return GitHostingProvider.of({
-    identity: ProviderIdentity.make({
-      id: 'azure-devops',
-      displayName: 'Azure DevOps',
-      authenticationSource: 'azure-cli',
+    identity: providerIdentity,
+    browsingScope: (repository) => {
+      const [org, project, repo] = repository.key.split('/')
+
+      if (!org || !project || !repo || repository.authority !== 'dev.azure.com') return ''
+
+      return Option.match(parseRemote(`https://dev.azure.com/${org}/${project}/_git/${repo}`), {
+        onNone: () => '',
+        onSome: (address) => `${address.org}/${address.project}`,
+      })
+    },
+    destination: (repository) => {
+      const [org, project, repo] = repository.key.split('/')
+
+      if (!org || !project || !repo || repository.authority !== 'dev.azure.com')
+        return Option.none()
+
+      return Option.flatMap(
+        parseRemote(`https://dev.azure.com/${org}/${project}/_git/${repo}`),
+        (address) =>
+          identity(address).key === repository.key
+            ? Option.some(repositoryUrl(address))
+            : Option.none(),
+      )
+    },
+    browseRepositories: Effect.fn('AzureDevOps.browseRepositories')(function* (scope, page, mode) {
+      if (!Number.isSafeInteger(page) || page < 1) return yield* new InvalidContinuation()
+      const parts = scope.split('/')
+
+      const parsed = yield* Schema.decodeUnknownEffect(Schema.Array(Segment))(parts).pipe(
+        Effect.mapError(() => new InvalidProviderResponse()),
+      )
+
+      const org = parsed[0]
+      const project = parsed[1]
+
+      if (!org || parsed.length > 2 || parsed.some((part) => part === '.' || part === '..'))
+        return yield* new InvalidProviderResponse()
+      const session = yield* authentication.session('microsoft', scopes, mode)
+
+      if (Option.isNone(session)) return yield* new AuthenticationRequired()
+      const path = [org, ...(project ? [project] : [])].map(encodeURIComponent).join('/')
+
+      // Git repositories/list has no server pagination parameters. Page the decoded collection.
+      const response = yield* http.get(
+        `https://dev.azure.com/${path}/_apis/git/repositories?api-version=7.1`,
+        Option.some(session.value.token),
+      )
+
+      const repositories = yield* Schema.decodeUnknownEffect(
+        Schema.Struct({
+          count: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+          value: Schema.Array(
+            Schema.Struct({
+              name: Segment,
+              project: Schema.Struct({ name: Segment }),
+            }),
+          ),
+        }),
+      )(response.body).pipe(Effect.mapError(() => new InvalidProviderResponse()))
+
+      if (repositories.count !== repositories.value.length)
+        return yield* new InvalidProviderResponse()
+
+      const items = yield* Effect.forEach(
+        repositories.value,
+        Effect.fn('AzureDevOps.repository')(function* (repository) {
+          const address = { org, project: repository.project.name, repo: repository.name }
+          const cloneUrl = repositoryUrl(address)
+
+          if (Option.isNone(parseRemote(cloneUrl))) return yield* new InvalidProviderResponse()
+
+          if (project && project.toLowerCase() !== repository.project.name.toLowerCase())
+            return yield* new InvalidProviderResponse()
+
+          return HostedRepository.make({
+            provider: providerIdentity,
+            repository: identity(address),
+            cloneUrl,
+          })
+        }),
+      )
+
+      items.sort((left, right) => left.repository.key.localeCompare(right.repository.key))
+      const offset = (page - 1) * 50
+
+      return RepositoryPage.make({
+        items: items.slice(offset, offset + 50),
+        hasMore: offset + 50 < items.length,
+      })
     }),
     recognizeRemote,
   })
