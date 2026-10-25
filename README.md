@@ -36,6 +36,15 @@ For manifest changes, stop the debug session and press F5 again.
 Rebuilds are automatic; extension-host hot reload is not implemented.
 Alternatively, run `bun run watch` and launch the development host yourself.
 
+### Local traces and logs
+
+With the local Portless observability stack running, use `bun run dev:local /absolute/path/to/repository`.
+This starts an isolated VSCodium development host with `DUFF_TELEMETRY=local`: traces go to Tempo on `127.0.0.1:14318`, and logs go to Alloy on `127.0.0.1:14320` for Loki. No ingestion token is needed or forwarded.
+Close every window using the development profile before relaunching so it inherits the selected destination. Run `bun run watch` separately for rebuilds, then reload the development window after edits.
+
+In `https://grafana.localhost`, search Tempo with `{ resource.service.name = "duff" }` and Loki with `{service_name="duff"}`. Operation logs include a safe error type and trace correlation, never raw exceptions or repository content.
+`bun run dev` keeps authenticated Hetzner export. `DUFF_TELEMETRY=off bun run dev` disables export. Installed extensions and extension-test mode never export, even when these variables are set.
+
 ## Pull request dashboard
 
 Run **Duff: Open Pull Request Dashboard** for a repository-first editor dashboard.

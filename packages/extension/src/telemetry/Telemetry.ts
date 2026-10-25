@@ -1,3 +1,8 @@
+import { CatalogError } from '@duff/core/dashboard-repositories'
+import { GitContextError } from '@duff/core/git-context'
+import { DiscoveryError } from '@duff/core/git-hosting-provider'
+import { ReviewError } from '@duff/core/review'
+import { ReviewStorageError } from '@duff/core/saved-reviews'
 import { Cause, Config, Data, Effect, Layer, Option, Redacted, Schema } from 'effect'
 import { HttpBody } from 'effect/http'
 import { OtlpLogger, OtlpSerialization, OtlpTracer } from 'effect/observability'
@@ -14,6 +19,15 @@ export type Operation =
   | 'Duff.preparePullRequest'
   | 'Duff.dashboard'
   | 'Duff.prepareWorkspace'
+  | 'Duff.loadDashboardPullRequests'
+
+const OperationError = Schema.Union([
+  DiscoveryError,
+  CatalogError,
+  GitContextError,
+  ReviewError,
+  ReviewStorageError,
+])
 
 const resource = {
   serviceName: 'duff',
@@ -88,7 +102,9 @@ const serialization = Layer.succeed(
                             ...record,
                             attributes: record.attributes?.filter(
                               (attribute) =>
-                                attribute.key === 'operation' || attribute.key === 'outcome',
+                                attribute.key === 'operation' ||
+                                attribute.key === 'outcome' ||
+                                attribute.key === 'error.type',
                             ),
                           }),
                       ),
@@ -103,6 +119,18 @@ const serialization = Layer.succeed(
 
 export const observabilityLayer = Layer.unwrap(
   Effect.gen(function* () {
+    const destination = yield* Config.Literals(['local', 'hetzner', 'off'], 'DUFF_TELEMETRY').pipe(
+      Config.withDefault('hetzner'),
+    )
+
+    if (destination === 'off') return Layer.empty
+
+    if (destination === 'local')
+      return Layer.merge(
+        OtlpTracer.layer({ url: 'http://127.0.0.1:14318/v1/traces', resource }),
+        OtlpLogger.layer({ url: 'http://127.0.0.1:14320/v1/logs', resource }),
+      ).pipe(Layer.provide(serialization))
+
     const configured = yield* Config.option(Config.Redacted('OTEL_EXPORTER_OTLP_HEADERS'))
 
     if (Option.isNone(configured)) return Layer.empty
@@ -119,9 +147,9 @@ export const observabilityLayer = Layer.unwrap(
     ).pipe(Layer.provide(serialization))
   }).pipe(
     Effect.catch(() =>
-      Effect.logWarning(
-        'Duff telemetry authentication configuration is invalid; export is disabled.',
-      ).pipe(Effect.as(Layer.empty)),
+      Effect.logWarning('Duff telemetry configuration is invalid; export is disabled.').pipe(
+        Effect.as(Layer.empty),
+      ),
     ),
   ),
 )
@@ -140,11 +168,28 @@ export const observeOperation = <A, E, R>(
             ? 'interrupted'
             : 'failure'
 
+      const error =
+        exit._tag === 'Failure'
+          ? Option.flatMap(
+              Cause.findErrorOption(exit.cause),
+              Schema.decodeUnknownOption(OperationError),
+            )
+          : Option.none()
+
+      const attributes =
+        outcome === 'failure'
+          ? {
+              operation,
+              outcome,
+              'error.type': Option.isSome(error) ? error.value._tag : 'UnexpectedFailure',
+            }
+          : { operation, outcome }
+
       return (
         outcome === 'failure'
           ? Effect.logWarning('Operation failed')
           : Effect.logInfo('Operation completed')
-      ).pipe(Effect.annotateLogs({ operation, outcome }))
+      ).pipe(Effect.annotateLogs(attributes))
     }),
     Effect.withSpan(operation),
   )

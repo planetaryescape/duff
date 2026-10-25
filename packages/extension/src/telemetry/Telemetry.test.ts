@@ -1,3 +1,4 @@
+import { ProviderRedirected } from '@duff/core/git-hosting-provider'
 import { expect, it } from '@effect/vitest'
 import { ConfigProvider, Effect, Layer, Ref, Schema } from 'effect'
 import { HttpClient, HttpClientResponse } from 'effect/http'
@@ -153,4 +154,87 @@ it.effect(
         ),
       ).toContain('partial')
     }),
+)
+
+it.effect(
+  'exports local traces and correlated typed failures without forwarding remote credentials',
+  () =>
+    Effect.gen(function* () {
+      const deliveries = yield* Ref.make<Array<{ url: string; body: string }>>([])
+
+      const client = HttpClient.make((request) =>
+        Effect.gen(function* () {
+          expect(request.headers.authorization).toBeUndefined()
+
+          if (request.body._tag !== 'Uint8Array') return yield* Effect.die('Expected JSON body')
+          const body = new TextDecoder().decode(request.body.body)
+          yield* Ref.update(deliveries, (entries) => [...entries, { url: request.url, body }])
+
+          return HttpClientResponse.fromWeb(request, new Response('{}'))
+        }),
+      )
+
+      const layer = observabilityLayer.pipe(
+        Layer.provide(Layer.succeed(HttpClient.HttpClient, client)),
+        Layer.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromUnknown({
+              DUFF_TELEMETRY: 'local',
+              OTEL_EXPORTER_OTLP_HEADERS: 'Authorization=Bearer canary-remote-credential',
+            }),
+          ),
+        ),
+      )
+
+      yield* Effect.scoped(
+        observeOperation(
+          'Duff.loadDashboardPullRequests',
+          Effect.fail(new ProviderRedirected()),
+        ).pipe(Effect.exit, Effect.provide(layer)),
+      )
+
+      const sent = yield* Ref.get(deliveries)
+      expect(sent.map(({ url }) => url)).toContain('http://127.0.0.1:14318/v1/traces')
+      expect(sent.map(({ url }) => url)).toContain('http://127.0.0.1:14320/v1/logs')
+      expect(JSON.stringify(sent)).toContain('ProviderRedirected')
+      expect(JSON.stringify(sent)).toContain('error.type')
+      expect(JSON.stringify(sent)).not.toContain('canary-remote-credential')
+      expect(JSON.stringify(sent)).not.toContain('otel.planetaryescape')
+
+      const traces = yield* Effect.forEach(
+        sent.filter(({ url }) => url.endsWith('/traces')),
+        ({ body }) => Schema.decodeUnknownEffect(Schema.fromJsonString(TracePayload))(body),
+      )
+
+      expect(
+        traces.flatMap((data) =>
+          data.resourceSpans.flatMap((resource) =>
+            resource.scopeSpans.flatMap((scope) => scope.spans),
+          ),
+        ),
+      ).toContainEqual(
+        expect.objectContaining({ name: 'Duff.loadDashboardPullRequests', status: { code: 2 } }),
+      )
+    }),
+)
+
+it.effect('does not export when disabled, unconfigured, or given an invalid destination', () =>
+  Effect.gen(function* () {
+    for (const configuration of [
+      {},
+      { DUFF_TELEMETRY: 'off', OTEL_EXPORTER_OTLP_HEADERS: 'Authorization=Bearer canary' },
+      { DUFF_TELEMETRY: 'https://untrusted.invalid' },
+    ]) {
+      const client = HttpClient.make(() => Effect.die('Unexpected telemetry request'))
+
+      const layer = observabilityLayer.pipe(
+        Layer.provide(Layer.succeed(HttpClient.HttpClient, client)),
+        Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(configuration))),
+      )
+
+      yield* Effect.scoped(
+        observeOperation('Duff.dashboard', Effect.void).pipe(Effect.provide(layer)),
+      )
+    }
+  }),
 )

@@ -82,15 +82,17 @@ Meaningful service and Git-adapter operations use named `Effect.fn` spans by def
 The integration adds workflow spans for context inspection, branch listing, comparison, refresh, and snapshot reads, with correlated success/failure/interruption logs.
 [Telemetry.ts](../../packages/extension/src/telemetry/Telemetry.ts) owns authenticated export and privacy projection; the managed runtime owns exporter shutdown.
 
-Extension Development Host mode exports to `https://otel.planetaryescape.co.za/v1/traces` and `/v1/logs`, then Hetzner Tempo and Loki.
+Extension Development Host mode supports explicit `DUFF_TELEMETRY=local`, `hetzner` (default), or `off`.
+Local mode exports traces to `http://127.0.0.1:14318/v1/traces` (Tempo) and logs to `http://127.0.0.1:14320/v1/logs` (Alloy to Loki), ignoring remote authentication headers. `bun run dev:local` selects it without decrypting any secrets. The owner's local-observability skill owns the stack.
+Hetzner mode exports to `https://otel.planetaryescape.co.za/v1/traces` and `/v1/logs`, then Hetzner Tempo and Loki.
 Follow the owner's planetaryescape-observability skill. `bun run dev` scopes the SOPS-decrypted ingestion token to the development process, without a plaintext file or token argument.
-The exporter requires `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer TOKEN`. Without it, export is disabled; malformed headers produce a safe warning and disable export.
+Hetzner export requires `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer TOKEN`. Without it, export is disabled; malformed headers or an invalid destination produce a safe warning and disable export.
 View both signals in [Grafana](https://grafana.planetaryescape.co.za): Tempo query `{ resource.service.name = "duff" }`, Loki query `{service_name="duff"}`.
 Production and extension-test modes install no exporter. Backend outages must not gate local Git operations. No infrastructure changes are required.
 The current collector attaches tunnel pod metadata to external logs; those Kubernetes labels do not describe Duff's host. Use the service name and development environment to find Duff.
 
 Exported spans keep stable names, IDs, timing, parent links, and status codes. Attributes, events, links, and exception messages/stacks are stripped at serialization.
-Exported logs keep only fixed operation-summary messages, operation/outcome annotations, and trace correlation. Do not log raw results or causes.
+Exported logs keep only fixed operation-summary messages, operation/outcome annotations, schema-validated error types, and trace correlation. Unexpected failures use a fixed label, not a caller-controlled tag. Do not log raw results or causes.
 Git identity, email, origin paths, remotes, branch/file names, argv, and file contents stay local to their existing UI/read boundaries, not telemetry.
 OtlpTracer/OtlpLogger are marked unstable inside pinned Effect 4.0.2. Their lightweight layers fit this new runtime without the separate OpenTelemetry SDK bridges.
 The exporter uses OTLP HTTP JSON to project private data out before sending; the collector accepts it. This differs from the skill's preferred protobuf encoding.
