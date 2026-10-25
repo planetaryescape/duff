@@ -326,6 +326,33 @@ describe('AzureDevOps', () => {
       }),
   )
 
+  it.effect('invalidates the previous cursor when restarting the same repository and state', () =>
+    Effect.gen(function* () {
+      let calls = 0
+
+      const contribution = yield* make(undefined, {
+        get: () =>
+          Effect.sync(() => {
+            calls++
+
+            return { body: fullPage, headers: {} }
+          }),
+      })
+
+      const repository = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
+      const page = yield* repository.listPullRequests(first)
+      const restarted = yield* repository.listPullRequests(first)
+      expect(
+        (yield* repository.listPullRequests({ ...first, cursor: page.next }).pipe(Effect.flip))
+          ._tag,
+      ).toBe('InvalidContinuation')
+      expect(
+        (yield* repository.listPullRequests({ ...first, cursor: restarted.next })).items,
+      ).toHaveLength(50)
+      expect(calls).toBe(3)
+    }),
+  )
+
   it.effect(
     'invalidates cursors for changed sessions and replacement tokens under the same session id',
     () =>

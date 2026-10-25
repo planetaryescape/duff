@@ -216,7 +216,6 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
   const recognizeRemote: GitHostingProvider['recognizeRemote'] = (remote) =>
     Option.map(parseRemote(remote.destination), (address) => {
       const boundIdentity = identity(address)
-      const continuationOwner = JSON.stringify([remote.name, boundIdentity.key])
       const endpoint = `https://dev.azure.com/${encodeURIComponent(address.org)}/${encodeURIComponent(address.project)}/_apis/git/repositories/${encodeURIComponent(address.repo)}/pullrequests`
 
       const avatarKey = (author: Schema.Schema.Type<typeof WirePullRequest>['createdBy']) => {
@@ -282,6 +281,7 @@ export const makeAzureDevOpsHttp = Effect.gen(function* (): Effect.gen.Return<
           .digest('hex')
 
         let skip = 0
+        const continuationOwner = JSON.stringify([remote.name, boundIdentity.key, input.state])
 
         if (Option.isSome(input.cursor)) {
           const continuation = continuations.get(continuationOwner)
