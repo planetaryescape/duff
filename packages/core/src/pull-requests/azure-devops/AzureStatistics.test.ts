@@ -64,7 +64,9 @@ const textFile = (path: string, originalPath = path) => ({
   ],
 })
 
-const make = Effect.fn('AzureStatisticsTest.make')(function* (http: ProviderHttp['Service']) {
+const make = Effect.fn('AzureStatisticsTest.make')(function* (
+  http: Pick<ProviderHttp['Service'], 'get' | 'post'>,
+) {
   const provider = yield* makeAzureDevOpsHttp.pipe(
     Effect.provideService(ProviderAuthentication, {
       session: () =>

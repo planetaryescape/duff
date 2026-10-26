@@ -1,5 +1,21 @@
 # Implementation log
 
+## 2026-10-26: Inline PR discussion integration
+
+Scope: immutable native discussion for GitHub/Azure, PR/comparison/side-qualified snapshot URIs, adjacent Markdown draft composition, durable local SQLite recovery, explicit create/reply/resolve/reopen, default-visible toolbar toggle, and unplaced/limited/stale/uncertain states. Pending provider comments keep their publication label; Duff does not submit pending reviews. Core and extension implementation used separate Sol 6.1 tasks.
+
+Upstream: the other agent's dashboard/statistics work is preserved in PR #22, `845d23b`, with the review-found Azure cursor fix at `eca34db`. The comments branch is based on that fix. Nothing in this entry claims either PR is merged or released.
+
+Review: the [combined review record](inline-discussion-review.md) covers the upstream work and new core/extension code. All three proven findings were corrected and independently closed. Core checks reached 230 tests; extension checks reached 96 before the two final real-SQLite reservation regressions. All ten store tests passed after the last fix.
+
+Native supplied-provider evidence exercised both immutable diff sides, initial resolved collapse, inert comment content, adjacent drafts, acknowledged Unicode recovery after process restart, Reply/Resolve/Reopen, creation preflight, Discard, uncertain-send retention and global inactive recovery. Reload recorded zero automatic mutation dispatches. Tests used fake providers and isolated storage, not live writes. Screenshots and reports were inspected under `/private/var/folders/pg/vp1mhynx13v3qrprvnbccpk40000gn/T/opencode/duff-inline-native/`.
+
+Installed-artifact evidence: `bun run package` produced self-contained `duff-0.2.1.vsix`, SHA256 `ef5a2eec069a5756546d686a368bfa0c003275c786de5f80820b3e4a01814317`. The final VSIX was reinstalled into the separate test extensions/profile, and packaged/built/installed bundles matched byte-for-byte. Activation, clean reload and public immutable local diff smoke passed. All 14 discussion command IDs and menu/view contributions were present. Active-PR provider handlers and persistence were exercised by the separate fixture, not the installed production artifact. Final reports/screenshots are under `duff-inline-installed/` beside the native evidence directory. The test repository `gbfm` remained clean on its original branch/commit.
+
+Full-stack verification passed: `bun run check`, `bun run test` (328 application tests plus rule tests), `bun run build`, and `bun run package`. Default test concurrency caused existing real-Git timeouts on both this branch and unchanged upstream `eca34db`. Thirteen workers produced six timeouts; two workers produced two; one worker passed three consecutive full application runs, with the final full test command also passing rule tests. `test:app` now uses `--maxWorkers=1`; deadlines, assertions, tests and hooks are unchanged. Runs took roughly 82-92 seconds with one worker. Exact OS contention was not profiled. The final application artifact passed installed smoke; the runner-only change does not alter that bundle.
+
+Limits: adjacent composition is agent-selected to enable stable API autosave. Visibility persistence is workspace-backed, not independent for duplicate windows sharing one workspace. New threads are single-line; GitHub creation is current-head/right-side only, Azure creation requires an exact retained iteration. Live provider writes, Azure server offset/tracking behavior, exhaustive native editing-during-send and power-loss behavior are not qualified. No owner-profile extension installation or live provider mutation was performed. The isolated installed test window remains available for inspection.
+
 ## 2026-10-09: Local review and development workflow
 
 Related: S01, S02, D001, D002.

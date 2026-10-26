@@ -1,8 +1,12 @@
+import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join, relative, isAbsolute } from 'node:path'
 
 import { makeAzureCliAuthenticationLayer } from '@duff/core/azure-cli-authentication'
 import { DashboardData } from '@duff/core/dashboard-data'
+import { DraftId, AttemptId } from '@duff/core/discussion'
+import { DiscussionIds } from '@duff/core/discussion-drafts'
+import { Discussions } from '@duff/core/discussions'
 import { makeGitContextLayer } from '@duff/core/git-context'
 import { makeGitHubCredentialsLayer } from '@duff/core/github-credentials'
 import { pullRequestsLayer } from '@duff/core/pull-request-providers'
@@ -22,6 +26,7 @@ import { makeSharedReviewStoreLayer } from './dashboard/SharedReviewStore'
 import { registerGitContextCommands } from './git-context/GitContextCommands'
 import { authenticationLayer } from './pull-requests/ProviderAuthentication'
 import { registerPullRequestCommands } from './pull-requests/PullRequestCommands'
+import { makeDiscussionDraftStoreLayer } from './review/DiscussionDraftStore'
 import { registerReviewCommands } from './review/ReviewCommands'
 import { makeSavedReviewStoreLayer } from './review/SavedReviewStore'
 import { installedObservabilityLayer, observabilityLayer } from './telemetry/Telemetry'
@@ -107,10 +112,30 @@ export function activate(context: vscode.ExtensionContext) {
       DashboardData.layer.pipe(Layer.provide(providers)),
       makeRepositoryStoreLayer(dataDirectory),
       makeReviewWorkspacesLayer(dataDirectory, process.env),
+      Discussions.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            reviewLayer,
+            providers,
+            makeDiscussionDraftStoreLayer(dataDirectory),
+            Layer.succeed(
+              DiscussionIds,
+              DiscussionIds.of({
+                draft: () => Effect.sync(() => DraftId.make(randomUUID())),
+                attempt: () => Effect.sync(() => AttemptId.make(randomUUID())),
+              }),
+            ),
+          ),
+        ),
+      ),
     ).pipe(Layer.provideMerge(observability)),
   )
 
-  disposeRuntime = () => runtime.dispose()
+  disposeRuntime = async () => {
+    for (const disposable of context.subscriptions) disposable.dispose()
+    await runtime.dispose()
+  }
+
   registerPullRequestCommands(context, runtime)
   const dashboard = registerDashboardCommands(context, runtime)
 

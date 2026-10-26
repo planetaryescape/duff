@@ -45,6 +45,7 @@ it.effect(
         }),
         Effect.provideService(ProviderHttp, {
           post: () => Effect.die('Unexpected POST'),
+          mutate: () => Effect.die('Unexpected mutation'),
           get: (_url, token) => {
             expect(Option.map(token, Redacted.value)).toEqual(Option.some('canary-token'))
 

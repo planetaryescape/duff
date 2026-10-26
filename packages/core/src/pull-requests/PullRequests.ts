@@ -13,6 +13,7 @@ import {
 
 import { type GitContextSnapshot } from '../git-context/GitContext'
 import { ReviewError, ReviewRevision, ReviewRevisions } from '../review/BranchReview'
+import { DiscussionUnsupported, type ProviderDiscussion } from './Discussion'
 import {
   type Authentication,
   type AuthenticationError,
@@ -21,6 +22,7 @@ import {
   InvalidContinuation,
   OpenPullRequest,
   ProviderIdentity,
+  type PullRequestSelection,
   type PullRequestPage,
   type PullRequestState,
   type ProviderRepository,
@@ -142,14 +144,7 @@ class Entry {
 
 export class GroupNotFound extends Schema.TaggedError<GroupNotFound>()('GroupNotFound', {}) {}
 
-export const PullRequestSelection = Schema.Struct({
-  provider: Schema.String,
-  repository: RepositoryIdentity,
-  id: Schema.String,
-  label: Schema.String,
-})
-
-export interface PullRequestSelection extends Schema.Schema.Type<typeof PullRequestSelection> {}
+export { PullRequestSelection } from './GitHostingProvider'
 
 export const ResolvedPullRequest = Schema.Struct({
   pullRequest: OpenPullRequest,
@@ -165,6 +160,9 @@ export interface ResolvedPullRequest extends Schema.Schema.Type<typeof ResolvedP
 export class PullRequests extends Context.Service<
   PullRequests,
   {
+    readonly discussion: (
+      selection: PullRequestSelection,
+    ) => Effect.Effect<ProviderDiscussion, DiscussionUnsupported>
     readonly discover: (
       snapshot: GitContextSnapshot,
       state?: PullRequestState,
@@ -418,6 +416,33 @@ export const makePullRequestsLayer = (providers: ReadonlyArray<GitHostingProvide
         })
       })
 
-      return PullRequests.of({ discover, loadMore, connect, resolve })
+      const discussion = Effect.fn('PullRequests.discussion')(function* (
+        selection: PullRequestSelection,
+      ) {
+        const provider = providers.find((provider) => provider.identity.id === selection.provider)
+        const destination = provider?.destination?.(selection.repository)
+
+        if (!provider || !destination || Option.isNone(destination))
+          return yield* new DiscussionUnsupported()
+
+        const repository = provider.recognizeRemote({
+          name: 'discussion',
+          destination: destination.value,
+          transport: 'https',
+          credentials: { _tag: 'NotApplicable' },
+        })
+
+        if (
+          Option.isNone(repository) ||
+          repository.value.identity.authority !== selection.repository.authority ||
+          repository.value.identity.key !== selection.repository.key ||
+          Option.isNone(repository.value.discussion)
+        )
+          return yield* new DiscussionUnsupported()
+
+        return repository.value.discussion.value
+      })
+
+      return PullRequests.of({ discover, loadMore, connect, resolve, discussion })
     }),
   )

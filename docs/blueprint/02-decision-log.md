@@ -154,3 +154,15 @@ Alternatives: eager per-repository statistics multiply requests; periodic pollin
 Consequences: metadata and statistics load independently. Partial, binary, unsupported, or failed comparisons never become complete zero totals. Retained results are labelled stale after failure, and known changed comparisons cannot use old totals as current. Dashboard-owned cancellation and identity guards prevent late responses from changing another selection. Cache persistence across extension restarts is not required.
 Revisit when: live provider limits or observed memory/request costs justify changing the freshness or cache policy.
 References: [accepted facts](../../goals/azure-pr-statistics/facts.md), [execution plan](../../goals/azure-pr-statistics/plan.md), [technical spec](../../goals/azure-pr-statistics/tech-spec.md).
+
+## D016: Immutable inline discussion with durable native drafts
+
+Status: owner-confirmed feature scope; agent-selected composition/storage details implemented under integration review. Date: 2026-10-26.
+
+Chosen scope: read existing threads, start threads, reply, resolve and reopen from immutable PR diffs. Comments default to visible, resolved threads start collapsed, and a Duff-only toolbar toggle remembers visibility across reloads. Unsent drafts survive review switches and restart.
+Reason: keep discussion beside the code while allowing the reviewer to hide it and retain unfinished work.
+Implementation choice: native comment threads display discussion; an adjacent native Markdown document composes drafts because the stable comments API does not expose unsent-text changes. A separate host-local SQLite store owns versioned drafts and mutation attempts. Effect owns saves, dispatch and typed outcomes. Snapshot URIs include PR, comparison, change and side identity.
+Alternatives: built-in inline inputs with an explicit Save Draft action weaken automatic recovery; a webview composer conflicts with the native review constraint. Neither alternative was selected.
+Consequences: no automatic replay after uncertain writes; explicit recovery cannot silently retarget comments or overwrite later edits. Pending provider comments remain labelled and cannot be submitted as a review through Duff. Initial new-thread support is single-line, GitHub current-head/right and Azure proven iteration/base or head. Workspace-backed visibility does not independently persist preferences for duplicate windows sharing a workspace. Those limits and adjacent composition are disclosed implementation choices, not separately owner-confirmed requirements.
+Revisit when: stable native input events become available, provider evidence supports broader anchors, or duplicate-window preferences need independent persistence.
+References: [problem](../../.specs/inline-pr-comments/00-problem.md), [alternatives](../../.specs/inline-pr-comments/02-alternatives.md), [contracts](../../.specs/inline-pr-comments/03-contracts.md), [verification plan](../../.specs/inline-pr-comments/06-test-plan.md).

@@ -1,6 +1,7 @@
 import { Clock, Context, DateTime, Effect, Layer, Option, Redacted, Schema, Stream } from 'effect'
 import { FetchHttpClient, HttpClient, HttpClientRequest } from 'effect/http'
 
+import { discussionPolicy } from './Discussion'
 import {
   AuthenticationRequired,
   type DiscoveryError,
@@ -10,6 +11,37 @@ import {
   RateLimited,
   RepositoryUnavailable,
 } from './GitHostingProvider'
+
+export interface MutationRequest {
+  readonly method: 'POST' | 'PATCH'
+  readonly url: string
+  readonly token: Option.Option<Redacted.Redacted>
+  readonly body: Schema.Json
+  readonly headers: Readonly<Record<string, string>>
+}
+
+const MutationFailureReason = Schema.Literals([
+  'transport',
+  'timeout',
+  'body-limit',
+  'response-decode',
+])
+
+export const MutationHttpResult = Schema.Union([
+  Schema.TaggedStruct('Received', {
+    status: Schema.Int,
+    body: Schema.Unknown,
+    headers: Schema.Record(Schema.String, Schema.String),
+  }),
+  Schema.TaggedStruct('Uncertain', { reason: MutationFailureReason }),
+])
+
+export type MutationHttpResult = Schema.Schema.Type<typeof MutationHttpResult>
+
+class MutationTransportError extends Schema.TaggedError<MutationTransportError>()(
+  'MutationTransportError',
+  { reason: MutationFailureReason },
+) {}
 
 /** Transport output remains undecoded until the owning provider selects its wire schema. */
 export const ProviderResponse = Schema.Struct({
@@ -22,6 +54,7 @@ export interface ProviderResponse extends Schema.Schema.Type<typeof ProviderResp
 export class ProviderHttp extends Context.Service<
   ProviderHttp,
   {
+    readonly mutate: (request: MutationRequest) => Effect.Effect<MutationHttpResult>
     readonly get: (
       url: string,
       token: Option.Option<Redacted.Redacted>,
@@ -40,6 +73,72 @@ export class ProviderHttp extends Context.Service<
     ProviderHttp,
     Effect.gen(function* () {
       const client = yield* HttpClient.HttpClient
+
+      const mutate = Effect.fn('ProviderHttp.mutate')(
+        function* (
+          input: MutationRequest,
+        ): Effect.fn.Return<MutationHttpResult, MutationTransportError> {
+          let request = yield* HttpClientRequest.bodyJson(
+            HttpClientRequest.make(input.method)(input.url).pipe(
+              HttpClientRequest.setHeaders({ Accept: 'application/json', ...input.headers }),
+            ),
+            input.body,
+          ).pipe(Effect.mapError(() => new MutationTransportError({ reason: 'response-decode' })))
+
+          if (Option.isSome(input.token))
+            request = request.pipe(HttpClientRequest.bearerToken(input.token.value))
+
+          const response = yield* client.execute(request).pipe(
+            Effect.provideService(FetchHttpClient.RequestInit, { redirect: 'manual' }),
+            Effect.provideService(HttpClient.TracerDisabledWhen, () => true),
+            Effect.mapError(() => new MutationTransportError({ reason: 'transport' })),
+          )
+
+          if (response.status < 200 || response.status >= 300)
+            return MutationHttpResult.make({
+              _tag: 'Received',
+              status: response.status,
+              body: null,
+              headers: response.headers,
+            })
+          const chunks: Uint8Array[] = []
+          let bytes = 0
+          yield* Stream.runForEach(response.stream, (chunk) => {
+            bytes += chunk.byteLength
+
+            if (bytes > discussionPolicy.responseBytes)
+              return Effect.fail(new MutationTransportError({ reason: 'body-limit' }))
+            chunks.push(chunk)
+
+            return Effect.void
+          }).pipe(
+            Effect.mapError((error) =>
+              error._tag === 'MutationTransportError'
+                ? error
+                : new MutationTransportError({ reason: 'transport' }),
+            ),
+          )
+
+          const body = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(
+            Buffer.concat(chunks).toString('utf8'),
+          ).pipe(Effect.mapError(() => new MutationTransportError({ reason: 'response-decode' })))
+
+          return MutationHttpResult.make({
+            _tag: 'Received',
+            status: response.status,
+            body,
+            headers: response.headers,
+          })
+        },
+        Effect.catch((error): Effect.Effect<MutationHttpResult> =>
+          Effect.succeed(MutationHttpResult.make({ _tag: 'Uncertain', reason: error.reason })),
+        ),
+        Effect.timeoutOrElse({
+          duration: discussionPolicy.requestTimeout,
+          orElse: () =>
+            Effect.succeed<MutationHttpResult>({ _tag: 'Uncertain', reason: 'timeout' }),
+        }),
+      )
 
       const get = Effect.fn('ProviderHttp.get')(
         function* (
@@ -71,6 +170,7 @@ export class ProviderHttp extends Context.Service<
 
           const response = yield* client.execute(request).pipe(
             Effect.provideService(FetchHttpClient.RequestInit, { redirect: 'manual' }),
+            Effect.provideService(HttpClient.TracerDisabledWhen, () => true),
             Effect.mapError(() => new ProviderUnavailable()),
           )
 
@@ -172,10 +272,14 @@ export class ProviderHttp extends Context.Service<
 
           return ProviderResponse.make({ body: decoded, headers: response.headers })
         },
-        Effect.timeoutOrElse({ duration: '20 seconds', orElse: () => new ProviderUnavailable() }),
+        Effect.timeoutOrElse({
+          duration: discussionPolicy.requestTimeout,
+          orElse: () => new ProviderUnavailable(),
+        }),
       )
 
       return ProviderHttp.of({
+        mutate,
         get: (url, token, headers, format, maxResponseBytes) =>
           get(url, token, headers, format, undefined, maxResponseBytes),
         post: (url, token, body) => get(url, token, {}, 'json', body),

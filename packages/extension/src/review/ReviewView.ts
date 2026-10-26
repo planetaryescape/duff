@@ -1,7 +1,10 @@
+import { type DiscussionReview } from '@duff/core/discussion'
 import { type FileChange, type Review, type Snapshot } from '@duff/core/review'
 import * as vscode from 'vscode'
 
-export function snapshotUri(snapshot: Snapshot): vscode.Uri {
+import { encodeSnapshotDocument, type SnapshotDocument } from './SnapshotDocument'
+
+export function snapshotUri(snapshot: Snapshot, document?: SnapshotDocument): vscode.Uri {
   return vscode.Uri.from({
     scheme: 'duff-snapshot',
     path: vscode.Uri.joinPath(
@@ -9,7 +12,7 @@ export function snapshotUri(snapshot: Snapshot): vscode.Uri {
       snapshot.commit,
       snapshot.path ?? 'empty',
     ).path,
-    query: JSON.stringify(snapshot),
+    query: document ? encodeSnapshotDocument(document) : JSON.stringify(snapshot),
   })
 }
 
@@ -19,6 +22,7 @@ export class ReviewFile extends vscode.TreeItem {
     readonly change: FileChange,
     mode: 'list' | 'tree',
     viewed: boolean,
+    readonly discussion?: DiscussionReview,
   ) {
     super(vscode.Uri.joinPath(vscode.Uri.file(review.root), change.path))
     this.id = `file:${change.path}`
@@ -71,6 +75,7 @@ export class ReviewView
   readonly onDidChangeTreeData = this.changes.event
   private review: Review | undefined
   private viewed = new Set<string>()
+  private discussion: DiscussionReview | undefined
 
   constructor(private mode: 'list' | 'tree' = 'list') {}
 
@@ -81,14 +86,16 @@ export class ReviewView
     return this.mode
   }
 
-  setReview(review: Review, viewed: ReadonlyArray<string>) {
+  setReview(review: Review, viewed: ReadonlyArray<string>, discussion?: DiscussionReview) {
     this.review = review
+    this.discussion = discussion
     this.viewed = new Set(viewed)
     this.changes.fire()
   }
 
   clear() {
     this.review = undefined
+    this.discussion = undefined
     this.viewed.clear()
     this.changes.fire()
   }
@@ -104,7 +111,8 @@ export class ReviewView
 
     if (this.mode === 'list')
       return review.files.map(
-        (file) => new ReviewFile(review, file, this.mode, this.viewed.has(file.path)),
+        (file) =>
+          new ReviewFile(review, file, this.mode, this.viewed.has(file.path), this.discussion),
       )
     const prefix = parent ? `${parent.path}/` : ''
     const folders = new Set<string>()
@@ -116,7 +124,9 @@ export class ReviewView
       const separator = relative.indexOf('/')
 
       if (separator === -1)
-        files.push(new ReviewFile(review, file, this.mode, this.viewed.has(file.path)))
+        files.push(
+          new ReviewFile(review, file, this.mode, this.viewed.has(file.path), this.discussion),
+        )
       else folders.add(prefix + relative.slice(0, separator))
     }
 

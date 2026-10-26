@@ -28,6 +28,7 @@ const repository = (
   key: string,
   list: ProviderRepository['listPullRequests'],
 ): ProviderRepository => ({
+  discussion: Option.none(),
   identity: { authority: 'example.invalid', key, displayName: key },
   inspectAuthentication: () => Effect.succeed({ _tag: 'Unauthenticated' }),
   connectAuthentication: () =>

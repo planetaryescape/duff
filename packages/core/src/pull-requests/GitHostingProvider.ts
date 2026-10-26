@@ -2,6 +2,7 @@ import { type Effect, type Option, type Redacted, Schema } from 'effect'
 
 import { type RepositoryPage } from '../dashboard/RepositoryDirectory'
 import { type GitContextSnapshot } from '../git-context/GitContext'
+import { type ProviderDiscussion } from './Discussion'
 
 export type Remote = GitContextSnapshot['remotes'][number]
 
@@ -29,6 +30,15 @@ export const RepositoryIdentity = Schema.Struct({
 })
 
 export interface RepositoryIdentity extends Schema.Schema.Type<typeof RepositoryIdentity> {}
+
+export const PullRequestSelection = Schema.Struct({
+  provider: Schema.String,
+  repository: RepositoryIdentity,
+  id: Schema.String,
+  label: Schema.String,
+})
+
+export interface PullRequestSelection extends Schema.Schema.Type<typeof PullRequestSelection> {}
 
 export const Authentication = Schema.Union([
   Schema.TaggedStruct('Authenticated', {
@@ -212,6 +222,7 @@ export const DiscoveryError = Schema.Union([
 export type DiscoveryError = Schema.Schema.Type<typeof DiscoveryError>
 
 export interface ProviderRepository {
+  readonly discussion: Option.Option<ProviderDiscussion>
   readonly identity: RepositoryIdentity
   readonly inspectAuthentication: () => Effect.Effect<Authentication, AuthenticationError>
   readonly connectAuthentication: () => Effect.Effect<Authentication, AuthenticationError>

@@ -95,6 +95,7 @@ const testLayer = (
         Layer.succeed(
           PullRequests,
           PullRequests.of({
+            discussion: () => Effect.die('Unexpected discussion'),
             resolve,
             discover: () => Stream.empty,
             loadMore: () => Effect.die('unused'),

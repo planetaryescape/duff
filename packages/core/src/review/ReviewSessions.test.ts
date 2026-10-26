@@ -121,6 +121,7 @@ it.effect(
             Layer.succeed(
               PullRequests,
               PullRequests.of({
+                discussion: () => Effect.die('Unexpected discussion'),
                 discover: () => Stream.empty,
                 resolve: () => Effect.die('offline only'),
                 loadMore: () => Effect.die('offline only'),
