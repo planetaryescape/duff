@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { basename } from 'node:path'
 
+import { DashboardData } from '@duff/core/dashboard-data'
 import { DashboardPreferenceChange } from '@duff/core/dashboard-preferences'
 import {
   hostedRepositoryId,
@@ -10,18 +11,20 @@ import {
 } from '@duff/core/dashboard-repositories'
 import { GitContext } from '@duff/core/git-context'
 import { PullRequestState } from '@duff/core/git-hosting-provider'
-import {
-  RepositoryDirectory,
-  RepositorySource,
-  RepositoryPullRequestPage,
-} from '@duff/core/repository-directory'
+import { RepositoryDirectory, RepositorySource } from '@duff/core/repository-directory'
 import { ReviewWorkspaces } from '@duff/core/review-workspaces'
-import { Data, Effect, Option, type Redacted, Schema } from 'effect'
+import { Data, Effect, Option, Schema } from 'effect'
 import * as vscode from 'vscode'
 
 import { type CommandRuntime, runOperation } from '../Operations'
+import { DashboardActivity, listenForDashboardActivity } from './DashboardActivity'
 import { dashboardHtml } from './DashboardHtml'
+import { DashboardPagination } from './DashboardPagination'
+import { dashboardPullRequestPage } from './DashboardPullRequests'
+import { DashboardSelection } from './DashboardSelection'
+import { dashboardSelectionData } from './DashboardSelectionData'
 import { DashboardState } from './DashboardState'
+import { DashboardTasks } from './DashboardTasks'
 
 const Message = Schema.Struct({
   action: Schema.Literals([
@@ -59,12 +62,6 @@ class DashboardEvent extends Data.Class<{
   readonly value: DashboardState
 }> {}
 
-class LoadedPullRequests extends Data.Class<{
-  readonly page: RepositoryPullRequestPage
-  readonly watched: WatchedRepository
-  readonly moved: boolean
-}> {}
-
 class DashboardCommands {
   constructor(readonly open: () => void) {}
 }
@@ -86,11 +83,12 @@ export function registerDashboardCommands(
   const candidates = new Map<string, WatchedRepository>()
   const local = new Map<string, WatchedRepository>()
   const sources = new Map<string, RepositorySource>()
-  let cursor: Option.Option<Redacted.Redacted> = Option.none()
+  const pagination = new DashboardPagination()
   let page = 1
   let activeSource: RepositorySource | undefined
   let abort = new AbortController()
-  let detailsAbort = new AbortController()
+  let activity: DashboardActivity | undefined
+  let tasks: DashboardTasks | undefined
   let generation = 0
   let preparing = false
 
@@ -99,6 +97,8 @@ export function registerDashboardCommands(
       runtime,
       'Duff.dashboard',
       RepositoryCatalog.use((catalog) => catalog.changePreferences(change)),
+      undefined,
+      tasks?.signal,
     )
 
   const render = async () => {
@@ -107,17 +107,34 @@ export function registerDashboardCommands(
     await panel?.webview.postMessage(new DashboardEvent({ type: 'state', value: state }))
   }
 
+  const selection = new DashboardSelection(state, dashboardSelectionData(runtime), render)
+
+  const rememberNavigation = async () => {
+    const repository = state.repositories.find((item) => item.id === state.repositoryId)
+    const snapshot = pagination.snapshot(state)
+
+    if (!repository || Option.isNone(repository.hosting) || !snapshot) return
+    const hosted = repository.hosting.value
+    await runOperation(
+      runtime,
+      'Duff.dashboard',
+      DashboardData.use((data) => data.rememberNavigation(hosted, snapshot)),
+      undefined,
+      abort.signal,
+    )
+  }
+
   const reset = () => {
     abort.abort()
     abort = new AbortController()
-    detailsAbort.abort()
+    selection.cancel()
     state.clearDetails()
     generation++
     state.busy = false
     state.message = ''
     state.error = false
     state.more = false
-    cursor = Option.none()
+    pagination.clear()
     page = 1
   }
 
@@ -144,26 +161,63 @@ export function registerDashboardCommands(
       localPaths: [],
     })
 
-  const refreshCatalog = async () => {
+  const refreshCatalog = async (
+    options: { readonly signal: AbortSignal } = { signal: abort.signal },
+  ) => {
+    const current = generation
+    const target = panel
+
     const repositories = await runOperation(
       runtime,
       'Duff.dashboard',
       RepositoryCatalog.use((store) => store.list()),
+      undefined,
+      options.signal,
     )
 
     if (!repositories) return
-
-    if (state.updateRepositories(repositories)) reset()
 
     const preferences = await runOperation(
       runtime,
       'Duff.dashboard',
       RepositoryCatalog.use((catalog) => catalog.preferences()),
+      undefined,
+      options.signal,
     )
 
-    if (preferences) state.labels = preferences.repositoryLabels ?? {}
+    const directory = await runtime.runPromise(RepositoryDirectory, { signal: options.signal })
 
-    const directory = await runtime.runPromise(RepositoryDirectory)
+    if (current !== generation || target !== panel) return
+
+    const removed = state.repositories.filter(
+      (previous) => !repositories.some((repository) => repository.id === previous.id),
+    )
+
+    if (removed.some((repository) => repository.id === state.repositoryId)) selection.cancel()
+
+    if (removed.length) {
+      await runOperation(
+        runtime,
+        'Duff.dashboard',
+        Effect.forEach(
+          removed,
+          (repository) => {
+            const hosted = Option.getOrUndefined(repository.hosting)
+
+            return hosted ? DashboardData.use((data) => data.invalidate(hosted)) : Effect.void
+          },
+          { concurrency: 1 },
+        ),
+        undefined,
+        options.signal,
+      )
+
+      if (current !== generation || target !== panel) return
+    }
+
+    if (state.updateRepositories(repositories)) reset()
+
+    if (preferences) state.labels = preferences.repositoryLabels ?? {}
     state.providers = directory.providers
 
     for (const item of repositories) {
@@ -178,7 +232,7 @@ export function registerDashboardCommands(
 
   const inspectLocal = async (paths: ReadonlyArray<string>) => {
     const current = generation
-    const directory = await runtime.runPromise(RepositoryDirectory)
+    const directory = await runtime.runPromise(RepositoryDirectory, { signal: abort.signal })
 
     const results = await runtime.runPromise(
       Effect.forEach(
@@ -186,6 +240,7 @@ export function registerDashboardCommands(
         (path) => GitContext.use((git) => git.inspect(path)).pipe(Effect.result),
         { concurrency: 4 },
       ),
+      { signal: abort.signal },
     )
 
     if (current !== generation) return []
@@ -249,29 +304,12 @@ export function registerDashboardCommands(
     return [...inspected.values()]
   }
 
-  const loadDetails = async (id: string) => {
+  const loadDetails = async (id: string, force = false) => {
     const repository = state.repositories.find((item) => item.id === state.repositoryId)
 
     if (!repository || Option.isNone(repository.hosting) || !state.pulls.some((pr) => pr.id === id))
       return
-    const hosted = repository.hosting.value
-    detailsAbort.abort()
-    const controller = new AbortController()
-    detailsAbort = controller
-    const version = state.beginDetails(id)
-    await render()
-
-    if (controller.signal.aborted) return
-
-    const result = await runOperation(
-      runtime,
-      'Duff.dashboard',
-      RepositoryDirectory.use((directory) => directory.details(hosted, id)),
-      undefined,
-      controller.signal,
-    )
-
-    if (state.finishDetails(version, result)) await render()
+    await selection.load(repository.hosting.value, id, force)
   }
 
   const loadAvatar = async (id: string) => {
@@ -303,15 +341,22 @@ export function registerDashboardCommands(
     await render()
   }
 
-  const loadPullRequests = async (more = false) => {
+  const loadPullRequests = async (
+    more = false,
+    options: {
+      readonly retain?: boolean
+      readonly force?: boolean
+      readonly restoreFilter?: boolean
+    } = {},
+  ): Promise<void> => {
     const repository = state.repositories.find((item) => item.id === state.repositoryId)
 
     if (!repository || Option.isNone(repository.hosting)) return
     const hosted = repository.hosting.value
-    const filter = state.filter
-    const preferredId = state.pullRequestId
+    let filter = state.filter
+    let preferredId = state.pullRequestId
 
-    if (!more) {
+    if (!more && !options.retain) {
       reset()
       state.pulls = []
       state.pullRequestId = ''
@@ -319,39 +364,88 @@ export function registerDashboardCommands(
     }
 
     const current = generation
+
+    if (!more && !options.retain) {
+      const navigation = await runOperation(
+        runtime,
+        'Duff.dashboard',
+        DashboardData.use((data) =>
+          data.peekNavigation(hosted, options.restoreFilter ? undefined : filter),
+        ),
+        undefined,
+        abort.signal,
+      )
+
+      if (current !== generation) return
+
+      if (navigation && Option.isSome(navigation)) {
+        pagination.restore(state, navigation.value)
+        filter = state.filter
+        preferredId = state.pullRequestId
+        await render()
+        await persist({ _tag: 'SetFilter', repositoryId: repository.id, filter })
+
+        if (current !== generation) return
+        await persist({
+          _tag: 'SetQuery',
+          repositoryId: repository.id,
+          query: navigation.value.query,
+        })
+
+        if (current !== generation) return
+        await persist({
+          _tag: 'FocusPullRequest',
+          repositoryId: repository.id,
+          filter,
+          pullRequestId: preferredId,
+        })
+
+        if (current !== generation) return
+      } else {
+        const cached = await runOperation(
+          runtime,
+          'Duff.dashboard',
+          DashboardData.use((data) => data.peekListVersioned(hosted, filter)),
+          undefined,
+          abort.signal,
+        )
+
+        if (current !== generation) return
+
+        if (cached && Option.isSome(cached)) {
+          state.pullRequestId = preferredId
+          pagination.apply(state, cached.value.page, {
+            _tag: 'First',
+            revision: cached.value.revision,
+          })
+        }
+      }
+
+      const id = state.pullRequestId
+
+      if (id)
+        tasks?.run(async () => {
+          if (current === generation && state.pullRequestId === id) await loadDetails(id)
+        })
+    }
+
     state.busy = true
     state.message = `Loading ${filter} pull requests…`
+    const requestedRevision = pagination.snapshot(state)?.listRevision ?? 0
     await render()
 
     const result = await runOperation(
       runtime,
       'Duff.loadDashboardPullRequests',
-      Effect.gen(function* () {
-        const directory = yield* RepositoryDirectory
-        let page = yield* directory.list(hosted, filter, more ? cursor : Option.none())
-
-        if (!more && preferredId && !page.items.some((pull) => pull.id === preferredId)) {
-          const selected = yield* directory.details(page.hosting, preferredId).pipe(Effect.result)
-
-          if (
-            selected._tag === 'Success' &&
-            (selected.success.pullRequest.state ?? 'open') === filter
-          )
-            page = RepositoryPullRequestPage.make({
-              items: [selected.success.pullRequest, ...page.items],
-              next: page.next,
-              hosting: page.hosting,
-            })
-        }
-
-        const moved = hostedRepositoryId(page.hosting) !== hostedRepositoryId(hosted)
-
-        const watched = moved
-          ? yield* RepositoryCatalog.use((catalog) => catalog.relocate(repository.id, page.hosting))
-          : repository
-
-        return new LoadedPullRequests({ page, watched, moved })
-      }),
+      dashboardPullRequestPage(
+        repository,
+        hosted,
+        filter,
+        more
+          ? { _tag: 'More', cursor: pagination.cursor, preferredId }
+          : { _tag: 'First', preferredId, force: options.force ?? false },
+        () => selection.cancel(),
+      ),
       async () => {
         if (current !== generation) return
         state.busy = false
@@ -370,28 +464,61 @@ export function registerDashboardCommands(
     state.error = !result
 
     if (result) {
+      const selectedId = state.pullRequestId || preferredId
+
+      if (
+        !more &&
+        state.pullRequestId &&
+        state.pullRequestId !== preferredId &&
+        !result.page.items.some((pull) => pull.id === state.pullRequestId)
+      ) {
+        await loadPullRequests(false, { retain: true })
+
+        return
+      }
+
       if (result.moved) {
         state.repositoryId = result.watched.id
         await refreshCatalog()
         state.pulls = []
         state.pullRequestId = ''
         state.avatars = {}
+        pagination.clear()
       }
 
-      const items = new Map(state.pulls.map((pr) => [pr.id, pr]))
+      state.pullRequestId = selectedId
 
-      for (const pr of result.page.items) items.set(pr.id, pr)
-      state.pulls = [...items.values()]
-      cursor = result.page.next
-      state.more = Option.isSome(cursor)
-      state.pullRequestId = state.pulls.some((pull) => pull.id === preferredId)
-        ? preferredId
-        : (state.pulls[0]?.id ?? '')
+      const applied = pagination.apply(
+        state,
+        result.page,
+        more && !result.moved
+          ? { _tag: 'More', revision: requestedRevision }
+          : { _tag: 'First', revision: result.revision },
+      )
+
+      if (!applied) {
+        await render()
+
+        return
+      }
+
+      if (!state.more && Option.isSome(pagination.cursor))
+        state.message =
+          'Loaded pagination limit reached: five pages or 250 pull requests. Refresh starts from the latest first page.'
+      await rememberNavigation()
+
+      if (current !== generation) return
+
+      if (!state.pullRequestId) {
+        selection.cancel()
+        state.clearDetails()
+      }
     }
 
     await render()
 
-    if ((!more || result?.moved) && state.pullRequestId) await loadDetails(state.pullRequestId)
+    if ((!more || result?.moved) && state.pullRequestId)
+      await loadDetails(state.pullRequestId, options.force)
   }
 
   const browse = async (source: RepositorySource, more = false) => {
@@ -448,6 +575,7 @@ export function registerDashboardCommands(
     const hosted = explicit ?? (repository ? Option.getOrUndefined(repository.hosting) : undefined)
 
     if (!hosted || preparing) return
+    const dashboardSignal = explicit ? undefined : tasks?.signal
     preparing = true
 
     try {
@@ -459,6 +587,11 @@ export function registerDashboardCommands(
         },
         async (progress, token) => {
           const controller = new AbortController()
+
+          const signal = dashboardSignal
+            ? AbortSignal.any([controller.signal, dashboardSignal])
+            : controller.signal
+
           const listener = token.onCancellationRequested(() => controller.abort())
 
           if (token.isCancellationRequested) controller.abort()
@@ -479,10 +612,10 @@ export function registerDashboardCommands(
                 return yield* workspaces.prepare(resolved)
               }),
               undefined,
-              controller.signal,
+              signal,
             )
 
-            if (prepared && !controller.signal.aborted)
+            if (prepared && !signal.aborted)
               await vscode.commands.executeCommand(
                 'vscode.openFolder',
                 vscode.Uri.file(prepared.directory),
@@ -498,7 +631,7 @@ export function registerDashboardCommands(
     }
   }
 
-  const dispatch = async (message: Schema.Schema.Type<typeof Message>) => {
+  const dispatch = async (message: Schema.Schema.Type<typeof Message>, target = panel) => {
     const { action, id = '' } = message
 
     if (action === 'ready') {
@@ -506,15 +639,25 @@ export function registerDashboardCommands(
         runtime,
         'Duff.dashboard',
         RepositoryCatalog.use((catalog) => catalog.preferences()),
+        undefined,
+        tasks?.signal,
       )
+
+      if (target !== panel) return
 
       if (preferences) state.restore(preferences)
       await refreshCatalog()
+
+      if (target !== panel) return
       await loadPullRequests()
+
+      if (target === panel) activity?.ready()
     } else if (action === 'preference' && message.change) {
       const preferences = await persist(message.change)
 
       if (!preferences) return
+
+      if (target !== panel) return
 
       if (message.change._tag === 'MoveRepository') {
         await refreshCatalog()
@@ -523,6 +666,7 @@ export function registerDashboardCommands(
         message.change.repositoryId === state.repositoryId
       ) {
         state.query = message.change.query
+        await rememberNavigation()
 
         return
       } else if (message.change._tag === 'ResizeColumns') {
@@ -552,7 +696,7 @@ export function registerDashboardCommands(
         title: 'Choose repositories or parent folders',
       })
 
-      if (!folders) return
+      if (!folders || target !== panel) return
       reset()
       state.sourceId = 'local'
       state.busy = true
@@ -592,7 +736,7 @@ export function registerDashboardCommands(
       state.sourceId = 'local'
       state.candidates = [...local.values()]
     } else if (action === 'browse') {
-      const directory = await runtime.runPromise(RepositoryDirectory)
+      const directory = await runtime.runPromise(RepositoryDirectory, { signal: abort.signal })
       const provider = directory.providers.find((item) => item.id === id)
 
       if (!provider) return
@@ -604,7 +748,7 @@ export function registerDashboardCommands(
         ignoreFocusOut: true,
       })
 
-      if (scope === undefined) return
+      if (scope === undefined || target !== panel) return
 
       const source = RepositorySource.make({
         id: `${id}:${scope}`,
@@ -625,8 +769,8 @@ export function registerDashboardCommands(
         prompt: 'Repository URL or Git remote destination',
       })
 
-      if (!url) return
-      const directory = await runtime.runPromise(RepositoryDirectory)
+      if (!url || target !== panel) return
+      const directory = await runtime.runPromise(RepositoryDirectory, { signal: abort.signal })
       const hosted = directory.recognize(url.trim())
 
       if (Option.isNone(hosted)) {
@@ -659,6 +803,8 @@ export function registerDashboardCommands(
         runtime,
         'Duff.dashboard',
         RepositoryCatalog.use((store) => store.add(selected).pipe(Effect.as(true))),
+        undefined,
+        tasks?.signal,
       )
 
       if (added) {
@@ -675,24 +821,40 @@ export function registerDashboardCommands(
       }
     } else if (action === 'repository') {
       if (!state.repositories.some((repository) => repository.id === id)) return
+
+      if (id === state.repositoryId) {
+        await activity?.check()
+
+        return
+      }
+
       reset()
       state.repositoryId = id
       state.pulls = []
       state.pullRequestId = ''
       state.query = ''
+      const current = generation
       await persist({ _tag: 'FocusRepository', repositoryId: id })
-      await loadPullRequests()
+
+      if (target !== panel || state.repositoryId !== id || current !== generation) return
+      await loadPullRequests(false, { restoreFilter: true })
     } else if (action === 'state') {
       const filter = Schema.decodeUnknownOption(PullRequestState)(id)
 
       if (Option.isNone(filter)) return
+      reset()
+      state.pulls = []
       state.filter = filter.value
       state.pullRequestId = ''
       state.query = ''
+      const current = generation
       await persist({ _tag: 'SetFilter', repositoryId: state.repositoryId, filter: filter.value })
+
+      if (target !== panel || current !== generation) return
       await loadPullRequests()
-    } else if (action === 'refresh') await loadPullRequests()
-    else if (action === 'more') {
+    } else if (action === 'refresh') {
+      await loadPullRequests(false, { retain: true, force: true })
+    } else if (action === 'more') {
       if (state.busy || !state.more) return
 
       if (state.mode === 'picker' && activeSource) {
@@ -710,7 +872,10 @@ export function registerDashboardCommands(
       })
 
       if (current !== generation || state.pullRequestId !== id) return
-      await loadDetails(id)
+      await rememberNavigation()
+
+      if (current !== generation || state.pullRequestId !== id) return
+      await loadDetails(id, action === 'details')
     } else if (action === 'avatar') await loadAvatar(id)
     else if (action === 'review') await openReview(id)
     else if (action === 'external') {
@@ -738,7 +903,7 @@ export function registerDashboardCommands(
           input.trim().length > 100 ? 'Use 100 characters or fewer.' : undefined,
       })
 
-      if (value === undefined) return
+      if (value === undefined || target !== panel) return
 
       const preferences = await persist({
         _tag: 'RenameRepository',
@@ -748,10 +913,23 @@ export function registerDashboardCommands(
 
       if (preferences) state.labels = preferences.repositoryLabels ?? {}
     } else if (action === 'remove') {
+      const removed = state.repositories.find((repository) => repository.id === id)
+
+      if (removed && Option.isSome(removed.hosting)) {
+        const hosted = removed.hosting.value
+        selection.cancel()
+        await runtime.runPromise(
+          DashboardData.use((data) => data.invalidate(hosted)),
+          { signal: abort.signal },
+        )
+      }
+
       await runOperation(
         runtime,
         'Duff.dashboard',
         RepositoryCatalog.use((store) => store.remove(id)),
+        undefined,
+        tasks?.signal,
       )
       reset()
       await refreshCatalog()
@@ -761,11 +939,21 @@ export function registerDashboardCommands(
 
       if (repository && Option.isSome(repository.hosting)) {
         const hosted = repository.hosting.value
+        selection.cancel()
+        pagination.clear()
         await runOperation(
           runtime,
           'Duff.dashboard',
           RepositoryDirectory.use((directory) => directory.connect(hosted)),
+          undefined,
+          tasks?.signal,
         )
+        await runtime.runPromise(
+          DashboardData.use((data) => data.invalidate(hosted)),
+          { signal: abort.signal },
+        )
+
+        if (target !== panel) return
         await loadPullRequests()
       }
     }
@@ -773,14 +961,16 @@ export function registerDashboardCommands(
     await render()
   }
 
-  const handle = async (raw: unknown) => {
+  const handle = async (raw: unknown, target = panel) => {
+    if (target !== panel) return
     const message = Schema.decodeUnknownOption(Message)(raw)
 
     if (Option.isNone(message)) return
 
     try {
-      await dispatch(message.value)
+      await dispatch(message.value, target)
     } catch {
+      if (target !== panel) return
       state.busy = false
       state.error = true
       state.message =
@@ -790,16 +980,54 @@ export function registerDashboardCommands(
   }
 
   const attach = (webviewPanel: vscode.WebviewPanel) => {
+    activity?.dispose()
+    tasks?.dispose()
+    reset()
     panel = webviewPanel
+
+    const currentTasks = new DashboardTasks((work, options) => {
+      runtime.runFork(work, options)
+    })
+
+    tasks = currentTasks
+
+    const currentActivity = new DashboardActivity(
+      () => webviewPanel.active,
+      () => state.mode === 'dashboard',
+      async ({ signal }) => {
+        const previous = state.repositoryId
+        await refreshCatalog({ signal })
+
+        if (
+          signal.aborted ||
+          panel !== webviewPanel ||
+          !webviewPanel.active ||
+          state.mode !== 'dashboard'
+        )
+          return
+        await loadPullRequests(false, {
+          retain: previous === state.repositoryId && state.pulls.length > 0,
+        })
+      },
+    )
+
+    activity = currentActivity
     state.mode = 'dashboard'
     panel.webview.options = { enableScripts: true, localResourceRoots: [] }
     panel.webview.html = dashboardHtml(randomUUID())
     context.subscriptions.push(
       panel,
       panel.webview.onDidReceiveMessage((message: unknown) =>
-        runtime.runFork(Effect.promise(() => handle(message))),
+        currentTasks.run(() => handle(message, webviewPanel)),
+      ),
+      listenForDashboardActivity(panel, vscode.window, currentActivity, (work) =>
+        currentTasks.run(work),
       ),
       panel.onDidDispose(() => {
+        currentActivity.dispose()
+        currentTasks.dispose()
+
+        if (panel !== webviewPanel) return
         panel = undefined
         reset()
       }),
@@ -847,19 +1075,14 @@ export function registerDashboardCommands(
           await openReview(number.value, hosted.value)
       },
     ),
-    vscode.window.onDidChangeWindowState((event) => {
-      if (event.focused && panel)
-        runtime.runFork(
-          Effect.promise(async () => {
-            const previous = state.repositoryId
-            await refreshCatalog()
-
-            if (previous !== state.repositoryId && state.mode === 'dashboard')
-              await loadPullRequests()
-          }),
-        )
-    }),
-    { dispose: () => abort.abort() },
+    {
+      dispose: () => {
+        abort.abort()
+        activity?.dispose()
+        tasks?.dispose()
+        selection.dispose()
+      },
+    },
   )
 
   return new DashboardCommands(open)

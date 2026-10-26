@@ -143,3 +143,14 @@ Reason: the owner wants operational evidence from daily use without sending anyt
 Alternatives: Hetzner export with a keychain-stored token adds secret handling and a remote destination; reading the token from the environment fails for normal Dock launches.
 Consequences: supersedes the rule that production mode never has an exporter. The setting is application-scoped, defaults to `off`, and needs a window reload, which Duff offers when it changes. A missing local stack only drops telemetry and never blocks Git operations.
 Revisit when: the owner wants installed telemetry in Hetzner or wants it to follow VS Code's global telemetry level.
+
+## D015: Lazy PR statistics and focus-triggered refresh
+
+Status: implemented locally; verification and provider limits recorded in the delivery log. Date: 2026-10-25.
+
+Chosen: load expensive statistics only for the selected PR, using existing provider authentication. Retain bounded in-memory results by exact comparison identity. Revalidate stale metadata after 60 seconds when the dashboard becomes active, its window regains focus while the dashboard is active, or a repository is selected or reselected. Explicit Refresh bypasses local freshness but preserves provider rate-limit deadlines and reuses complete immutable totals.
+Reason: the dashboard should show useful counts promptly without fetching every PR or discarding valid data during a refresh.
+Alternatives: eager per-repository statistics multiply requests; periodic polling does work while the dashboard is unused; fetching Git objects solely for counters adds unnecessary disk and network work.
+Consequences: metadata and statistics load independently. Partial, binary, unsupported, or failed comparisons never become complete zero totals. Retained results are labelled stale after failure, and known changed comparisons cannot use old totals as current. Dashboard-owned cancellation and identity guards prevent late responses from changing another selection. Cache persistence across extension restarts is not required.
+Revisit when: live provider limits or observed memory/request costs justify changing the freshness or cache policy.
+References: [accepted facts](../../goals/azure-pr-statistics/facts.md), [execution plan](../../goals/azure-pr-statistics/plan.md), [technical spec](../../goals/azure-pr-statistics/tech-spec.md).

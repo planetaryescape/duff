@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 import { join, relative, isAbsolute } from 'node:path'
 
 import { makeAzureCliAuthenticationLayer } from '@duff/core/azure-cli-authentication'
+import { DashboardData } from '@duff/core/dashboard-data'
 import { makeGitContextLayer } from '@duff/core/git-context'
 import { makeGitHubCredentialsLayer } from '@duff/core/github-credentials'
 import { pullRequestsLayer } from '@duff/core/pull-request-providers'
@@ -103,6 +104,7 @@ export function activate(context: vscode.ExtensionContext) {
       preparation,
       savedSessions,
       providers,
+      DashboardData.layer.pipe(Layer.provide(providers)),
       makeRepositoryStoreLayer(dataDirectory),
       makeReviewWorkspacesLayer(dataDirectory, process.env),
     ).pipe(Layer.provideMerge(observability)),

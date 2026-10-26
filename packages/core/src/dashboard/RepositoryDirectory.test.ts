@@ -25,13 +25,13 @@ const session = {
 }
 
 const make = Effect.fn('RepositoryDirectoryTest.make')(function* (
-  http: ProviderHttp['Service'],
+  http: Pick<ProviderHttp['Service'], 'get'>,
   authentication: ProviderAuthentication['Service'] = {
     session: () => Effect.succeed(Option.none()),
   },
 ) {
   const providers = yield* Effect.all([makeGitHubHttp, makeAzureDevOpsHttp]).pipe(
-    Effect.provideService(ProviderHttp, http),
+    Effect.provideService(ProviderHttp, { ...http, post: () => Effect.die('Unexpected POST') }),
     Effect.provideService(ProviderAuthentication, authentication),
   )
 

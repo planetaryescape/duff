@@ -1,3 +1,4 @@
+import { type DashboardData } from '@duff/core/dashboard-data'
 import { type RepositoryCatalog, CatalogError } from '@duff/core/dashboard-repositories'
 import { type GitContext, GitContextError } from '@duff/core/git-context'
 import { DiscoveryError } from '@duff/core/git-hosting-provider'
@@ -8,7 +9,7 @@ import { type ReviewSession } from '@duff/core/review-session'
 import { type ReviewWorkspaces } from '@duff/core/review-workspaces'
 import { type ReviewSessions } from '@duff/core/saved-review-sessions'
 import { ReviewStorageError } from '@duff/core/saved-reviews'
-import { Cause, type Effect, type ManagedRuntime, Option, Schema } from 'effect'
+import { Cause, Effect, type ManagedRuntime, Option, Schema } from 'effect'
 import * as vscode from 'vscode'
 
 import { providerError } from './pull-requests/ProviderError'
@@ -22,7 +23,8 @@ export type CommandRuntime = ManagedRuntime.ManagedRuntime<
   | ReviewSessions
   | RepositoryCatalog
   | RepositoryDirectory
-  | ReviewWorkspaces,
+  | ReviewWorkspaces
+  | DashboardData,
   never
 >
 
@@ -40,6 +42,7 @@ export async function runOperation<A, E>(
     | RepositoryCatalog
     | RepositoryDirectory
     | ReviewWorkspaces
+    | DashboardData
   >,
   onFailure?: () => void | Promise<void>,
   signal?: AbortSignal,
@@ -68,7 +71,12 @@ export async function runOperation<A, E>(
             ? providerError(provider.value)
             : 'Operation failed. Refresh to retry; provider sign-in may be unavailable in this editor.'
 
-  await vscode.window.showErrorMessage(`Duff: ${message}`)
+  runtime.runFork(
+    Effect.promise(async () => {
+      await vscode.window.showErrorMessage(`Duff: ${message}`)
+    }),
+    { signal },
+  )
 
   return undefined
 }

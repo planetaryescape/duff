@@ -4,6 +4,14 @@ import { Option } from 'effect'
 import { expect, it } from 'vitest'
 
 import { DashboardState } from './DashboardState'
+import { comparison } from './DashboardTestData'
+
+const summary = {
+  comparison,
+  files: 0,
+  lines: undefined,
+  reason: 'Line totals unavailable for this comparison.',
+}
 
 const repository = (id: string, localPaths: ReadonlyArray<string> = []) =>
   WatchedRepository.make({ id, name: id, hosting: Option.none(), localPaths })
@@ -88,34 +96,56 @@ it('keeps late PR details from replacing a newer selection or repository', () =>
   const second = state.beginDetails('second')
 
   expect(state.details).toEqual({ _tag: 'Loading' })
-  expect(state.finishDetails(first, details('first'))).toBe(false)
-  expect(state.finishDetails(second, details('second'))).toBe(true)
+  expect(state.finishDetails(first, details('first'), summary)).toBe(false)
+  expect(state.finishDetails(second, details('second'), summary)).toBe(true)
   expect(state.details).toEqual({
-    _tag: 'Loaded',
-    value: details('second'),
-    descriptionHtml: '<p>Selected PR description</p>\n',
+    _tag: 'Current',
+    value: { metadata: details('second'), descriptionHtml: '<p>Selected PR description</p>\n' },
   })
 
   const pending = state.beginDetails('first')
   state.updateRepositories([repository('another')])
 
-  expect(state.finishDetails(pending, details('first'))).toBe(false)
+  expect(state.finishDetails(pending, details('first'), summary)).toBe(false)
   expect(state.details).toEqual({ _tag: 'Idle' })
 })
 
 it('exposes detail failures and replaces them when retry succeeds', () => {
   const state = new DashboardState()
   const first = state.beginDetails('first')
-  state.finishDetails(first, undefined)
+  state.finishDetails(first, undefined, undefined)
 
-  expect(state.details).toEqual({ _tag: 'Failed' })
+  expect(state.details).toEqual({ _tag: 'Unavailable', reason: 'Could not load PR details.' })
 
   const retry = state.beginDetails('first')
-  state.finishDetails(retry, details('first'))
+  state.finishDetails(retry, details('first'), summary)
 
   expect(state.details).toEqual({
-    _tag: 'Loaded',
-    value: details('first'),
-    descriptionHtml: '<p>Selected PR description</p>\n',
+    _tag: 'Current',
+    value: { metadata: details('first'), descriptionHtml: '<p>Selected PR description</p>\n' },
   })
+})
+
+it('retains descriptions and statistics during refresh and marks a failed refresh stale', () => {
+  const state = new DashboardState()
+  state.finishDetails(state.beginDetails('first'), details('first'), summary)
+  const previous = state.details
+  const statistics = state.statistics
+  const retry = state.beginDetails('first')
+  expect(state.details).toEqual({ ...previous, _tag: 'Refreshing' })
+  expect(state.statistics).toEqual({ ...statistics, _tag: 'Refreshing' })
+  state.finishDetails(retry, undefined, undefined)
+  expect(state.details).toEqual({
+    ...previous,
+    _tag: 'Stale',
+    reason: 'Could not load PR details.',
+  })
+  expect(state.statistics).toEqual({
+    ...statistics,
+    _tag: 'Stale',
+    reason: 'Could not refresh change statistics.',
+  })
+  state.beginDetails('second')
+  expect(state.details).toEqual({ _tag: 'Loading' })
+  expect(state.statistics).toEqual({ _tag: 'Loading' })
 })

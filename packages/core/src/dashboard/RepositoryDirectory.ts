@@ -3,11 +3,14 @@ import { Context, Effect, Layer, Option, type Redacted, Schema } from 'effect'
 import { GitContextSnapshot } from '../git-context/GitContext'
 import {
   AuthenticationRequired,
+  type ChangeStatistics,
+  ComparisonChanged,
   type DiscoveryError,
   type GitHostingProvider,
   InvalidContinuation,
   type ProviderIdentity,
   type ProviderRepository,
+  type OpenPullRequest,
   type PullRequestDetails,
   PullRequestPage,
   type PullRequestState,
@@ -64,6 +67,14 @@ export class RepositoryDirectory extends Context.Service<
       hosted: HostedRepository,
       id: string,
     ) => Effect.Effect<PullRequestDetails, DiscoveryError>
+    readonly metadata: (
+      hosted: HostedRepository,
+      id: string,
+    ) => Effect.Effect<PullRequestDetails, DiscoveryError>
+    readonly statistics: (
+      hosted: HostedRepository,
+      expected: OpenPullRequest,
+    ) => Effect.Effect<ChangeStatistics, DiscoveryError | ComparisonChanged>
     readonly avatar: (
       hosted: HostedRepository,
       key: string,
@@ -225,6 +236,52 @@ export const makeRepositoryDirectoryLayer = (providers: ReadonlyArray<GitHosting
             return yield* new RepositoryUnavailable()
 
           return details
+        }),
+        metadata: Effect.fn('RepositoryDirectory.metadata')(function* (hosted, id) {
+          const { repository } = yield* bind(hosted)
+
+          const details = yield* (
+            repository.getPullRequestMetadata ?? repository.getPullRequestDetails
+          )(id)
+
+          if (
+            details.pullRequest.id !== id ||
+            !same(details.pullRequest.target.repository, hosted.repository)
+          )
+            return yield* new RepositoryUnavailable()
+
+          return details
+        }),
+        statistics: Effect.fn('RepositoryDirectory.statistics')(function* (hosted, expected) {
+          const { repository } = yield* bind(hosted)
+
+          if (!same(expected.target.repository, hosted.repository))
+            return yield* new RepositoryUnavailable()
+
+          if (repository.getPullRequestStatistics) {
+            const value = yield* repository.getPullRequestStatistics(expected)
+            const comparison = value.comparison
+
+            if (
+              comparison.providerId !== hosted.provider.id ||
+              comparison.authority !== hosted.repository.authority ||
+              comparison.pullRequestId !== expected.id ||
+              !same(comparison.targetRepository, hosted.repository)
+            )
+              return yield* new RepositoryUnavailable()
+
+            if (
+              expected.source._tag !== 'Available' ||
+              !same(comparison.sourceRepository, expected.source.repository) ||
+              !Option.contains(expected.source.ref.revision, comparison.sourceRevision) ||
+              !Option.contains(expected.target.ref.revision, comparison.targetRevision)
+            )
+              return yield* new ComparisonChanged()
+
+            return value
+          }
+
+          return yield* new RepositoryUnavailable()
         }),
         avatar: Effect.fn('RepositoryDirectory.avatar')(function* (hosted, key) {
           const { repository } = yield* bind(hosted)

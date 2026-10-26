@@ -53,13 +53,13 @@ const make = Effect.fn('AzureDevOps.Test.make')(function* (
   auth: ProviderAuthentication['Service'] = {
     session: () => Effect.succeed(Option.some(session())),
   },
-  http: ProviderHttp['Service'] = {
+  http: Pick<ProviderHttp['Service'], 'get'> = {
     get: () => Effect.succeed({ body: { count: 0, value: [] }, headers: {} }),
   },
 ) {
   return yield* makeAzureDevOpsHttp.pipe(
     Effect.provideService(ProviderAuthentication, auth),
-    Effect.provideService(ProviderHttp, http),
+    Effect.provideService(ProviderHttp, { ...http, post: () => Effect.die('Unexpected POST') }),
   )
 })
 
@@ -324,6 +324,33 @@ describe('AzureDevOps', () => {
         ).toBe('InvalidContinuation')
         expect(urls).toHaveLength(2)
       }),
+  )
+
+  it.effect('invalidates the previous cursor when restarting the same repository and state', () =>
+    Effect.gen(function* () {
+      let calls = 0
+
+      const contribution = yield* make(undefined, {
+        get: () =>
+          Effect.sync(() => {
+            calls++
+
+            return { body: fullPage, headers: {} }
+          }),
+      })
+
+      const repository = Option.getOrThrow(contribution.recognizeRemote(remote(destination)))
+      const page = yield* repository.listPullRequests(first)
+      const restarted = yield* repository.listPullRequests(first)
+      expect(
+        (yield* repository.listPullRequests({ ...first, cursor: page.next }).pipe(Effect.flip))
+          ._tag,
+      ).toBe('InvalidContinuation')
+      expect(
+        (yield* repository.listPullRequests({ ...first, cursor: restarted.next })).items,
+      ).toHaveLength(50)
+      expect(calls).toBe(3)
+    }),
   )
 
   it.effect(

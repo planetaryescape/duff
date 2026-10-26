@@ -44,6 +44,7 @@ it.effect(
           session: () => cli.session().pipe(Effect.map(Option.some)),
         }),
         Effect.provideService(ProviderHttp, {
+          post: () => Effect.die('Unexpected POST'),
           get: (_url, token) => {
             expect(Option.map(token, Redacted.value)).toEqual(Option.some('canary-token'))
 

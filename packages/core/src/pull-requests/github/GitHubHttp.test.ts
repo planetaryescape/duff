@@ -55,11 +55,16 @@ const pull = {
 
 const make = Effect.fn('GitHubTest.make')(function* (
   auth: ProviderAuthentication['Service'] = { session: () => Effect.succeed(Option.none()) },
-  http: ProviderHttp['Service'] = { get: () => Effect.succeed({ body: [], headers: {} }) },
+  http: Pick<ProviderHttp['Service'], 'get'> = {
+    get: () => Effect.succeed({ body: [], headers: {} }),
+  },
 ) {
   const provider = yield* makeGitHubHttp.pipe(
     Effect.provideService(ProviderAuthentication, ProviderAuthentication.of(auth)),
-    Effect.provideService(ProviderHttp, ProviderHttp.of(http)),
+    Effect.provideService(
+      ProviderHttp,
+      ProviderHttp.of({ ...http, post: () => Effect.die('Unexpected POST') }),
+    ),
   )
 
   const repository = provider.recognizeRemote(remote('https://github.com/owner/repo.git'))
@@ -68,6 +73,39 @@ const make = Effect.fn('GitHubTest.make')(function* (
 
   return { provider, repository: repository.value }
 })
+
+it.effect(
+  'preserves metadata-supplied GitHub totals and resolves the immutable merge base only for selected statistics',
+  () =>
+    Effect.gen(function* () {
+      const urls: string[] = []
+
+      const { repository } = yield* make(undefined, {
+        get: (url) => {
+          urls.push(url)
+
+          return Effect.succeed({
+            body: url.includes('/compare/')
+              ? { merge_base_commit: { sha: 'c'.repeat(40) } }
+              : { ...pull, body: 'Description', changed_files: 7, additions: 20, deletions: 12 },
+            headers: {},
+          })
+        },
+      })
+
+      const metadata = yield* repository.getPullRequestDetails('17')
+      expect(metadata.linesChanged).toEqual(Option.some({ additions: 20, deletions: 12 }))
+      expect(urls).toHaveLength(1)
+
+      if (!repository.getPullRequestStatistics) return yield* Effect.die('Missing statistics')
+      const result = yield* repository.getPullRequestStatistics(metadata.pullRequest)
+      expect(result.lines).toEqual({ _tag: 'Complete', additions: 20, deletions: 12 })
+      expect(result.comparison.baseRevision).toBe('c'.repeat(40))
+      expect(urls[2]).toBe(
+        `https://api.github.com/repos/owner/repo/compare/${'b'.repeat(40)}...${'a'.repeat(40)}?per_page=1`,
+      )
+    }),
+)
 
 it.effect('construction and remote recognition do not authenticate or call HTTP', () =>
   Effect.gen(function* () {

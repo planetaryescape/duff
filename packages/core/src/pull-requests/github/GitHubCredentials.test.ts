@@ -137,6 +137,7 @@ it.effect(
         const provider = yield* makeGitHubHttp.pipe(
           Effect.provideService(ProviderAuthentication, { session: () => credentials.session() }),
           Effect.provideService(ProviderHttp, {
+            post: () => Effect.die('Unexpected POST'),
             get: (url, token) => {
               expect(Option.map(token, Redacted.value)).toEqual(Option.some('primary_canary'))
 
