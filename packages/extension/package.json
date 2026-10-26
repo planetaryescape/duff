@@ -3,7 +3,7 @@
   "private": true,
   "displayName": "Duff",
   "description": "Review local branch changes with native diffs and workspace files",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/planetaryescape/duff.git",
@@ -24,20 +24,87 @@
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
-      { "command": "duff.toggleComments", "title": "Hide / Show PR Comments", "icon": "$(comment-discussion)", "category": "Duff" },
-      { "command": "duff.refreshComments", "title": "Refresh Comments", "icon": "$(refresh)", "category": "Duff" },
-      { "command": "duff.loadMoreDiscussion", "title": "Load More Saved Discussion", "category": "Duff", "enablement": "duff.discussionHasMore" },
-      { "command": "duff.startDiscussionThread", "title": "Start Thread in Draft Editor", "category": "Duff" },
-      { "command": "duff.replyDiscussionThread", "title": "Reply in Draft Editor", "icon": "$(reply)", "category": "Duff" },
-      { "command": "duff.resolveDiscussionThread", "title": "Resolve Thread", "icon": "$(check)", "category": "Duff" },
-      { "command": "duff.reopenDiscussionThread", "title": "Reopen Thread", "icon": "$(discard)", "category": "Duff" },
-      { "command": "duff.openDiscussionDraft", "title": "Open Saved Draft", "category": "Duff" },
-      { "command": "duff.sendDiscussionDraft", "title": "Send Draft…", "icon": "$(send)", "category": "Duff", "enablement": "duff.draftReady" },
-      { "command": "duff.discardDiscussionDraft", "title": "Discard Draft…", "icon": "$(trash)", "category": "Duff" },
-      { "command": "duff.copyDiscussionDraft", "title": "Copy Draft for Recovery", "icon": "$(copy)", "category": "Duff" },
-      { "command": "duff.returnToDiscussionDiff", "title": "Return to Draft's Diff", "icon": "$(git-compare)", "category": "Duff" },
-      { "command": "duff.inspectDiscussionThread", "title": "Read Unplaced Thread", "category": "Duff" },
-      { "command": "duff.inspectDiscussionAttempt", "title": "Inspect Saved Send Attempt", "category": "Duff" },
+      {
+        "command": "duff.toggleComments",
+        "title": "Hide / Show PR Comments",
+        "icon": "$(comment-discussion)",
+        "category": "Duff"
+      },
+      {
+        "command": "duff.refreshComments",
+        "title": "Refresh Comments",
+        "icon": "$(refresh)",
+        "category": "Duff"
+      },
+      {
+        "command": "duff.loadMoreDiscussion",
+        "title": "Load More Saved Discussion",
+        "category": "Duff",
+        "enablement": "duff.discussionHasMore"
+      },
+      {
+        "command": "duff.startDiscussionThread",
+        "title": "Start Thread in Draft Editor",
+        "category": "Duff"
+      },
+      {
+        "command": "duff.replyDiscussionThread",
+        "title": "Reply in Draft Editor",
+        "icon": "$(reply)",
+        "category": "Duff"
+      },
+      {
+        "command": "duff.resolveDiscussionThread",
+        "title": "Resolve Thread",
+        "icon": "$(check)",
+        "category": "Duff"
+      },
+      {
+        "command": "duff.reopenDiscussionThread",
+        "title": "Reopen Thread",
+        "icon": "$(discard)",
+        "category": "Duff"
+      },
+      {
+        "command": "duff.openDiscussionDraft",
+        "title": "Open Saved Draft",
+        "category": "Duff"
+      },
+      {
+        "command": "duff.sendDiscussionDraft",
+        "title": "Send Draft…",
+        "icon": "$(send)",
+        "category": "Duff",
+        "enablement": "duff.draftReady"
+      },
+      {
+        "command": "duff.discardDiscussionDraft",
+        "title": "Discard Draft…",
+        "icon": "$(trash)",
+        "category": "Duff"
+      },
+      {
+        "command": "duff.copyDiscussionDraft",
+        "title": "Copy Draft for Recovery",
+        "icon": "$(copy)",
+        "category": "Duff"
+      },
+      {
+        "command": "duff.returnToDiscussionDiff",
+        "title": "Return to Draft's Diff",
+        "icon": "$(git-compare)",
+        "category": "Duff"
+      },
+      {
+        "command": "duff.inspectDiscussionThread",
+        "title": "Read Unplaced Thread",
+        "category": "Duff"
+      },
+      {
+        "command": "duff.inspectDiscussionAttempt",
+        "title": "Inspect Saved Send Attempt",
+        "category": "Duff"
+      },
       {
         "command": "duff.dashboard",
         "title": "Open Pull Request Dashboard",
@@ -195,7 +262,10 @@
     },
     "views": {
       "duff": [
-        { "id": "duff.discussion", "name": "PR Discussion" },
+        {
+          "id": "duff.discussion",
+          "name": "PR Discussion"
+        },
         {
           "id": "duff.files",
           "name": "Changed Files"
@@ -263,8 +333,16 @@
         }
       ],
       "view/title": [
-        { "command": "duff.refreshComments", "when": "view == duff.discussion", "group": "navigation@1" },
-        { "command": "duff.loadMoreDiscussion", "when": "view == duff.discussion", "group": "discussion@1" },
+        {
+          "command": "duff.refreshComments",
+          "when": "view == duff.discussion",
+          "group": "navigation@1"
+        },
+        {
+          "command": "duff.loadMoreDiscussion",
+          "when": "view == duff.discussion",
+          "group": "discussion@1"
+        },
         {
           "command": "duff.dashboard",
           "when": "view == duff.files || view == duff.providers",
@@ -369,20 +447,62 @@
         }
       ],
       "commandPalette": [
-        { "command": "duff.toggleComments", "when": "duff.commentableSnapshot" },
-        { "command": "duff.refreshComments", "when": "duff.prReview" },
-        { "command": "duff.startDiscussionThread", "when": "resourceScheme == duff-snapshot && duff.commentableSnapshot" },
-        { "command": "duff.sendDiscussionDraft", "when": "resourceScheme == duff-draft" },
-        { "command": "duff.discardDiscussionDraft", "when": "resourceScheme == duff-draft" },
-        { "command": "duff.copyDiscussionDraft", "when": "resourceScheme == duff-draft" },
-        { "command": "duff.returnToDiscussionDiff", "when": "resourceScheme == duff-draft" },
-        { "command": "duff.replyDiscussionThread", "when": "false" },
-        { "command": "duff.resolveDiscussionThread", "when": "false" },
-        { "command": "duff.reopenDiscussionThread", "when": "false" },
-        { "command": "duff.openDiscussionDraft", "when": "false" },
-        { "command": "duff.inspectDiscussionThread", "when": "false" },
-        { "command": "duff.inspectDiscussionAttempt", "when": "false" },
-        { "command": "duff.loadMoreDiscussion", "when": "true" },
+        {
+          "command": "duff.toggleComments",
+          "when": "duff.commentableSnapshot"
+        },
+        {
+          "command": "duff.refreshComments",
+          "when": "duff.prReview"
+        },
+        {
+          "command": "duff.startDiscussionThread",
+          "when": "resourceScheme == duff-snapshot && duff.commentableSnapshot"
+        },
+        {
+          "command": "duff.sendDiscussionDraft",
+          "when": "resourceScheme == duff-draft"
+        },
+        {
+          "command": "duff.discardDiscussionDraft",
+          "when": "resourceScheme == duff-draft"
+        },
+        {
+          "command": "duff.copyDiscussionDraft",
+          "when": "resourceScheme == duff-draft"
+        },
+        {
+          "command": "duff.returnToDiscussionDiff",
+          "when": "resourceScheme == duff-draft"
+        },
+        {
+          "command": "duff.replyDiscussionThread",
+          "when": "false"
+        },
+        {
+          "command": "duff.resolveDiscussionThread",
+          "when": "false"
+        },
+        {
+          "command": "duff.reopenDiscussionThread",
+          "when": "false"
+        },
+        {
+          "command": "duff.openDiscussionDraft",
+          "when": "false"
+        },
+        {
+          "command": "duff.inspectDiscussionThread",
+          "when": "false"
+        },
+        {
+          "command": "duff.inspectDiscussionAttempt",
+          "when": "false"
+        },
+        {
+          "command": "duff.loadMoreDiscussion",
+          "when": "true"
+        },
         {
           "command": "duff.renameRepository",
           "when": "false"
@@ -445,19 +565,55 @@
         }
       ],
       "comments/commentThread/title": [
-        { "command": "duff.replyDiscussionThread", "when": "commentController == duff.discussion && commentThread =~ /^duff\\.thread\\.reply\\./", "group": "navigation@1" },
-        { "command": "duff.resolveDiscussionThread", "when": "commentController == duff.discussion && commentThread =~ /resolve$/", "group": "navigation@2" },
-        { "command": "duff.reopenDiscussionThread", "when": "commentController == duff.discussion && commentThread =~ /reopen$/", "group": "navigation@2" }
+        {
+          "command": "duff.replyDiscussionThread",
+          "when": "commentController == duff.discussion && commentThread =~ /^duff\\.thread\\.reply\\./",
+          "group": "navigation@1"
+        },
+        {
+          "command": "duff.resolveDiscussionThread",
+          "when": "commentController == duff.discussion && commentThread =~ /resolve$/",
+          "group": "navigation@2"
+        },
+        {
+          "command": "duff.reopenDiscussionThread",
+          "when": "commentController == duff.discussion && commentThread =~ /reopen$/",
+          "group": "navigation@2"
+        }
       ],
       "editor/context": [
-        { "command": "duff.startDiscussionThread", "when": "resourceScheme == duff-snapshot && duff.commentableSnapshot", "group": "duff@1" }
+        {
+          "command": "duff.startDiscussionThread",
+          "when": "resourceScheme == duff-snapshot && duff.commentableSnapshot",
+          "group": "duff@1"
+        }
       ],
       "editor/title": [
-        { "command": "duff.toggleComments", "when": "resourceScheme == duff-snapshot && duff.commentableSnapshot", "group": "navigation@3" },
-        { "command": "duff.sendDiscussionDraft", "when": "resourceScheme == duff-draft", "group": "navigation@1" },
-        { "command": "duff.discardDiscussionDraft", "when": "resourceScheme == duff-draft", "group": "navigation@2" },
-        { "command": "duff.copyDiscussionDraft", "when": "resourceScheme == duff-draft", "group": "draft@1" },
-        { "command": "duff.returnToDiscussionDiff", "when": "resourceScheme == duff-draft", "group": "navigation@3" },
+        {
+          "command": "duff.toggleComments",
+          "when": "resourceScheme == duff-snapshot && duff.commentableSnapshot",
+          "group": "navigation@3"
+        },
+        {
+          "command": "duff.sendDiscussionDraft",
+          "when": "resourceScheme == duff-draft",
+          "group": "navigation@1"
+        },
+        {
+          "command": "duff.discardDiscussionDraft",
+          "when": "resourceScheme == duff-draft",
+          "group": "navigation@2"
+        },
+        {
+          "command": "duff.copyDiscussionDraft",
+          "when": "resourceScheme == duff-draft",
+          "group": "draft@1"
+        },
+        {
+          "command": "duff.returnToDiscussionDiff",
+          "when": "resourceScheme == duff-draft",
+          "group": "navigation@3"
+        },
         {
           "command": "duff.markViewed",
           "when": "resourceScheme == duff-snapshot && duff.activeFileState == unviewed",
