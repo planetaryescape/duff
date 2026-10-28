@@ -20,7 +20,10 @@ it('ships executable dashboard JavaScript inside its nonce-bound document', () =
 function renderDashboard(
   value: Pick<DashboardState, 'mode' | 'repositories' | 'repositoryId' | 'pulls' | 'filter'> &
     Partial<
-      Pick<DashboardState, 'details' | 'statistics' | 'avatars' | 'pullRequestId' | 'labels'>
+      Pick<
+        DashboardState,
+        'details' | 'statistics' | 'avatars' | 'pullRequestId' | 'labels' | 'query'
+      >
     >,
 ): string {
   const html = dashboardHtml('fixture-nonce')
@@ -94,6 +97,26 @@ it('renders escaped authors in PR rows and labels unavailable authors', () => {
   expect(html).toContain('Opened by &lt;img src=x onerror=alert(1)&gt;')
   expect(html).not.toContain('<img')
   expect(html).toContain('Opened by Unknown author')
+})
+
+it('filters loaded PRs by author without losing title or number search', () => {
+  const pulls = [
+    { ...pull, author: 'Guide Fari' },
+    { ...pull, id: '28', title: 'Fix checkout', author: 'Lisa Quluba' },
+    { ...pull, id: '39', title: 'Update documentation' },
+  ]
+
+  const search = (query: string) => renderDashboard({ ...model, pulls, query })
+
+  const rows = (html: string) =>
+    [...html.matchAll(/data-action="pull" data-id="([^"]+)"/g)].map((match) => match[1])
+
+  expect(rows(search('fArI'))).toEqual(['17'])
+  expect(rows(search('Lisa Quluba'))).toEqual(['28'])
+  expect(rows(search('checkout'))).toEqual(['28'])
+  expect(rows(search('#39'))).toEqual(['39'])
+  expect(rows(search('nobody'))).toEqual([])
+  expect(rows(search(''))).toEqual(['17', '28', '39'])
 })
 
 it('shows descriptions, independent change counts and inert avatars for any forge', () => {
