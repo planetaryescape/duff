@@ -247,6 +247,133 @@ it.effect('rejects sum overflow, duplicate files, and mismatched paths', () =>
   }),
 )
 
+it.effect('counts pinned revisions even when the last iteration predates target advancement', () =>
+  Effect.gen(function* () {
+    const currentBase = 'd'.repeat(40)
+
+    const repository = yield* make({
+      get: (url) => {
+        if (url.includes('/diffs/commits?')) {
+          const request = new URL(url)
+          expect(request.searchParams.get('baseVersion')).toBe(target)
+          expect(request.searchParams.get('targetVersion')).toBe(source)
+          expect(request.searchParams.get('baseVersionType')).toBe('commit')
+          expect(request.searchParams.get('targetVersionType')).toBe('commit')
+          expect(request.searchParams.get('diffCommonCommit')).toBe('true')
+
+          return Effect.succeed({
+            body: {
+              baseCommit: target,
+              targetCommit: source,
+              commonCommit: currentBase,
+              allChangesIncluded: true,
+              changes: [
+                { item: { path: '/folder', isFolder: true }, changeType: 'edit' },
+                { item: { path: '/new' }, originalPath: '/old', changeType: 'rename, edit' },
+              ],
+            },
+            headers: {},
+          })
+        }
+
+        return url.includes('/iterations?')
+          ? Effect.succeed({
+              body: { value: [{ ...iteration, targetRefCommit: { commitId: base } }] },
+              headers: {},
+            })
+          : get(url)
+      },
+      post: (_url, _token, body) => {
+        expect(body).toMatchObject({ baseVersionCommit: currentBase, targetVersionCommit: source })
+
+        return Effect.succeed({
+          body: { count: 1, value: [textFile('/new', '/old')] },
+          headers: {},
+        })
+      },
+    })
+
+    const result = yield* selected(repository)
+    expect(result.comparison).toMatchObject({
+      targetRevision: target,
+      sourceRevision: source,
+      baseRevision: currentBase,
+    })
+    expect(result.filesChanged).toEqual(Option.some(1))
+    expect(result.lines).toEqual({ _tag: 'Complete', additions: 8, deletions: 6 })
+  }),
+)
+
+it.effect(
+  'pages exact advanced-target comparisons without mixing merge bases or partial totals',
+  () =>
+    Effect.gen(function* () {
+      for (const scenario of [
+        'complete',
+        'moved-base',
+        'wrong-source',
+        'wrong-target',
+        'stalled',
+      ]) {
+        const repository = yield* make({
+          get: (url) => {
+            if (url.includes('/iterations?'))
+              return Effect.succeed({
+                body: { value: [{ ...iteration, targetRefCommit: { commitId: base } }] },
+                headers: {},
+              })
+
+            if (!url.includes('/diffs/commits?')) return get(url)
+            const skip = new URL(url).searchParams.get('$skip')
+            expect(['0', '1']).toContain(skip)
+
+            const body = {
+              baseCommit: scenario === 'wrong-target' ? 'e'.repeat(40) : target,
+              targetCommit: scenario === 'wrong-source' ? 'f'.repeat(40) : source,
+              commonCommit: scenario === 'moved-base' && skip === '1' ? 'd'.repeat(40) : base,
+              changes:
+                scenario === 'stalled'
+                  ? []
+                  : [{ item: { path: '/file-' + skip }, changeType: 'edit' }],
+            }
+
+            return Effect.succeed({
+              body: skip === '1' ? { ...body, allChangesIncluded: true } : body,
+              headers: {},
+            })
+          },
+          post: () => {
+            expect(scenario).toBe('complete')
+
+            return Effect.succeed({
+              body: { count: 2, value: [textFile('/file-0'), textFile('/file-1')] },
+              headers: {},
+            })
+          },
+        })
+
+        const result = yield* selected(repository).pipe(Effect.result)
+
+        if (scenario === 'complete') {
+          expect(result).toMatchObject({
+            _tag: 'Success',
+            success: {
+              filesChanged: Option.some(2),
+              lines: { _tag: 'Complete', additions: 16, deletions: 12 },
+            },
+          })
+        } else {
+          expect(result).toMatchObject({
+            _tag: 'Failure',
+            failure: {
+              _tag: scenario === 'stalled' ? 'InvalidProviderResponse' : 'ComparisonChanged',
+            },
+          })
+        }
+      }
+    }),
+)
+
 it.effect('rejects iteration movement before requesting changed paths or blocks', () =>
   Effect.gen(function* () {
     const repository = yield* make({
@@ -754,7 +881,10 @@ it.effect(
       const repository = yield* make({
         get: (url) =>
           url.includes('/iterations?')
-            ? get(url)
+            ? Effect.succeed({
+                body: { value: [{ ...iteration, targetRefCommit: { commitId: base } }] },
+                headers: {},
+              })
             : Effect.succeed({
                 body: {
                   ...metadata,

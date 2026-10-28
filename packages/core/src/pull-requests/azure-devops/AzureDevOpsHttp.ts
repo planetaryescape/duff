@@ -158,6 +158,15 @@ function parseRemote(destination: string): Option.Option<Address> {
   }
 }
 
+export const azureSshDestination = (destination: string): Option.Option<string> =>
+  destination.startsWith('https://dev.azure.com/')
+    ? Option.map(
+        parseRemote(destination),
+        ({ org, project, repo }) =>
+          `ssh://git@ssh.dev.azure.com/v3/${[org, project, repo].map(encodeURIComponent).join('/')}`,
+      )
+    : Option.none()
+
 function identity(address: Address): RepositoryIdentity {
   return RepositoryIdentity.make({
     authority: 'dev.azure.com',

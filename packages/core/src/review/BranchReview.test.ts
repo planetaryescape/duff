@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { chmod, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -8,6 +8,7 @@ import { expect, it } from '@effect/vitest'
 import { Effect, Fiber, Option, Schedule, Schema } from 'effect'
 
 import { GitContext, makeGitContextLayer } from '../git-context/GitContext'
+import { azureSshDestination } from '../pull-requests/azure-devops/AzureDevOpsHttp'
 import { BranchReview, FetchRequired, makeGitReviewLayer, ReviewRevisions } from './BranchReview'
 
 const execute = promisify(execFile)
@@ -84,6 +85,106 @@ it.effect(
 
       expect(missing._tag).toBe('ReviewError')
     }).pipe(Effect.provide(gitReviewLayer)),
+)
+
+it.effect('never changes repository identity or retries a moved Azure branch over SSH', () =>
+  Effect.gen(function* () {
+    const source = yield* repository
+    const root = yield* repository
+    yield* write(source, 'file.txt', 'base\n')
+    yield* command(source, 'add', '.')
+    yield* command(source, 'commit', '-m', 'Base')
+    const base = (yield* command(source, 'rev-parse', 'HEAD')).stdout.trim()
+    yield* command(root, 'fetch', source, 'main')
+    yield* command(root, 'reset', '--hard', 'FETCH_HEAD')
+    yield* command(source, 'checkout', '-b', 'topic')
+    yield* write(source, 'file.txt', 'pinned\n')
+    yield* command(source, 'commit', '-am', 'Pinned')
+    const head = (yield* command(source, 'rev-parse', 'HEAD')).stdout.trim()
+    const primary = yield* repository
+    yield* command(primary, 'fetch', source, 'main')
+    yield* command(primary, 'checkout', '-b', 'topic', 'FETCH_HEAD')
+    yield* write(primary, 'file.txt', 'moved\n')
+    yield* command(primary, 'commit', '-am', 'Moved')
+    const bin = join(root, 'bin')
+    yield* Effect.promise(() => mkdir(bin))
+    const realGit = (yield* Effect.promise(() => execute('which', ['git'], { env }))).stdout.trim()
+    yield* write(
+      bin,
+      'git',
+      `#!/bin/sh\nfetching=false\nprimary=false\nfor arg do\n  if [ "$arg" = fetch ]; then fetching=true; fi\n  if "$fetching" && [ "$arg" = origin ]; then primary=true; fi\n  last="$arg"\ndone\nif "$primary"; then\n  case "$DUFF_TEST_MODE" in\n    moved) exec '${realGit}' -c protocol.file.allow=always fetch --no-write-fetch-head --refmap= -- '${primary}' "$last" ;;\n    *) exit 128 ;;\n  esac\nfi\nexec '${realGit}' "$@"\n`,
+    )
+    const ssh = join(root, 'test-ssh')
+    yield* write(root, 'test-ssh', `#!/bin/sh\nexec git-upload-pack '${source}'\n`)
+    yield* Effect.promise(() => chmod(join(bin, 'git'), 0o755))
+    yield* Effect.promise(() => chmod(ssh, 0o755))
+    const azure = 'https://dev.azure.com/org/project/_git/repo'
+    yield* command(root, 'remote', 'add', 'origin', azure)
+
+    const cases: ReadonlyArray<readonly [string, string, string, string]> = [
+      ['https://dev.azure.com/org/project/_git/other', azure, 'denied', 'configuration changed'],
+      [
+        'https://github.com/owner/repo.git',
+        'https://github.com/owner/repo.git',
+        'denied',
+        'could not acquire',
+      ],
+      [
+        'https://dev.azure.com/org/my%2Fproject/_git/repo',
+        'https://dev.azure.com/org/my%2Fproject/_git/repo',
+        'denied',
+        'could not acquire',
+      ],
+      [
+        'https://dev.azure.com/org/%ZZ/_git/repo',
+        'https://dev.azure.com/org/%ZZ/_git/repo',
+        'denied',
+        'could not acquire',
+      ],
+      [azure, azure, 'moved', 'branch moved'],
+    ]
+
+    for (const [actual, expected, mode, message] of cases) {
+      yield* command(root, 'remote', 'set-url', 'origin', actual)
+
+      const error = yield* Effect.gen(function* () {
+        const service = yield* BranchReview
+
+        return yield* service
+          .prepare(
+            root,
+            {
+              source: {
+                commit: head,
+                ref: 'refs/heads/topic',
+                remote: Option.some({ name: 'origin', destination: expected }),
+              },
+              target: { commit: base, ref: 'refs/heads/main', remote: Option.none() },
+            },
+            'fetch',
+          )
+          .pipe(Effect.flip)
+      }).pipe(
+        Effect.provide(
+          makeGitReviewLayer(
+            {
+              ...env,
+              PATH: `${bin}:${env.PATH ?? ''}`,
+              GIT_SSH_COMMAND: ssh,
+              GIT_SSH_VARIANT: 'simple',
+              DUFF_TEST_MODE: mode,
+            },
+            azureSshDestination,
+          ),
+        ),
+      )
+
+      expect(error._tag).toBe('ReviewError')
+
+      if (error._tag === 'ReviewError') expect(error.message).toContain(message)
+      expect(yield* Effect.promise(() => readFile(join(root, 'file.txt'), 'utf8'))).toBe('base\n')
+    }
+  }),
 )
 
 it.effect('handles detached HEAD and identical branches without inventing changes', () =>

@@ -124,7 +124,10 @@ function fetchDestination(raw: string): Option.Option<string> {
   }
 }
 
-export const makeGitReviewLayer = (environment: NodeJS.ProcessEnv) => {
+export const makeGitReviewLayer = (
+  environment: NodeJS.ProcessEnv,
+  fallbackDestination: (destination: string) => Option.Option<string> = () => Option.none(),
+) => {
   const failure = (operation: string) =>
     new ReviewError({
       operation,
@@ -350,24 +353,31 @@ export const makeGitReviewLayer = (environment: NodeJS.ProcessEnv) => {
           '--no-auto-maintenance',
           '--refmap=',
           '--',
-          remote.name,
         ]
 
-        const fetched = yield* Effect.result(
-          git(root, [...options, `+${revision.commit}:${owned}`]),
-        )
-
-        if (fetched._tag === 'Failure')
-          yield* git(root, [...options, `+${revision.ref}:${owned}`]).pipe(
-            Effect.mapError(
-              () =>
-                new ReviewError({
-                  operation: 'fetch',
-                  message:
-                    'Git could not acquire the PR revision. Check Git credentials and source access outside Duff. API sign-in does not provide Git authentication. Refresh the PR before retrying.',
-                }),
-            ),
+        const fetch = Effect.fn('BranchReview.fetchRevision')(function* (destination: string) {
+          yield* git(root, [...options, destination, `+${revision.commit}:${owned}`]).pipe(
+            Effect.catch(() => git(root, [...options, destination, `+${revision.ref}:${owned}`])),
           )
+        })
+
+        yield* fetch(remote.name).pipe(
+          Effect.catch((error) => {
+            const fallback = Option.filter(fallbackDestination(remote.destination), (value) =>
+              Option.isSome(fetchDestination(value)),
+            )
+
+            return Option.isSome(fallback) ? fetch(fallback.value) : Effect.fail(error)
+          }),
+          Effect.mapError(
+            () =>
+              new ReviewError({
+                operation: 'fetch',
+                message:
+                  'Git could not acquire the PR revision. Check Git credentials and source access outside Duff. API sign-in does not provide Git authentication. Refresh the PR before retrying.',
+              }),
+          ),
+        )
 
         if ((yield* commit(root, owned)) !== revision.commit)
           return yield* new ReviewError({

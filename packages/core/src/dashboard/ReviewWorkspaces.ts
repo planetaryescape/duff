@@ -9,6 +9,7 @@ import { Context, Effect, Layer, Option, Schedule, Schema } from 'effect'
 import { ChildProcessSpawner } from 'effect/process'
 
 import { gitCommand, makeGitProcessLayer } from '../git-context/GitProcess'
+import { azureSshDestination } from '../pull-requests/azure-devops/AzureDevOpsHttp'
 import { ResolvedPullRequest } from '../pull-requests/PullRequests'
 import {
   BranchReview,
@@ -430,7 +431,9 @@ export const makeReviewWorkspacesLayer = (directory: string, environment: NodeJS
       Effect.match({
         onFailure: unavailableLayer,
         onSuccess: (env) =>
-          workspaceLayer(directory, env).pipe(Layer.provide(makeGitReviewLayer(env))),
+          workspaceLayer(directory, env).pipe(
+            Layer.provide(makeGitReviewLayer(env, azureSshDestination)),
+          ),
       }),
     ),
   ).pipe(Layer.provide(makeGitProcessLayer(environment)))
