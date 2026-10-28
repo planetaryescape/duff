@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.0](https://github.com/planetaryescape/duff/compare/v0.3.0...v0.4.0) (2026-10-28)
+
+
+### Features
+
+* **dashboard:** filter pull requests by author ([493b812](https://github.com/planetaryescape/duff/commit/493b812b53d8518c4edc77fcd60502597b48d7a3))
+
+
+### Bug Fixes
+
+* **azure:** compare pinned PR revisions after target advancement ([c25fc7a](https://github.com/planetaryescape/duff/commit/c25fc7a2ffe7f47f5215293c24743587498caccb))
+* **azure:** recover managed review acquisition over SSH ([c10ba8b](https://github.com/planetaryescape/duff/commit/c10ba8bb99dd1ffc79b1f794ff2e23c30a89e65a))
+* **azure:** restore PR review acquisition and statistics ([5c92b09](https://github.com/planetaryescape/duff/commit/5c92b0970eaad4cb2c513bfe9b7c6bb5b888a51d))
+
 ## [0.3.0](https://github.com/planetaryescape/duff/compare/v0.2.1...v0.3.0) (2026-10-26)
 
 

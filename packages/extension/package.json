@@ -3,7 +3,7 @@
   "private": true,
   "displayName": "Duff",
   "description": "Review local branch changes with native diffs and workspace files",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/planetaryescape/duff.git",
