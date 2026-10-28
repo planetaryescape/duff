@@ -54,7 +54,7 @@ const CommitDiff = Schema.Struct({
   baseCommit: Revision,
   targetCommit: Revision,
   commonCommit: Revision,
-  allChangesIncluded: Schema.Boolean,
+  allChangesIncluded: Schema.optionalKey(Schema.Boolean),
   changes: Changes.fields.changeEntries,
 })
 

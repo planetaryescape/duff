@@ -359,6 +359,67 @@ it.effect('cancels acquisition without publishing broken state or leaving a stal
   }),
 )
 
+it.effect('prepares exact Azure revisions over SSH when HTTPS Git authentication fails', () =>
+  Effect.gen(function* () {
+    const f = yield* fixture
+    const bin = join(f.root, 'bin')
+    const realGit = (yield* Effect.promise(() => execute('which', ['git'], { env }))).stdout.trim()
+    yield* Effect.promise(() => mkdir(bin))
+    yield* write(
+      bin,
+      'git',
+      `#!/bin/sh\nfetching=false\nfor arg do\n  if [ "$arg" = fetch ]; then fetching=true; fi\n  if "$fetching" && { [ "$arg" = source ] || [ "$arg" = target ]; }; then exit 128; fi\ndone\nexec '${realGit}' "$@"\n`,
+    )
+    yield* write(
+      bin,
+      'ssh',
+      `#!/bin/sh\ncase "$*" in\n  *"git@ssh.dev.azure.com"*"git-upload-pack '/v3/org/my project/fork'") exec git-upload-pack '${f.source}' ;;\n  *"git@ssh.dev.azure.com"*"git-upload-pack '/v3/org/my project/target'") exec git-upload-pack '${f.target}' ;;\n  *) exit 90 ;;\nesac\n`,
+    )
+    yield* Effect.promise(() => chmod(join(bin, 'git'), 0o755))
+    yield* Effect.promise(() => chmod(join(bin, 'ssh'), 0o755))
+
+    const revisions = {
+      source: {
+        ...f.resolved.revisions.source,
+        remote: Option.some({
+          name: 'duff-source',
+          destination: 'https://dev.azure.com/org/my%20project/_git/fork',
+        }),
+      },
+      target: {
+        ...f.resolved.revisions.target,
+        remote: Option.some({
+          name: 'duff-target',
+          destination: 'https://dev.azure.com/org/my%20project/_git/target',
+        }),
+      },
+    }
+
+    const resolved = ResolvedPullRequest.make({ ...f.resolved, revisions })
+
+    const prepared = yield* Effect.gen(function* () {
+      const service = yield* ReviewWorkspaces
+
+      return yield* service.prepare(resolved)
+    }).pipe(
+      Effect.provide(
+        makeReviewWorkspacesLayer(f.data, { ...env, PATH: `${bin}:${env.PATH ?? ''}` }),
+      ),
+    )
+
+    expect(prepared.review.headCommit).toBe(f.head)
+    expect(prepared.review.baseCommit).toBe(f.base)
+    expect(prepared.review.files).toEqual([{ status: 'M', path: 'changed.ts' }])
+    expect(yield* read(prepared.directory, 'changed.ts')).toBe('export const value = 2\n')
+    expect(yield* command(prepared.directory, 'rev-parse', 'HEAD')).toBe(f.head)
+    expect(yield* command(prepared.directory, 'remote', 'get-url', 'source')).toBe(
+      'https://dev.azure.com/org/my%20project/_git/fork',
+    )
+    expect(yield* command(f.source, 'rev-parse', 'HEAD')).toBe(f.head)
+    expect(yield* command(f.target, 'rev-parse', 'HEAD')).toBe(f.targetHead)
+  }),
+)
+
 it.effect('refuses a changed checkout identity and preserves files instead of resetting', () =>
   Effect.gen(function* () {
     const f = yield* fixture

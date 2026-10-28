@@ -327,17 +327,18 @@ it.effect(
             const skip = new URL(url).searchParams.get('$skip')
             expect(['0', '1']).toContain(skip)
 
+            const body = {
+              baseCommit: scenario === 'wrong-target' ? 'e'.repeat(40) : target,
+              targetCommit: scenario === 'wrong-source' ? 'f'.repeat(40) : source,
+              commonCommit: scenario === 'moved-base' && skip === '1' ? 'd'.repeat(40) : base,
+              changes:
+                scenario === 'stalled'
+                  ? []
+                  : [{ item: { path: '/file-' + skip }, changeType: 'edit' }],
+            }
+
             return Effect.succeed({
-              body: {
-                baseCommit: scenario === 'wrong-target' ? 'e'.repeat(40) : target,
-                targetCommit: scenario === 'wrong-source' ? 'f'.repeat(40) : source,
-                commonCommit: scenario === 'moved-base' && skip === '1' ? 'd'.repeat(40) : base,
-                allChangesIncluded: skip === '1',
-                changes:
-                  scenario === 'stalled'
-                    ? []
-                    : [{ item: { path: '/file-' + skip }, changeType: 'edit' }],
-              },
+              body: skip === '1' ? { ...body, allChangesIncluded: true } : body,
               headers: {},
             })
           },
