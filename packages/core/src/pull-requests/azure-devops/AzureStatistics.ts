@@ -50,6 +50,14 @@ const Changes = Schema.Struct({
   nextTop: Schema.optionalKey(Count),
 })
 
+const CommitDiff = Schema.Struct({
+  baseCommit: Revision,
+  targetCommit: Revision,
+  commonCommit: Revision,
+  allChangesIncluded: Schema.Boolean,
+  changes: Changes.fields.changeEntries,
+})
+
 const Block = Schema.Struct({
   changeType: Schema.Literals(['none', 'add', 'delete', 'edit', 0, 1, 2, 3]),
   originalLineNumberStart: Schema.optionalKey(Count),
@@ -97,11 +105,37 @@ export const azureStatistics = Effect.fn('AzureDevOps.statistics')(function* (
   if (!latest || new Set(sorted.map((item) => item.id)).size !== sorted.length)
     return yield* new InvalidProviderResponse()
 
-  if (
-    latest.sourceRefCommit.commitId !== expected.source.ref.revision.value ||
-    latest.targetRefCommit.commitId !== expected.target.ref.revision.value
-  )
+  if (latest.sourceRefCommit.commitId !== expected.source.ref.revision.value)
     return yield* new ComparisonChanged()
+
+  const sourceRevision = expected.source.ref.revision.value
+  const targetRevision = expected.target.ref.revision.value
+  const repositoryEndpoint = endpoint.slice(0, -'/pullrequests'.length)
+  const advancedTarget = latest.targetRefCommit.commitId !== targetRevision
+
+  const sameRepository =
+    expected.source.repository.key === expected.target.repository.key &&
+    expected.source.repository.authority === expected.target.repository.authority
+
+  const exactDiff = Effect.fn('AzureDevOps.exactDiff')(function* (skip: number) {
+    const response = yield* http.get(
+      `${repositoryEndpoint}/diffs/commits?baseVersion=${targetRevision}&baseVersionType=commit&targetVersion=${sourceRevision}&targetVersionType=commit&diffCommonCommit=true&$top=2000&$skip=${skip}&api-version=7.1`,
+      token,
+    )
+
+    const result = yield* Schema.decodeUnknownEffect(CommitDiff)(response.body).pipe(
+      Effect.mapError(() => new InvalidProviderResponse()),
+    )
+
+    if (result.baseCommit !== targetRevision || result.targetCommit !== sourceRevision)
+      return yield* new ComparisonChanged()
+
+    return result
+  })
+
+  // An iteration can retain an older target. The pinned PR target needs its
+  // own merge base and changed paths, not a relabelled iteration diff.
+  const firstDiff = advancedTarget && sameRepository ? yield* exactDiff(0) : undefined
 
   const comparison = ComparisonIdentity.make({
     providerId: 'azure-devops',
@@ -109,9 +143,9 @@ export const azureStatistics = Effect.fn('AzureDevOps.statistics')(function* (
     targetRepository: expected.target.repository,
     sourceRepository: expected.source.repository,
     pullRequestId: expected.id,
-    targetRevision: latest.targetRefCommit.commitId,
-    sourceRevision: latest.sourceRefCommit.commitId,
-    baseRevision: latest.commonRefCommit.commitId,
+    targetRevision,
+    sourceRevision,
+    baseRevision: firstDiff?.commonCommit ?? latest.commonRefCommit.commitId,
     mode: 'merge-base-v1',
   })
 
@@ -129,11 +163,7 @@ export const azureStatistics = Effect.fn('AzureDevOps.statistics')(function* (
       lines: { _tag: 'Unavailable', reason },
     })
 
-  if (
-    comparison.sourceRepository.key !== comparison.targetRepository.key ||
-    comparison.sourceRepository.authority !== comparison.targetRepository.authority
-  )
-    return unavailable('unsupported-comparison')
+  if (!sameRepository) return unavailable('unsupported-comparison')
   const files: Array<{ readonly path: string; readonly originalPath: string }> = []
   const paths = new Set<string>()
   let skip = 0
@@ -142,10 +172,23 @@ export const azureStatistics = Effect.fn('AzureDevOps.statistics')(function* (
   for (let page = 0; ; page++) {
     if (page >= 5) return unavailable('work-limit-exceeded')
 
-    const response = yield* http.get(
-      `${endpoint}/${expected.id}/iterations/${latest.id}/changes?$compareTo=0&$top=${top}&$skip=${skip}&api-version=7.1`,
-      token,
-    )
+    const exact = firstDiff ? (page === 0 ? firstDiff : yield* exactDiff(skip)) : undefined
+
+    if (exact && exact.commonCommit !== comparison.baseRevision)
+      return yield* new ComparisonChanged()
+
+    const response = exact
+      ? {
+          body: {
+            changeEntries: exact.changes,
+            nextSkip: exact.allChangesIncluded ? 0 : skip + exact.changes.length,
+            nextTop: exact.allChangesIncluded ? 0 : top,
+          },
+        }
+      : yield* http.get(
+          `${endpoint}/${expected.id}/iterations/${latest.id}/changes?$compareTo=0&$top=${top}&$skip=${skip}&api-version=7.1`,
+          token,
+        )
 
     const changes = yield* Schema.decodeUnknownEffect(Changes)(response.body).pipe(
       Effect.mapError(() => new InvalidProviderResponse()),
