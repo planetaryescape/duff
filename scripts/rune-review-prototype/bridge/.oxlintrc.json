@@ -1,0 +1,12 @@
+{
+  "extends": ["../../../.oxlintrc.json"],
+  "overrides": [
+    {
+      "files": ["Bridge.ts"],
+      "rules": {
+        // The standalone Node IPC boundary owns its own scoped ManagedRuntime.
+        "duff/runtime-boundary": "off"
+      }
+    }
+  ]
+}
