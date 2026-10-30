@@ -2,8 +2,9 @@ import { createHash, randomUUID } from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
-import { ReviewStorageError, SavedReviewCatalog, SavedReviews } from '@duff/core/saved-reviews'
 import { Effect, Layer, Option, Schema, Semaphore } from 'effect'
+
+import { ReviewStorageError, SavedReviewCatalog, SavedReviews } from './SavedReviews'
 
 const digest = (value: string) => createHash('sha256').update(value).digest('hex')
 
