@@ -18,6 +18,14 @@ process.once('SIGTERM', stop)
 
 process.once('SIGINT', stop)
 
+// A private control line is observed independently of the sequential request loop.
+// Closing Rune during acquisition must interrupt its Effect scope before Node exits.
+function control(line: string) {
+  if (line === '{"op":"shutdown"}') stop()
+}
+
+input.on('line', control)
+
 try {
   for await (const line of input) {
     if (shutdown.signal.aborted) break
@@ -38,6 +46,7 @@ try {
 } finally {
   process.removeListener('SIGTERM', stop)
   process.removeListener('SIGINT', stop)
+  input.removeListener('line', control)
   input.close()
   await bridge.dispose().catch(() => {
     process.exitCode = 1
