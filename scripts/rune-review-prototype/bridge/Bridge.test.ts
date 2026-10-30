@@ -2,6 +2,7 @@ import { execFile, spawn } from 'node:child_process'
 import { mkdtemp, mkdir, writeFile, rm, readFile, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 
 import { expect, it } from '@effect/vitest'
@@ -49,6 +50,8 @@ const fixture = Effect.acquireRelease(
 )
 
 const environment = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' }
+
+const script = fileURLToPath(new URL('./dist/bridge.mjs', import.meta.url))
 
 it.effect(
   'reads real immutable add/delete/rename snapshots and durably resumes viewed and last-file state',
@@ -233,7 +236,6 @@ it.effect(
   () =>
     Effect.gen(function* () {
       const local = yield* fixture
-      const script = join(process.cwd(), 'scripts/rune-review-prototype/bridge/dist/bridge.mjs')
 
       for (const signal of [false, true]) {
         const output = yield* Effect.promise(
@@ -344,7 +346,6 @@ it.live(
       const local = yield* fixture
       const bin = join(local.directory, 'bin')
       const marker = join(local.directory, 'active-cli.json')
-      const script = join(process.cwd(), 'scripts/rune-review-prototype/bridge/dist/bridge.mjs')
 
       yield* Effect.promise(async () => {
         await mkdir(bin)

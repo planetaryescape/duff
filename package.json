@@ -2,7 +2,7 @@
   "name": "duff-workspace",
   "private": true,
   "packageManager": "bun@1.4.0",
-  "workspaces": ["packages/*"],
+  "workspaces": ["packages/*", "scripts/rune-review-prototype/bridge"],
   "scripts": {
     "build": "bun run --cwd packages/extension build",
     "watch": "bun run --cwd packages/extension watch",
@@ -15,7 +15,7 @@
     "format:check": "oxfmt --check packages .vscode .oxlintrc.json .oxfmtrc.json",
     "check": "bun run format:check && bun run typecheck && bun run lint",
     "test:app": "vitest run packages/core packages/extension --maxWorkers=1",
-    "test": "bun run test:app && bun run --cwd packages/anti-slop test",
+    "test": "bun run test:app && bun run --cwd packages/anti-slop test && bun run --cwd scripts/rune-review-prototype/bridge test",
     "package": "bun run build && bun run --cwd packages/extension package",
     "prepare": "effect-tsgo patch --typescript --oxlint"
   },
