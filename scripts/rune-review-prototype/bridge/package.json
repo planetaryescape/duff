@@ -1,0 +1,14 @@
+{
+  "name": "@duff/rune-bridge-prototype",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bash build.sh",
+    "typecheck": "tsc --noEmit",
+    "test": "bun run build && vitest run --root ../../.. scripts/rune-review-prototype/bridge/Bridge.test.ts --maxWorkers=1"
+  },
+  "dependencies": {
+    "@duff/core": "workspace:*",
+    "effect": "4.0.5"
+  }
+}

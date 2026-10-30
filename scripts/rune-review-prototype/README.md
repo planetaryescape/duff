@@ -25,7 +25,7 @@ The bottom switcher compares **Workbench** (inbox + files + diff), **Focus** (hi
 
 ## Boundary and reuse
 
-Rust owns the window, navigation and native diff presentation. It owns one Node child process and communicates through serialized JSON lines on private stdin/stdout pipes. Network, Git and persistence work runs off the rendering thread. External requests are decoded with Effect Schema; failures become finite diagnostics rather than raw provider errors.
+Rust owns the window, navigation and native diff presentation. It owns one Node child process and communicates through serialized JSON lines on private stdin/stdout pipes. Network, Git and persistence work runs off the rendering thread. External requests are decoded with Effect Schema; failures become finite diagnostics rather than raw provider errors. The bridge is a private Bun workspace with declared core/Effect dependencies under the root lockfile; root checks typecheck it and root tests build and exercise it without manual dependency links.
 
 The Node composition root reuses `RepositoryDirectory`, provider adapters, CLI authentication, `ReviewWorkspaces`, `BranchReview`, `ReviewSessions` and the shared filesystem saved-review adapter through core's declared exports. Closing the window sends an out-of-band shutdown message, aborts active work and waits for Effect to dispose its owned processes and storage. There is deliberately no Node-only force-kill deadline: it could orphan detached Git/SSH groups. If underlying cleanup hangs, the window process waits for it. No FFI runtime embedding or Git/provider rewrite is needed.
 
