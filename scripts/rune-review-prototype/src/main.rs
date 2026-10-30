@@ -3,7 +3,8 @@ mod bridge;
 
 use bridge::{Bridge, ChangedFile, Payload, PullRequest, Saved};
 use rune::{
-    App, AppSpec, Color, Cx, El, KeyEvent, ScrollSpec, TextEdit, TextStyle, col, row, text,
+    App, AppSpec, Color, Cx, El, Icon, KeyEvent, ScrollSpec, TextEdit, TextStyle, col, icon, row,
+    text,
 };
 use rune_kit::{
     Kit, TextInput,
@@ -501,34 +502,71 @@ fn inbox(s: &State, k: &Kit, wide: bool) -> El {
         )
 }
 
+fn file_type_icon(path: &str) -> El {
+    static REACT: Icon = Icon {
+        name: "react",
+        view: 24.0,
+        body: r#"<ellipse cx="12" cy="12" rx="10" ry="4" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M7 3.34C5.09 4.44 5.78 9.22 8.54 14C11.3 18.78 15.09 21.77 17 20.66C18.91 19.56 18.22 14.78 15.46 10C12.7 5.22 8.91 2.23 7 3.34Z M17 3.34C18.91 4.44 18.22 9.22 15.46 14C12.7 18.78 8.91 21.77 7 20.66C5.09 19.56 5.78 14.78 8.54 10C11.3 5.22 15.09 2.23 17 3.34Z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/>"#,
+    };
+    static TYPESCRIPT: Icon = Icon {
+        name: "typescript",
+        view: 24.0,
+        body: r#"<rect x="2" y="2" width="20" height="20" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M5 10H12M8.5 10V19M19 11C16 8 13 11 15 13L18 15C21 18 17 21 14 18" fill="none" stroke="currentColor" stroke-width="1.5"/>"#,
+    };
+    let extension = path.rsplit_once('.').map_or("", |(_, ext)| ext);
+    let (glyph, color) = match extension.to_ascii_lowercase().as_str() {
+        "tsx" | "jsx" => (&REACT, rune::oklch(0.78, 0.12, 220.0)),
+        "ts" | "mts" | "cts" => (&TYPESCRIPT, rune::oklch(0.68, 0.13, 240.0)),
+        "js" | "mjs" | "cjs" => (rune_kit::file_icon(path), rune::oklch(0.78, 0.12, 100.0)),
+        "snap" => (&rune_kit::glyphs::FILE_TEXT, rune::oklch(0.72, 0.10, 300.0)),
+        _ => (rune_kit::file_icon(path), MUTED),
+    };
+    icon(glyph, 16.0).color(color)
+}
+
 fn file_rail(s: &State, k: &Kit) -> El {
     let files = s
         .review
         .as_ref()
         .map_or(&[][..], |review| review.files.as_slice());
-    let mut entries = col().w_full().gap(5.0);
+    let mut entries = col().w_full().gap(2.0);
     for (index, file) in files.iter().enumerate() {
+        let (directory, name) = file.path.rsplit_once('/').unwrap_or(("", &file.path));
         entries = entries.child(
-            col()
+            row()
                 .key(format!("file-{index}"))
                 .role("button")
+                .label(format!(
+                    "{} · {}{}",
+                    file.path,
+                    file.status,
+                    if file.viewed { " · viewed" } else { "" }
+                ))
                 .focusable(true)
                 .w_full()
-                .padding(10.0)
-                .gap(5.0)
+                .padding(8.0)
+                .gap(8.0)
                 .radius(4.0)
                 .fill(if s.file == index { SELECTED } else { PANEL })
                 .hover(BORDER)
                 .on_press(move |s: &mut State| s.open_file(index))
+                .child(file_type_icon(&file.path))
                 .child(
-                    label(
-                        format!("{}  {}", if file.viewed { "✓" } else { "·" }, file.path),
-                        k.ty.ui,
-                        if file.viewed { GREEN } else { INK },
-                    )
-                    .wrap(),
+                    col()
+                        .grow(1.0)
+                        .min_w(0.0)
+                        .gap(2.0)
+                        .child(
+                            label(name, TextStyle::new(12.0, 350.0).lh(16.0), INK)
+                                .truncate_middle(),
+                        )
+                        .child(
+                            label(directory, TextStyle::new(11.0, 350.0).lh(14.0), MUTED)
+                                .truncate_head(),
+                        ),
                 )
-                .child(label(&file.status, k.ty.ui, MUTED)),
+                .child(label(&file.status, k.ty.small, MUTED))
+                .child(label(if file.viewed { "✓" } else { "" }, k.ty.small, GREEN).w(10.0)),
         );
     }
     col()
