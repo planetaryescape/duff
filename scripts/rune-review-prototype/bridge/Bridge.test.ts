@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 
 import { expect, it } from '@effect/vitest'
-import { Effect } from 'effect'
+import { Effect, Schema } from 'effect'
 
 import { makeBridge, standaloneDataDirectory } from './Bridge'
 
@@ -335,4 +335,88 @@ it.effect('does not acknowledge viewed state when the durable catalog cannot be 
     expect(response).toEqual({ id: 20, ok: false, error: 'Saved review storage unavailable.' })
     expect(response).not.toHaveProperty('viewed')
   }),
+)
+
+it.live(
+  'shutdown interrupts an active CLI process and its ordinary descendant',
+  () =>
+    Effect.gen(function* () {
+      const local = yield* fixture
+      const bin = join(local.directory, 'bin')
+      const marker = join(local.directory, 'active-cli.json')
+      const script = join(process.cwd(), 'scripts/rune-review-prototype/bridge/dist/bridge.mjs')
+
+      yield* Effect.promise(async () => {
+        await mkdir(bin)
+        // Exercise the actual command spawner and process-group cleanup, without credentials.
+        await writeFile(
+          join(bin, 'gh'),
+          `#!/usr/bin/env node
+const { spawn } = require('node:child_process');
+const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+require('node:fs').writeFileSync(process.env.DUFF_TEST_MARKER, JSON.stringify([process.pid, child.pid]));
+setInterval(() => {}, 1000);
+`,
+          { mode: 0o755 },
+        )
+      })
+
+      const child = yield* Effect.acquireRelease(
+        Effect.sync(() =>
+          spawn(process.execPath, [script], {
+            env: {
+              ...environment,
+              PATH: `${bin}:${process.env.PATH}`,
+              GH_TOKEN: '',
+              GITHUB_TOKEN: '',
+              DUFF_STANDALONE_DATA: local.data,
+              DUFF_TEST_MARKER: marker,
+            },
+            stdio: ['pipe', 'pipe', 'ignore'],
+          }),
+        ),
+        (child) =>
+          Effect.sync(() => {
+            if (child.exitCode === null) child.kill('SIGTERM')
+          }),
+      )
+
+      child.stdin.write(
+        '{"id":1,"op":"list","destination":"https://github.com/example/repository"}\n',
+      )
+      let markerText = ''
+
+      for (let attempt = 0; attempt < 100 && !markerText; attempt += 1) {
+        markerText = yield* Effect.promise(() => readFile(marker, 'utf8').catch(() => ''))
+
+        if (!markerText) yield* Effect.sleep('100 millis')
+      }
+
+      const pids = yield* Schema.decodeUnknownEffect(
+        Schema.fromJsonString(Schema.Array(Schema.Int)),
+      )(markerText)
+
+      expect(pids).toHaveLength(2)
+
+      const started = Date.now()
+
+      const exit = yield* Effect.promise(
+        () =>
+          new Promise<number | null>((resolve, reject) => {
+            child.once('error', reject)
+            child.once('exit', resolve)
+            // Exactly the private control line sent by the native Bridge's Drop implementation.
+            child.stdin.end('{"op":"shutdown"}\n')
+          }),
+      )
+
+      expect(exit).toBe(0)
+      // Without the control handler the CLI request runs until its 12-second timeout.
+      expect(Date.now() - started).toBeLessThan(5000)
+
+      for (const pid of pids) {
+        expect(() => process.kill(pid, 0)).toThrow()
+      }
+    }),
+  { timeout: 20000 },
 )
