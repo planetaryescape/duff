@@ -1,0 +1,724 @@
+diff --git a/changelog/unreleased/2026-10-31-diff-symbol-interactions.md b/changelog/unreleased/2026-10-31-diff-symbol-interactions.md
+new file mode 100644
+index 0000000..1823bd5
+--- /dev/null
++++ b/changelog/unreleased/2026-10-31-diff-symbol-interactions.md
+@@ -0,0 +1,4 @@
++- **Diff text can report native symbol hover and modifier-click positions.** Opt-in callbacks
++  retain the displayed old/new source side and original UTF-8 byte column through tab padding,
++  wrapping and native text layout. Blank space is not a symbol, and text-selection drags keep
++  their normal behavior. Diff code text and its mapping tests now live in a focused view module.
+diff --git a/crates/rune-kit/src/diff/mod.rs b/crates/rune-kit/src/diff/mod.rs
+index 412661f..d9fa495 100644
+--- a/crates/rune-kit/src/diff/mod.rs
++++ b/crates/rune-kit/src/diff/mod.rs
+@@ -12,4 +12,4 @@ mod view;
+ 
+ pub use model::{FileDiff, FileStatus, Hunk, Line, LineKind, Side, parse};
+ pub use state::{Annotation, DiffMode, DiffState, EXPAND_STEP, Expand, LineRange, LineRef};
+-pub use view::DiffView;
++pub use view::{DiffView, SymbolPosition};
+diff --git a/crates/rune-kit/src/diff/view.rs b/crates/rune-kit/src/diff/view.rs
+index 4858dc8..b16ce27 100644
+--- a/crates/rune-kit/src/diff/view.rs
++++ b/crates/rune-kit/src/diff/view.rs
+@@ -7,7 +7,7 @@ use std::hash::{Hash, Hasher};
+ use std::ops::Range;
+ use std::rc::Rc;
+ 
+-use rune::{Color, Cursor, Drag, El, GrowthSpec, Icon, Phase, ScrollSpec, Span, TextStyle, Tx, col, icon, memo, rich, row, text};
++use rune::{Color, Cursor, Drag, El, GrowthSpec, Icon, Phase, ScrollSpec, TextStyle, Tx, col, icon, memo, row, text};
+ 
+ use super::model::{FileStatus, LineKind, Side};
+ use super::state::{Annotation, DiffMode, DiffState, EXPAND_STEP, Expand, GAP_H, HEADER_H, LINE_H, LineRange, LineRef, NOTE_H, Row};
+@@ -15,6 +15,9 @@ use crate::Kit;
+ use crate::palette::tint;
+ use crate::syntax::SyntaxTheme;
+ 
++mod code;
++pub use code::SymbolPosition;
++
+ static EXPAND_UP: Icon = Icon {
+     name: "kit-diff-expand-up",
+     view: 16.0,
+@@ -65,6 +68,8 @@ pub struct DiffView<S> {
+     on_select: Option<Rc<dyn Fn(&mut S, Option<LineRange>, &mut Tx)>>,
+     on_comment: Option<Rc<dyn Fn(&mut S, LineRange, &mut Tx)>>,
+     on_visible_file: Option<Rc<dyn Fn(&mut S, usize)>>,
++    on_symbol_hover: Option<Rc<dyn Fn(&mut S, Option<SymbolPosition>, &mut Tx)>>,
++    on_symbol_press: Option<Rc<dyn Fn(&mut S, SymbolPosition, &mut Tx)>>,
+ }
+ 
+ impl<S: 'static> DiffView<S> {
+@@ -78,6 +83,8 @@ impl<S: 'static> DiffView<S> {
+             on_select: None,
+             on_comment: None,
+             on_visible_file: None,
++            on_symbol_hover: None,
++            on_symbol_press: None,
+         }
+     }
+ 
+@@ -120,6 +127,20 @@ impl<S: 'static> DiffView<S> {
+         self
+     }
+ 
++    /// Called on text movement and with `None` on leave, padding, or non-identifier text.
++    /// This is a source hit, not semantic resolution; the application queries its pinned project.
++    pub fn on_symbol_hover(mut self, f: impl Fn(&mut S, Option<SymbolPosition>, &mut Tx) + 'static) -> Self {
++        self.on_symbol_hover = Some(Rc::new(f));
++        self
++    }
++
++    /// Called on a primary symbol click without taking over selection drags.
++    /// Read `Tx::mods().cmd` to implement Command/Control-click.
++    pub fn on_symbol_press(mut self, f: impl Fn(&mut S, SymbolPosition, &mut Tx) + 'static) -> Self {
++        self.on_symbol_press = Some(Rc::new(f));
++        self
++    }
++
+     pub fn build(self, s: &S, k: &Kit) -> El {
+         let st = (self.get)(s);
+         let look = Look::new(k);
+@@ -593,34 +614,6 @@ impl<S: 'static> View<S> {
+             })
+     }
+ 
+-    /// The code of a line: syntax colours under word changes, tabs padded to four columns.
+-    fn code(&self, st: &DiffState, f: usize, c: &Cell<'_>, copy: bool, side: Side, row_key: &str) -> El {
+-        let l = &self.look;
+-        let (src, n) = c.source();
+-        let syntax: Vec<(Range<usize>, Color)> = st
+-            .highlights(f, src, n)
+-            .into_iter()
+-            .map(|(r, p)| (r, l.syntax.paint(p)))
+-            .collect();
+-        let word = l.tints(c.kind).map(|t| t.word);
+-        let spans = layer(c.text.len(), &syntax, word.map_or(&[][..], |_| c.changes), word);
+-        let (shown, spans, pads) = tabbed(c.text, spans, st.wraps());
+-        let mut t = rich(shown, spans).font(l.font).color(l.text).key("text");
+-        t = if st.wraps() { t.w_full() } else { t.single_line() };
+-        if copy {
+-            t = t.selectable(true).selection_color(l.selection);
+-            t = pads.into_iter().fold(t, |t, r| t.uncopied(r));
+-        }
+-        let (get, cell) = (self.d.get_mut.clone(), format!("{row_key}.{}", side as u8));
+-        let mut code = col().grow(1.0).min_w(0.0).pl(CODE_PAD.0).pr(CODE_PAD.1).child(t).on_hover_change(move |s: &mut S, inside, tx: &mut Tx| {
+-            if !get(s).hover_text(side, &cell, inside) { tx.live_only(); }
+-        });
+-        if c.no_newline {
+-            code = code.child(text("No newline at end of file").font(l.small).color(l.muted).opacity(0.6).key("eof").pb(2.0));
+-        }
+-        code
+-    }
+-
+     fn gutter_w(&self, st: &DiffState, f: usize) -> f32 {
+         let n = self.look.number_w(st.digits(f));
+         BAR + if st.mode() == DiffMode::Unified { 2.0 * n } else { n }
+@@ -790,111 +783,3 @@ impl<S: 'static> View<S> {
+ fn note(el: El, a: &Annotation) -> El {
+     col().key(format!("a.{}", a.id)).w_full().child(el)
+ }
+-
+-/// Spans for a line from its syntax colours and the byte ranges given `bg` (word changes):
+-/// cut where either starts or ends, so each piece has one colour and one background.
+-fn layer(len: usize, syntax: &[(Range<usize>, Color)], words: &[Range<usize>], bg: Option<Color>) -> Vec<Span> {
+-    let mut cuts: Vec<usize> = syntax.iter().flat_map(|(r, _)| [r.start, r.end]).chain(words.iter().flat_map(|r| [r.start, r.end])).collect();
+-    cuts.retain(|&c| c <= len);
+-    cuts.sort_unstable();
+-    cuts.dedup();
+-    let mut out: Vec<Span> = Vec::new();
+-    for w in cuts.windows(2) {
+-        let (a, b) = (w[0], w[1]);
+-        let color = syntax.get(syntax.partition_point(|(r, _)| r.end <= a)).filter(|(r, _)| r.start <= a).map(|(_, c)| *c);
+-        let on = words.get(words.partition_point(|r| r.end <= a)).is_some_and(|r| r.start <= a);
+-        let bg = bg.filter(|_| on);
+-        if color.is_none() && bg.is_none() {
+-            continue;
+-        }
+-        match out.last_mut() {
+-            Some(last) if last.end as usize == a && last.color == color && last.bg == bg => last.end = b as u32,
+-            _ => {
+-                let mut sp = Span::new(a, b);
+-                sp.color = color;
+-                sp.bg = bg;
+-                out.push(sp);
+-            }
+-        }
+-    }
+-    out
+-}
+-
+-/// `code` as drawn: text layout draws a tab as one space, so each tab is followed by spaces up
+-/// to the next four-column stop; and when `wrap`, a zero-width space after `.`, `(`, `[` and
+-/// `/` lets a long call chain or path break there. Returns the text, `spans` moved to match,
+-/// and the inserted ranges (drawn, never copied).
+-fn tabbed(code: &str, mut spans: Vec<Span>, wrap: bool) -> (String, Vec<Span>, Vec<Range<usize>>) {
+-    if !code.contains('\t') && !(wrap && code.contains(['.', '(', '[', '/'])) {
+-        return (code.to_owned(), spans, Vec::new());
+-    }
+-    let mut shown = String::with_capacity(code.len() + 8);
+-    // (byte in `code` after the insertion, bytes added up to and including it)
+-    let mut shifts: Vec<(usize, usize)> = Vec::new();
+-    let mut pads = Vec::new();
+-    let mut col = 0;
+-    let mut chars = code.char_indices().peekable();
+-    while let Some((i, ch)) = chars.next() {
+-        shown.push(ch);
+-        col += 1;
+-        let start = shown.len();
+-        if ch == '\t' {
+-            let pad = 3 - (col - 1) % 4;
+-            shown.extend(std::iter::repeat_n(' ', pad));
+-            col += pad;
+-        } else if wrap && matches!(ch, '.' | '(' | '[' | '/') && chars.peek().is_some_and(|(_, c)| !c.is_whitespace()) {
+-            shown.push('\u{200B}');
+-        }
+-        if shown.len() > start {
+-            pads.push(start..shown.len());
+-            shifts.push((i + ch.len_utf8(), shifts.last().map_or(0, |s| s.1) + shown.len() - start));
+-        }
+-    }
+-    let shift = |b: u32| match shifts.partition_point(|s| s.0 <= b as usize) {
+-        0 => b,
+-        n => b + shifts[n - 1].1 as u32,
+-    };
+-    for sp in &mut spans {
+-        (sp.start, sp.end) = (shift(sp.start), shift(sp.end));
+-    }
+-    (shown, spans, pads)
+-}
+-
+-#[cfg(test)]
+-mod tests {
+-    use super::*;
+-
+-    #[test]
+-    #[allow(clippy::single_range_in_vec_init)]
+-    fn word_backgrounds_cut_syntax_colours() {
+-        let red = Color::WHITE;
+-        let green = Color::BLACK;
+-        // "let total = 1;" with `let` and `1` coloured, `total` changed.
+-        let spans = layer(14, &[(0..3, red), (12..13, red)], &[4..9], Some(green));
+-        let got: Vec<(u32, u32, Option<Color>, Option<Color>)> = spans.iter().map(|s| (s.start, s.end, s.color, s.bg)).collect();
+-        assert_eq!(got, vec![(0, 3, Some(red), None), (4, 9, None, Some(green)), (12, 13, Some(red), None)]);
+-        // A change across a coloured token splits it.
+-        let spans = layer(10, &[(0..6, red)], &[3..8], Some(green));
+-        let got: Vec<(u32, u32, Option<Color>, Option<Color>)> = spans.iter().map(|s| (s.start, s.end, s.color, s.bg)).collect();
+-        assert_eq!(got, vec![(0, 3, Some(red), None), (3, 6, Some(red), Some(green)), (6, 8, None, Some(green))]);
+-    }
+-
+-    #[test]
+-    fn tabs_pad_to_four_columns_without_copying_the_padding() {
+-        let (shown, spans, pads) = tabbed("a\tb\t\tc", vec![Span::new(2, 3)], false);
+-        assert_eq!(shown, "a\t  b\t  \t   c");
+-        assert_eq!(pads, vec![2..4, 6..8, 9..12]);
+-        assert_eq!(&shown[spans[0].start as usize..spans[0].end as usize], "b");
+-        let copied: String = shown.char_indices().filter(|(i, _)| !pads.iter().any(|r| r.contains(i))).map(|(_, c)| c).collect();
+-        assert_eq!(copied, "a\tb\t\tc");
+-    }
+-
+-    #[test]
+-    fn wrapped_lines_can_break_inside_call_chains() {
+-        let (shown, spans, pads) = tabbed("a.b(c) x/ y", vec![Span::new(2, 3)], true);
+-        assert_eq!(shown, "a.\u{200B}b(\u{200B}c) x/ y");
+-        assert_eq!(&shown[spans[0].start as usize..spans[0].end as usize], "b");
+-        let copied: String = shown.char_indices().filter(|(i, _)| !pads.iter().any(|r| r.contains(i))).map(|(_, c)| c).collect();
+-        assert_eq!(copied, "a.b(c) x/ y");
+-    }
+-}
+diff --git a/crates/rune-kit/src/diff/view/code.rs b/crates/rune-kit/src/diff/view/code.rs
+new file mode 100644
+index 0000000..24ccd9a
+--- /dev/null
++++ b/crates/rune-kit/src/diff/view/code.rs
+@@ -0,0 +1,144 @@
++//! Diff code text, display-only padding, and native source-position interactions.
++use super::*;
++use rune::{Span, rich};
++use std::ops::Range;
++
++/// A source position under the pointer, before tab padding and wrapping insertions.
++#[derive(Clone, Copy, Debug, PartialEq)]
++pub struct SymbolPosition {
++    pub file: usize,
++    pub side: Side,
++    /// One-based source line on `side`.
++    pub line: u32,
++    /// Zero-based UTF-8 byte column in the original source line.
++    pub byte: usize,
++    pub window_x: f32,
++    pub window_y: f32,
++}
++
++impl<S: 'static> View<S> {
++    /// Syntax colours under word changes, tabs padded to four columns.
++    pub(super) fn code(&self, st: &DiffState, f: usize, c: &Cell<'_>, copy: bool, side: Side, row_key: &str) -> El {
++        let l = &self.look;
++        let (src, n) = c.source();
++        let syntax: Vec<(Range<usize>, Color)> = st.highlights(f, src, n).into_iter().map(|(r, p)| (r, l.syntax.paint(p))).collect();
++        let word = l.tints(c.kind).map(|t| t.word);
++        let spans = layer(c.text.len(), &syntax, word.map_or(&[][..], |_| c.changes), word);
++        let (shown, spans, pads) = tabbed(c.text, spans, st.wraps());
++        let mut t = rich(shown, spans).font(l.font).color(l.text).key("text");
++        t = if st.wraps() { t.w_full() } else { t.single_line() };
++        if copy {
++            t = t.selectable(true).selection_color(l.selection);
++            t = pads.iter().cloned().fold(t, |t, r| t.uncopied(r));
++        }
++        // `Cell::source` prefers new for syntax colours. Semantic hits use the displayed side.
++        let line = if side == Side::Old { c.old } else { c.new };
++        if let Some(line) = line
++            && (self.d.on_symbol_hover.is_some() || self.d.on_symbol_press.is_some())
++        {
++            let source = Rc::new(c.text.to_owned());
++            let pads = Rc::new(pads);
++            if let Some(cb) = self.d.on_symbol_hover.clone() {
++                let leave = cb.clone();
++                let (source, pads) = (source.clone(), pads.clone());
++                t = t.on_text_pointer_move(move |s: &mut S, byte, p, tx| {
++                    let at = byte.and_then(|b| source_symbol(&source, &pads, b)).map(|byte| SymbolPosition { file: f, side, line, byte, window_x: p.window_x, window_y: p.window_y });
++                    cb(s, at, tx);
++                }).on_hover_change(move |s: &mut S, inside, tx| {
++                    if !inside { leave(s, None, tx); } else { tx.live_only(); }
++                });
++            }
++            if let Some(cb) = self.d.on_symbol_press.clone() {
++                t = t.on_text_press(move |s: &mut S, byte, p, tx| {
++                    if let Some(byte) = byte.and_then(|b| source_symbol(&source, &pads, b)) {
++                        cb(s, SymbolPosition { file: f, side, line, byte, window_x: p.window_x, window_y: p.window_y }, tx);
++                    } else { tx.live_only(); }
++                });
++            }
++        }
++        let (get, cell) = (self.d.get_mut.clone(), format!("{row_key}.{}", side as u8));
++        let mut code = col().grow(1.0).min_w(0.0).pl(CODE_PAD.0).pr(CODE_PAD.1).child(t).on_hover_change(move |s: &mut S, inside, tx: &mut Tx| {
++            if !get(s).hover_text(side, &cell, inside) { tx.live_only(); }
++        });
++        if c.no_newline {
++            code = code.child(text("No newline at end of file").font(l.small).color(l.muted).opacity(0.6).key("eof").pb(2.0));
++        }
++        code
++    }
++}
++
++/// Reverse display-only insertions; padding, punctuation and blank space aren't symbols.
++fn source_symbol(source: &str, pads: &[Range<usize>], shown: usize) -> Option<usize> {
++    if pads.iter().any(|r| r.contains(&shown)) { return None; }
++    let inserted: usize = pads.iter().filter(|r| r.end <= shown).map(|r| r.len()).sum();
++    let byte = shown.checked_sub(inserted)?;
++    let ch = source.get(byte..)?.chars().next()?;
++    (ch.is_alphanumeric() || ch == '_' || ch == '$').then_some(byte)
++}
++
++/// Tabs draw as a space followed by padding to four-column stops. Wrapped punctuation
++/// gets a zero-width space. Inserted byte ranges are never copied or sent to the backend.
++fn tabbed(code: &str, mut spans: Vec<Span>, wrap: bool) -> (String, Vec<Span>, Vec<Range<usize>>) {
++    if !code.contains('\t') && !(wrap && code.contains(['.', '(', '[', '/'])) {
++        return (code.to_owned(), spans, Vec::new());
++    }
++    let mut shown = String::with_capacity(code.len() + 8);
++    let mut shifts: Vec<(usize, usize)> = Vec::new();
++    let mut pads = Vec::new();
++    let mut col = 0;
++    let mut chars = code.char_indices().peekable();
++    while let Some((i, ch)) = chars.next() {
++        shown.push(ch);
++        col += 1;
++        let start = shown.len();
++        if ch == '\t' {
++            let pad = 3 - (col - 1) % 4;
++            shown.extend(std::iter::repeat_n(' ', pad));
++            col += pad;
++        } else if wrap && matches!(ch, '.' | '(' | '[' | '/') && chars.peek().is_some_and(|(_, c)| !c.is_whitespace()) {
++            shown.push('\u{200B}');
++        }
++        if shown.len() > start {
++            pads.push(start..shown.len());
++            shifts.push((i + ch.len_utf8(), shifts.last().map_or(0, |s| s.1) + shown.len() - start));
++        }
++    }
++    let shift = |b: u32| match shifts.partition_point(|s| s.0 <= b as usize) {
++        0 => b,
++        n => b + shifts[n - 1].1 as u32,
++    };
++    for sp in &mut spans {
++        (sp.start, sp.end) = (shift(sp.start), shift(sp.end));
++    }
++    (shown, spans, pads)
++}
++
++/// Layer syntax colours and word-change backgrounds without losing either.
++fn layer(len: usize, syntax: &[(Range<usize>, Color)], words: &[Range<usize>], bg: Option<Color>) -> Vec<Span> {
++    let mut cuts: Vec<usize> = syntax.iter().flat_map(|(r, _)| [r.start, r.end]).chain(words.iter().flat_map(|r| [r.start, r.end])).collect();
++    cuts.retain(|&c| c <= len);
++    cuts.sort_unstable();
++    cuts.dedup();
++    let mut out: Vec<Span> = Vec::new();
++    for w in cuts.windows(2) {
++        let (a, b) = (w[0], w[1]);
++        let color = syntax.get(syntax.partition_point(|(r, _)| r.end <= a)).filter(|(r, _)| r.start <= a).map(|(_, c)| *c);
++        let on = words.get(words.partition_point(|r| r.end <= a)).is_some_and(|r| r.start <= a);
++        let bg = bg.filter(|_| on);
++        if color.is_none() && bg.is_none() { continue; }
++        match out.last_mut() {
++            Some(last) if last.end as usize == a && last.color == color && last.bg == bg => last.end = b as u32,
++            _ => {
++                let mut sp = Span::new(a, b);
++                sp.color = color;
++                sp.bg = bg;
++                out.push(sp);
++            }
++        }
++    }
++    out
++}
++
++#[cfg(test)]
++#[path = "code_tests.rs"]
++mod tests;
+diff --git a/crates/rune-kit/src/diff/view/code_tests.rs b/crates/rune-kit/src/diff/view/code_tests.rs
+new file mode 100644
+index 0000000..c927f30
+--- /dev/null
++++ b/crates/rune-kit/src/diff/view/code_tests.rs
+@@ -0,0 +1,58 @@
++use super::*;
++
++#[test]
++#[allow(clippy::single_range_in_vec_init)]
++fn word_backgrounds_cut_syntax_colours() {
++    let red = Color::WHITE;
++    let green = Color::BLACK;
++    let spans = layer(14, &[(0..3, red), (12..13, red)], &[4..9], Some(green));
++    let got: Vec<_> = spans.iter().map(|s| (s.start, s.end, s.color, s.bg)).collect();
++    assert_eq!(got, vec![(0, 3, Some(red), None), (4, 9, None, Some(green)), (12, 13, Some(red), None)]);
++    let spans = layer(10, &[(0..6, red)], &[3..8], Some(green));
++    let got: Vec<_> = spans.iter().map(|s| (s.start, s.end, s.color, s.bg)).collect();
++    assert_eq!(got, vec![(0, 3, Some(red), None), (3, 6, Some(red), Some(green)), (6, 8, None, Some(green))]);
++}
++
++#[test]
++fn symbol_mapping_reverses_only_display_insertions() {
++    for source in ["\talpha.βeta(\tvalue)/item", "a\tb\t\tc", "🦀\tπ.foo[bar]", "x.\u{200B}y", "plain_$name", "", "   "] {
++        for wrap in [false, true] {
++            let (shown, _, pads) = tabbed(source, Vec::new(), wrap);
++            let mut original = source.char_indices();
++            for (at, ch) in shown.char_indices() {
++                if pads.iter().any(|r| r.contains(&at)) {
++                    assert_eq!(source_symbol(source, &pads, at), None);
++                } else {
++                    let (byte, expected) = original.next().unwrap();
++                    assert_eq!(ch, expected);
++                    let want = (ch.is_alphanumeric() || ch == '_' || ch == '$').then_some(byte);
++                    assert_eq!(source_symbol(source, &pads, at), want, "{source:?}, {wrap}, {at}");
++                    for interior in 1..ch.len_utf8() {
++                        assert_eq!(source_symbol(source, &pads, at + interior), None);
++                    }
++                }
++            }
++            assert_eq!(source_symbol(source, &pads, shown.len()), None);
++            assert_eq!(source_symbol(source, &pads, shown.len() + 20), None);
++        }
++    }
++}
++
++#[test]
++fn tabs_pad_to_four_columns_without_copying_the_padding() {
++    let (shown, spans, pads) = tabbed("a\tb\t\tc", vec![Span::new(2, 3)], false);
++    assert_eq!(shown, "a\t  b\t  \t   c");
++    assert_eq!(pads, vec![2..4, 6..8, 9..12]);
++    assert_eq!(&shown[spans[0].start as usize..spans[0].end as usize], "b");
++    let copied: String = shown.char_indices().filter(|(i, _)| !pads.iter().any(|r| r.contains(i))).map(|(_, c)| c).collect();
++    assert_eq!(copied, "a\tb\t\tc");
++}
++
++#[test]
++fn wrapped_lines_can_break_inside_call_chains() {
++    let (shown, spans, pads) = tabbed("a.b(c) x/ y", vec![Span::new(2, 3)], true);
++    assert_eq!(shown, "a.\u{200B}b(\u{200B}c) x/ y");
++    assert_eq!(&shown[spans[0].start as usize..spans[0].end as usize], "b");
++    let copied: String = shown.char_indices().filter(|(i, _)| !pads.iter().any(|r| r.contains(i))).map(|(_, c)| c).collect();
++    assert_eq!(copied, "a.b(c) x/ y");
++}
+diff --git a/crates/rune-kit/tests/diff.rs b/crates/rune-kit/tests/diff.rs
+index 1a7d086..e472efa 100644
+--- a/crates/rune-kit/tests/diff.rs
++++ b/crates/rune-kit/tests/diff.rs
+@@ -9,6 +9,52 @@ use rune::{Cx, El, Env, Key, KeyEvent, Mods, Runtime, TextEdit, TextStyle, Tx, c
+ use rune_kit::Kit;
+ use rune_kit::diff::{Annotation, DiffMode, DiffState, DiffView, Expand, FileDiff, LineKind, LineRange, LineRef, Side, parse};
+ 
++#[test]
++fn symbol_hits_keep_displayed_side_and_source_line() {
++    use rune_kit::diff::SymbolPosition;
++    struct Symbols { diff: DiffState, hover: Option<SymbolPosition>, presses: Vec<(SymbolPosition, bool)> }
++    let mut diff = DiffState::new(vec![FileDiff::from_texts("test.ts", "\talpha.beta\n", "\tinserted\n\talpha.beta\n")]);
++    diff.set_mode(DiffMode::Split);
++    diff.set_wrap(true);
++    let mut rt = Runtime::new(Symbols { diff, hover: None, presses: Vec::new() }, |s: &Symbols, _: &mut Cx<Symbols>| {
++        DiffView::new(|s: &Symbols| &s.diff, |s: &mut Symbols| &mut s.diff)
++            .on_symbol_hover(|s, at, _| s.hover = at)
++            .on_symbol_press(|s, at, tx| s.presses.push((at, tx.mods().cmd)))
++            .build(s, &Kit::neutral(true))
++    }, (900.0, 400.0), Env::new(true, 2.0));
++    for _ in 0..5 { rt.frame(1.0 / 60.0); }
++    let point = |rt: &Runtime<Symbols>, side: &str| {
++        let e = rt.elements().into_iter().find(|e| e.path.contains(side) && e.key.as_deref() == Some("text") && e.text.as_ref().is_some_and(|t| t.contains("alpha"))).unwrap();
++        let mut glyphs: Vec<_> = rt.instances.iter()
++            .filter(|i| i.params[1] == rune::render::KIND_GLYPH)
++            .map(|i| ((i.rect[0] + i.rect[2] / 2.0) / 2.0, (i.rect[1] + i.rect[3] / 2.0) / 2.0))
++            .filter(|&(x, y)| x >= e.rect[0] && x < e.rect[0] + e.rect[2] && y >= e.rect[1] && y < e.rect[1] + e.rect[3])
++            .collect();
++        glyphs.sort_by(|a, b| a.0.total_cmp(&b.0));
++        glyphs[0]
++    };
++    let old = point(&rt, "/old/");
++    let new = point(&rt, "/new/");
++    rt.pointer_move(old.0, old.1);
++    rt.frame(1.0 / 60.0);
++    let at = rt.state.hover.unwrap();
++    assert_eq!((at.file, at.side, at.line, at.byte), (0, Side::Old, 1, 1));
++    rt.pointer_move(new.0, new.1);
++    rt.frame(1.0 / 60.0);
++    let at = rt.state.hover.unwrap();
++    assert_eq!((at.side, at.line, at.byte), (Side::New, 2, 1));
++    assert_eq!((at.window_x, at.window_y), new);
++    rt.physical_input(rune::PhysicalInput::Modifiers(Mods { cmd: true, ..Mods::default() }));
++    rt.pointer_down(old.0, old.1);
++    rt.pointer_up(old.0, old.1);
++    rt.frame(1.0 / 60.0);
++    let (at, cmd) = rt.state.presses[0];
++    assert_eq!((at.side, at.line, at.byte, cmd), (Side::Old, 1, 1, true));
++    rt.pointer_move(899.0, 399.0);
++    rt.frame(1.0 / 60.0);
++    assert_eq!(rt.state.hover, None);
++}
++
+ /// Files, hunks and lines as text: `-`/`+`/space, the old and new numbers, and word changes
+ /// in brackets.
+ fn dump(files: &[FileDiff]) -> String {
+diff --git a/crates/rune/src/el/handler_set.rs b/crates/rune/src/el/handler_set.rs
+index 4df7794..ca5b942 100644
+--- a/crates/rune/src/el/handler_set.rs
++++ b/crates/rune/src/el/handler_set.rs
+@@ -1,12 +1,15 @@
+ //! Event, gesture, layout-watch and pointer-feedback handlers shared by `El` and `Node` behind
+ //! `Cold<Handlers>`, so elements without callbacks pay one pointer.
+ use crate::cold::Empty;
++use std::rc::Rc;
+ use crate::el::{
+     AtBottomFn, Cursor, DragEndFn, DragFn, DragOutFn, DropSpec, LayoutFn, LayoutTxFn, ModalSpec,
+     PasteFn, PointerFn, PressFn, ScrollOffsetFn, SelectionChangeFn, SelectionCopy, VisibleRowsFn,
+     WindowFocusFn,
+ };
+ 
++type TextPointerFn = Rc<dyn Fn(crate::states::States<'_>, Option<usize>, crate::PointerEvent, &mut crate::Tx)>;
++
+ #[derive(Clone)]
+ pub(crate) struct Handlers {
+     pub on_paste: Option<PasteFn>,
+@@ -20,6 +23,8 @@ pub(crate) struct Handlers {
+     /// Seconds the pointer must stay inside, then outside, before `on_hover_change` hears it.
+     pub hover_delay: [f32; 2],
+     pub on_pointer_move: Option<PointerFn>,
++    pub on_text_pointer_move: Option<TextPointerFn>,
++    pub on_text_press: Option<TextPointerFn>,
+     /// `on_wheel`, `on_magnify` and the other canvas handlers (`canvas_input.rs`).
+     pub gestures: Option<Box<crate::input::canvas_input::CanvasInput>>,
+     pub on_drag: Option<DragFn>,
+@@ -64,6 +69,7 @@ impl Handlers {
+     #[inline]
+     pub(crate) fn has_primary(&self) -> bool {
+         self.on_press.is_some()
++            || self.on_text_press.is_some()
+             || self.on_double_press.is_some()
+             || self.on_hover.is_some()
+             || self.on_drag.is_some()
+@@ -73,6 +79,8 @@ impl Handlers {
+     #[inline]
+     pub(crate) fn takes_hit(&self) -> bool {
+         self.on_pointer_move.is_some()
++            || self.on_text_pointer_move.is_some()
++            || self.on_text_press.is_some()
+             || self.on_press.is_some()
+             || self.on_double_press.is_some()
+             || self.on_secondary_press.is_some()
+@@ -97,6 +105,8 @@ impl Empty for Handlers {
+         on_hover_change: None,
+         hover_delay: [0.0; 2],
+         on_pointer_move: None,
++        on_text_pointer_move: None,
++        on_text_press: None,
+         gestures: None,
+         on_drag: None,
+         drag_out: None,
+diff --git a/crates/rune/src/el/handlers.rs b/crates/rune/src/el/handlers.rs
+index b4e9177..0cc81f2 100644
+--- a/crates/rune/src/el/handlers.rs
++++ b/crates/rune/src/el/handlers.rs
+@@ -3,6 +3,20 @@
+ use super::*;
+ 
+ impl El {
++    /// Observe the UTF-8 byte at the actual pointer point in this text's presented layout.
++    /// `None` means outside shaped text. Does not take over text-selection dragging.
++    pub fn on_text_pointer_move<S: 'static>(mut self, f: impl Fn(&mut S, Option<usize>, PointerEvent, &mut Tx) + 'static) -> Self {
++        self.handlers.on_text_pointer_move = Some(Rc::new(move |s, byte, p, tx| f(downcast::<S>(s), byte, p, tx)));
++        self
++    }
++
++    /// A primary click on shaped text, hit-tested at release, never from cached hover.
++    /// A selection drag does not invoke this. Read `Tx::mods` for modifier-clicks.
++    pub fn on_text_press<S: 'static>(mut self, f: impl Fn(&mut S, Option<usize>, PointerEvent, &mut Tx) + 'static) -> Self {
++        self.handlers.on_text_press = Some(Rc::new(move |s, byte, p, tx| f(downcast::<S>(s), byte, p, tx)));
++        self
++    }
++
+     pub fn on_press<S: 'static>(self, f: impl Fn(&mut S) + 'static) -> Self {
+         self.on_press_tx(move |s: &mut S, _tx: &mut Tx| f(s))
+     }
+diff --git a/crates/rune/src/runtime/commit/memo_reuse.rs b/crates/rune/src/runtime/commit/memo_reuse.rs
+index 352dd1a..44a69fc 100644
+--- a/crates/rune/src/runtime/commit/memo_reuse.rs
++++ b/crates/rune/src/runtime/commit/memo_reuse.rs
+@@ -268,6 +268,8 @@ fn same_handlers(
+         on_hover_change,
+         hover_delay,
+         on_pointer_move,
++        on_text_pointer_move,
++        on_text_press,
+         gestures,
+         on_drag,
+         drag_out,
+@@ -304,6 +306,8 @@ fn same_handlers(
+         && opt_rc_eq(&a.on_hover_change, on_hover_change)
+         && a.hover_delay == *hover_delay
+         && opt_rc_eq(&a.on_pointer_move, on_pointer_move)
++        && opt_rc_eq(&a.on_text_pointer_move, on_text_pointer_move)
++        && opt_rc_eq(&a.on_text_press, on_text_press)
+         && same_gestures(&a.gestures, gestures)
+         && opt_rc_eq(&a.on_drag, on_drag)
+         && opt_rc_eq(&a.drag_out, drag_out)
+diff --git a/crates/rune/src/runtime/input/action.rs b/crates/rune/src/runtime/input/action.rs
+index 5a580e0..408f90d 100644
+--- a/crates/rune/src/runtime/input/action.rs
++++ b/crates/rune/src/runtime/input/action.rs
+@@ -11,6 +11,7 @@ pub(super) enum Action {
+     HoverFocus(Option<String>),
+     Dismiss(String),
+     PointerMove(String, PointerEvent),
++    TextPointer(String, Option<usize>, PointerEvent, bool),
+     Hover(String),
+     HoverChange(String, bool),
+     /// `El::on_selection_change`.
+@@ -319,6 +320,11 @@ impl<S: 'static> Runtime<S> {
+                 f(states!(self), point, &mut one);
+                 true
+             }
++            Action::TextPointer(path, byte, point, press) => {
++                let Some(f) = self.node(&path).and_then(|n| if press { n.handlers.on_text_press.clone() } else { n.handlers.on_text_pointer_move.clone() }) else { return false };
++                f(states!(self), byte, point, &mut one);
++                true
++            }
+             Action::AtBottom(path, at) => {
+                 let Some(f) = self.node(&path).and_then(|n| n.handlers.on_at_bottom.clone()) else { return false };
+                 f(states!(self), at);
+diff --git a/crates/rune/src/runtime/input/pointer.rs b/crates/rune/src/runtime/input/pointer.rs
+index 38238de..0b82de8 100644
+--- a/crates/rune/src/runtime/input/pointer.rs
++++ b/crates/rune/src/runtime/input/pointer.rs
+@@ -24,6 +24,14 @@ impl<S: 'static> Runtime<S> {
+             }
+         }
+         self.refresh_hover(x, y);
++        // Deliver the previous text's leave before this text's new source position.
++        if let Some(i) = self.top_target(x, y)
++            && self.nodes[i].handlers.on_text_pointer_move.is_some()
++        {
++            let byte = self.text_pointer_index_at(i, x, y);
++            let point = self.pointer_event(i, x, y);
++            self.queue.push(Action::TextPointer(self.nodes[i].path.clone(), byte, point, false));
++        }
+         let Some((path, d)) = self.capture.clone() else { return };
+         if self.drag_out_armed && crate::drag_out::past_threshold(self.press_at, (x, y), self.drag_out_threshold) && self.start_drag_out(path.clone()) {
+             return;
+@@ -294,6 +302,11 @@ impl<S: 'static> Runtime<S> {
+         let Some(i) = self.live_index(&path) else { return };
+         let n = &self.nodes[i];
+         let (has_drag, has_press, has_double) = (n.handlers.on_drag.is_some() && !self.drags_out(n), n.handlers.on_press.is_some(), n.handlers.on_double_press.is_some());
++        if n.handlers.on_text_press.is_some() && self.capture_inside && !selected && !self.press_moved && !self.press_cancelled && button == crate::PointerButton::Primary {
++            let byte = self.text_pointer_index_at(i, x, y);
++            let point = self.pointer_event(i, x, y);
++            self.queue.push(Action::TextPointer(path.clone(), byte, point, true));
++        }
+         if has_drag {
+             let (dx, dy) = (x - self.press_at.0, y - self.press_at.1);
+             let [lx, ly] = self.to_local(i, x, y);
+diff --git a/crates/rune/src/runtime/selection/selectable.rs b/crates/rune/src/runtime/selection/selectable.rs
+index 0871aa9..85a9930 100644
+--- a/crates/rune/src/runtime/selection/selectable.rs
++++ b/crates/rune/src/runtime/selection/selectable.rs
+@@ -538,6 +538,22 @@ impl<S: 'static> Runtime<S> {
+         self.sync_selection_pins();
+     }
+ 
++    /// Exact shaped-text hit, unlike selection's nearest-caret hit. Use the same presented
++    /// geometry and native hit test, but reject blank space and return the cluster's start
++    /// rather than the insertion caret after its right half.
++    pub(super) fn text_pointer_index_at(&self, i: usize, x: f32, y: f32) -> Option<usize> {
++        self.text_index_at(i, x, y)?;
++        let n = &self.nodes[i];
++        let (spec, layout) = (n.text.as_ref()?, n.text_layout.as_ref()?);
++        let s = self.env.scale;
++        let z = self.drawn_scale.get(i).copied().unwrap_or(1.0).max(1e-4);
++        let (rect, x, y) = self.unturned_box_and_point(i, x, y);
++        let [ox, oy] = links::origin(n, spec, layout, rect, s, z);
++        let (cluster, _) = parley::Cluster::from_point_exact(layout, (x - ox) * s / z, (y - oy) * s / z)?;
++        let at = cluster.text_range().start;
++        Some(n.elided.map_or(at, |e| e.content(at)).min(spec.content.len()))
++    }
++
+     /// Byte offset of node `i`'s text under window point (x, y), where it was drawn this frame.
+     fn text_index_at(&self, i: usize, x: f32, y: f32) -> Option<usize> {
+         let n = &self.nodes[i];
+diff --git a/crates/rune/tests/selectable_text.rs b/crates/rune/tests/selectable_text.rs
+index e4dabe1..baea2e5 100644
+--- a/crates/rune/tests/selectable_text.rs
++++ b/crates/rune/tests/selectable_text.rs
+@@ -220,3 +220,35 @@ fn the_highlight_matches_a_text_fields() {
+     assert_eq!(rt.selected_text().as_deref(), Some("opencode"));
+     assert_eq!(selectable, field, "same fill, height and corners");
+ }
++
++#[test]
++fn text_pointer_hits_actual_click_and_preserves_selection() {
++    #[derive(Default)]
++    struct Hits { hovered: Option<usize>, clicks: Vec<(usize, bool)> }
++    let mut rt = Runtime::new(Hits::default(), |_: &Hits, _: &mut Cx<Hits>| {
++        text("alpha beta gamma").key("hit-text").w(250.0)
++            .font(TextStyle::new(14.0, 400.0).mono().lh(20.0)).selectable(true)
++            .on_text_pointer_move(|s: &mut Hits, byte, _, _| s.hovered = byte)
++            .on_text_press(|s: &mut Hits, byte, _, tx| {
++                if let Some(byte) = byte { s.clicks.push((byte, tx.mods().cmd)); }
++            })
++    }, (400.0, 200.0), Env::new(true, 2.0));
++    tick(&mut rt);
++    let g = glyphs(&rt, "hit-text");
++    rt.pointer_move(g[0].0, g[0].1);
++    tick(&mut rt);
++    assert_eq!(rt.state.hovered, Some(0));
++    rt.physical_input(PhysicalInput::Modifiers(Mods { cmd: true, ..Mods::default() }));
++    // No hover event at the clicked word: the click must hit its own actual point.
++    rt.pointer_down(g[5].0, g[5].1);
++    rt.pointer_up(g[5].0, g[5].1);
++    tick(&mut rt);
++    assert_eq!(rt.state.clicks, vec![(6, true)]);
++    rt.physical_input(PhysicalInput::Modifiers(Mods::default()));
++    drag(&mut rt, g[0], g[8]);
++    assert!(rt.selected_text().is_some_and(|s| !s.is_empty()));
++    assert_eq!(rt.state.clicks.len(), 1, "selection drag is not a symbol click");
++    rt.pointer_move(245.0, g[0].1);
++    tick(&mut rt);
++    assert_eq!(rt.state.hovered, None, "blank text width is not the last symbol");
++}
