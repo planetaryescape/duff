@@ -10,7 +10,7 @@ Prerequisites: Bun, Node **22.18+**, Rust **1.98.1** through rustup (`rustup too
 bash scripts/rune-review-prototype/run.sh
 ```
 
-The launcher bundles the core bridge for **Node**, then builds and opens the native Rune app. Bun is the build tool; it is not the sidecar runtime because durable storage uses `node:sqlite`. The first Rust build downloads the pinned dependencies. Linux needs a working Vulkan driver, `libxkbcommon-dev` and the normal X11/Wayland libraries. macOS uses Metal and requires Xcode Command Line Tools. This is source-run software, not a signed or distributed application.
+The launcher bundles the core bridge for **Node**, then builds and opens the native Rune app. Bun is the build tool; it is not the sidecar runtime because durable storage uses `node:sqlite`. The first Rust build downloads the pinned dependencies and prepares the local Rune source patch described below. Linux needs a working Vulkan driver, `libxkbcommon-dev` and the normal X11/Wayland libraries. macOS uses Metal and requires Xcode Command Line Tools. This is source-run software, not a signed or distributed application.
 
 1. Paste a GitHub or modern Azure repository URL and click **Load PRs**.
 2. Type an author name to filter the loaded PR pages. Use **Load more PRs** when available; the filter is not a server-wide search.
@@ -22,6 +22,16 @@ The launcher bundles the core bridge for **Node**, then builds and opens the nat
 The bottom switcher compares **Workbench** (inbox + files + diff), **Focus** (hide the inbox for code width) and **Inbox** (wide inbox + nearby file tabs). All operate on the same real review.
 
 `DUFF_REPOSITORY` optionally prefills the URL. `DUFF_STANDALONE_DATA` overrides storage for isolated testing. `DUFF_NODE` selects a Node executable. Do not put credentials in repository URLs or these settings.
+
+## TypeScript code intelligence
+
+Choose **Enable code intelligence**, read the trust prompt and enable it for this review. Duff starts its pinned TypeScript language server for separate immutable base/head source contexts. It runs with your account privileges, **not in an OS sandbox**. It does not install PR dependencies, run project scripts, load project plugins or download typings. Closing or replacing the review clears enablement.
+
+Hover over a TypeScript/TSX symbol for its type/documentation. **Command-click** (Control-click off macOS), **F12** after clicking a symbol, or **Peek definition** opens a read-only excerpt from that same revision, including unchanged files. Choose between multiple targets when available. **Back / Escape** dismisses the peek without replacing the diff, changing its selection or marking files viewed. Ordinary text drag/copy remains available.
+
+Results are explicitly **limited**: exact third-party dependencies, generated files and the project's TypeScript version are not supplied; configuration is restricted. Source-local answers are useful, but unresolved external symbols are not proof that no definition exists. An empty result and a failed language operation are shown separately. Language failure does not disable review reading or durable viewed progress. Source preparation and excerpts are bounded; oversized or unsupported contexts fail visibly.
+
+Analysis selects TS/JS-family and JSON/JSONC inputs, including unchanged imports and configuration; it skips unrelated assets and vendored `.yarn` toolchains. Each tree may contain at most 4,096 entries, selected inputs at most 16 MiB in total and each selected blob at most 1 MiB. Unsafe paths, symlinks, submodules and case/normalization collisions fail closed rather than becoming a misleading successful context. Definition results contain at most eight bounded excerpts. Other-language files and missing dependencies remain outside this limited source context.
 
 ## Boundary and reuse
 
@@ -39,9 +49,11 @@ Provider acquisition retains core's identity checks and pinned commits, includin
 
 ## Scope and limits
 
-This prototype performs provider reads and local review writes only. It does **not** post comments, approve or merge PRs, edit repository files, send telemetry, connect VS Code storage, or embed the owner's terminal/debugger/editor. Unsupported provider operations remain unavailable. CLI login must already work; no login browser flow is implemented. Requests are serial; while core is busy, review-changing controls do not enqueue more operations. There is no cancellation button or production installer yet.
+This prototype performs provider reads and local review writes only. It does **not** post comments, approve or merge PRs, edit repository files, send telemetry, connect VS Code storage, or embed the owner's terminal/debugger/editor. Unsupported provider operations remain unavailable. CLI login must already work; no login browser flow is implemented. Durable review operations remain ordered; read-only language requests are independently correlated and cancelled when superseded. There is no acquisition cancellation button or production installer yet.
 
-Rune is pinned to [`aff5f631dffd2d65e3a3f031df4659756b567257`](https://github.com/anomalyco/rune/tree/aff5f631dffd2d65e3a3f031df4659756b567257) with a Cargo lockfile. Its [`rune_kit::diff`](https://github.com/anomalyco/rune/tree/aff5f631dffd2d65e3a3f031df4659756b567257/crates/rune-kit/src/diff) is the actual renderer. [`@pierre/diffs`](https://diffs.com/docs) uses HTML, CSS Grid and Shadow DOM; it is not a drop-in Rune widget. No supported embedded-webview component was found in this Rune revision, so Pierre is not included. A browser shell would be a different choice, not an invisible addition to this native prototype.
+Rune is pinned to [`3062e9b86b5a02b97c8ed4e8f49fcfc4d6902fc1`](https://github.com/anomalyco/rune/tree/3062e9b86b5a02b97c8ed4e8f49fcfc4d6902fc1) with a Cargo lockfile. Its `rune_kit::diff` is the actual renderer. Upstream does not yet expose diff symbol-position callbacks, so `rune-interactions.patch` adds narrow hooks using Rune's actual shaped-text hit testing, reversing tab padding and wrapping insertions before source-position conversion. `native.sh` fetches the exact revision into ignored `.rune-source`, verifies/applies only the known patch, and supplies explicit local Cargo overrides. It refuses unexpected source changes rather than resetting them. It never changes global Cargo sources. Use this wrapper instead of raw Cargo build/test commands. Rune remains MIT-licensed; its checkout retains the upstream license.
+
+[`@pierre/diffs`](https://diffs.com/docs) uses HTML, CSS Grid and Shadow DOM; it is not a drop-in Rune widget. A browser shell would be a different choice, not an invisible addition to this native prototype.
 
 ## Checks
 
@@ -53,7 +65,9 @@ bash scripts/rune-review-prototype/bridge/build.sh
 bunx tsc --noEmit -p scripts/rune-review-prototype/bridge/tsconfig.json
 bunx vitest run scripts/rune-review-prototype/bridge/Bridge.test.ts --maxWorkers=1
 cargo fmt --check --manifest-path scripts/rune-review-prototype/Cargo.toml
-cargo build --locked --manifest-path scripts/rune-review-prototype/Cargo.toml
+bash scripts/rune-review-prototype/native-bootstrap.test.sh
+bash scripts/rune-review-prototype/native.sh build --locked
+bash scripts/rune-review-prototype/native.sh test --locked
 ```
 
 The bridge test uses real temporary Git repositories and storage, not provider fixtures. Live-provider and native rendering evidence must be reported separately from those tests. Private repository content must not be uploaded as public PR evidence.

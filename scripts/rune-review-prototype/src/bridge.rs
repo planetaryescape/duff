@@ -4,7 +4,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Deserialize)]
@@ -66,14 +66,51 @@ pub enum Payload {
     Saved {
         items: Vec<Saved>,
     },
+    Language {
+        session: String,
+        state: String,
+        message: String,
+    },
+    Hover {
+        session: String,
+        path: String,
+        side: String,
+        line: u32,
+        character: u32,
+        content: String,
+        message: String,
+    },
+    Definition {
+        session: String,
+        path: String,
+        side: String,
+        targets: Vec<DefinitionTarget>,
+        message: String,
+    },
+    #[serde(rename = "language-cancelled")]
+    LanguageCancelled,
 }
 
-pub type Event = Result<Payload, String>;
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DefinitionTarget {
+    pub path: String,
+    pub commit: String,
+    pub line: u32,
+    pub character: u32,
+    pub start_line: u32,
+    pub text: String,
+}
+
+pub struct Event {
+    pub id: u64,
+    pub result: Result<Payload, String>,
+}
 
 pub struct Bridge {
     child: Child,
     input: Arc<Mutex<Option<ChildStdin>>>,
-    requests: Sender<Value>,
+    requests: SyncSender<Value>,
     pub replies: Receiver<Event>,
 }
 
@@ -100,41 +137,93 @@ impl Bridge {
         };
         let input = Arc::new(Mutex::new(Some(input)));
         let worker_input = input.clone();
-        let (requests, incoming) = mpsc::channel::<Value>();
+        let (requests, incoming) = mpsc::sync_channel::<Value>(32);
         let (outgoing, replies) = mpsc::channel();
+        let write_errors = outgoing.clone();
+        let write_wake = wake.clone();
+        std::thread::spawn(move || {
+            for request in incoming {
+                let id = request.get("id").and_then(Value::as_u64).unwrap_or(0);
+                let result = (|| {
+                    let mut guard = worker_input.lock().map_err(|_| ())?;
+                    let input = guard.as_mut().ok_or(())?;
+                    serde_json::to_writer(&mut *input, &request).map_err(|_| ())?;
+                    input
+                        .write_all(b"\n")
+                        .and_then(|_| input.flush())
+                        .map_err(|_| ())
+                })();
+                if result.is_err() {
+                    let _ = write_errors.send(Event {
+                        id,
+                        result: Err(
+                            "Local core bridge disconnected. Restart Duff with the launcher."
+                                .to_owned(),
+                        ),
+                    });
+                    write_wake();
+                    break;
+                }
+            }
+        });
         std::thread::spawn(move || {
             let mut output = BufReader::new(output);
-            for request in incoming {
-                let result = (|| {
-                    {
-                        let mut guard = worker_input.lock().map_err(|_| ())?;
-                        let input = guard.as_mut().ok_or(())?;
-                        serde_json::to_writer(&mut *input, &request).map_err(|_| ())?;
-                        input.write_all(b"\n").and_then(|_| input.flush()).map_err(|_| ())?;
-                    }
+            loop {
+                let decoded = (|| {
                     let mut line = String::new();
                     // Core bounds each file to 1 MiB; allow JSON escaping without unbounded reads.
-                    let count = output.by_ref().take(16 * 1024 * 1024).read_line(&mut line).map_err(|_| ())?;
-                    if count == 0 || !line.ends_with('\n') { return Err(()); }
+                    let count = output
+                        .by_ref()
+                        .take(16 * 1024 * 1024)
+                        .read_line(&mut line)
+                        .map_err(|_| ())?;
+                    if count == 0 || !line.ends_with('\n') {
+                        return Err(());
+                    }
                     let value: Value = serde_json::from_str(&line).map_err(|_| ())?;
-                    if value.get("id") != request.get("id") { return Err(()); }
-                    if value.get("ok") == Some(&Value::Bool(true)) {
+                    let id = value.get("id").and_then(Value::as_u64).ok_or(())?;
+                    let result = if value.get("ok") == Some(&Value::Bool(true)) {
                         serde_json::from_value(value).map(Ok).map_err(|_| ())
                     } else {
                         // Only the bridge's finite public diagnostics cross into native UI.
                         let message = match value.get("error").and_then(Value::as_str) {
-                            Some("Authentication unavailable. Sign in with the provider CLI and retry.") => "Authentication unavailable. Sign in with gh or az, then retry.",
-                            Some("Binary, oversized, or unsupported file unavailable.") => "Binary, oversized, or unsupported file. No empty diff has been substituted.",
-                            Some("Saved review storage unavailable.") => "Saved review storage unavailable. Check the standalone data directory.",
+                            Some(
+                                "Authentication unavailable. Sign in with the provider CLI and retry.",
+                            ) => "Authentication unavailable. Sign in with gh or az, then retry.",
+                            Some("Binary, oversized, or unsupported file unavailable.") => {
+                                "Binary, oversized, or unsupported file. No empty diff has been substituted."
+                            }
+                            Some("Saved review storage unavailable.") => {
+                                "Saved review storage unavailable. Check the standalone data directory."
+                            }
+                            Some("Language analysis unavailable.") => {
+                                "Language analysis unavailable. Review reading and viewed progress still work."
+                            }
                             _ => "Review operation unavailable. Check repository access and retry.",
                         };
                         Ok(Err(message.to_owned()))
+                    }?;
+                    Ok(Event { id, result })
+                })();
+                match decoded {
+                    Ok(event) => {
+                        if outgoing.send(event).is_err() {
+                            break;
+                        }
+                        wake();
                     }
-                })().unwrap_or_else(|()| Err("Local core bridge disconnected. Restart Duff with the launcher.".to_owned()));
-                if outgoing.send(result).is_err() {
-                    break;
+                    Err(()) => {
+                        let _ = outgoing.send(Event {
+                            id: 0,
+                            result: Err(
+                                "Local core bridge disconnected. Restart Duff with the launcher."
+                                    .to_owned(),
+                            ),
+                        });
+                        wake();
+                        break;
+                    }
                 }
-                wake();
             }
         });
         Ok(Self {
@@ -146,7 +235,7 @@ impl Bridge {
     }
 
     pub fn send(&self, request: Value) -> bool {
-        self.requests.send(request).is_ok()
+        self.requests.try_send(request).is_ok()
     }
 }
 
