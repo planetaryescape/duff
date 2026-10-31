@@ -9,6 +9,9 @@
   },
   "dependencies": {
     "@duff/core": "workspace:*",
-    "effect": "4.0.5"
+    "effect": "4.0.5",
+    "typescript": "5.9.3",
+    "typescript-language-server": "6.0.2",
+    "vscode-jsonrpc": "8.2.1"
   }
 }
