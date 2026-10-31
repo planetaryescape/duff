@@ -18,9 +18,12 @@ import {
 import { BranchReview, GitPath, makeGitReviewLayer, ReviewError } from '@duff/core/review'
 import { fileSnapshots } from '@duff/core/review-progress'
 import { makeReviewWorkspacesLayer, ReviewWorkspaces } from '@duff/core/review-workspaces'
+import { makeRevisionSourcesLayer } from '@duff/core/revision-sources'
 import { ReviewSessions } from '@duff/core/saved-review-sessions'
 import { type SavedReview } from '@duff/core/saved-reviews'
-import { Effect, Layer, ManagedRuntime, Option, Schema, Semaphore } from 'effect'
+import { Effect, Fiber, Layer, ManagedRuntime, Option, Schema, Semaphore } from 'effect'
+
+import { LanguageIntelligence } from './LanguageIntelligence'
 
 const id = Schema.Int.check(
   Schema.isGreaterThanOrEqualTo(Number.MIN_SAFE_INTEGER),
@@ -30,6 +33,11 @@ const id = Schema.Int.check(
 const session = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))
 
 const destination = Schema.NonEmptyString.check(Schema.isMaxLength(8192))
+
+const position = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(0),
+  Schema.isLessThanOrEqualTo(1048576),
+)
 
 const Request = Schema.Union([
   Schema.Struct({
@@ -49,6 +57,18 @@ const Request = Schema.Union([
   }),
   Schema.Struct({ id, op: Schema.Literal('resume'), session }),
   Schema.Struct({ id, op: Schema.Literal('saved') }),
+  Schema.Struct({ id, op: Schema.Literal('language-enable'), session }),
+  Schema.Struct({ id, op: Schema.Literal('language-disable'), session }),
+  Schema.Struct({ id, op: Schema.Literal('language-cancel'), requestId: id }),
+  Schema.Struct({
+    id,
+    op: Schema.Literals(['hover', 'definition']),
+    session,
+    path: GitPath,
+    side: Schema.Literals(['old', 'new']),
+    line: position,
+    character: position,
+  }),
 ])
 
 const authentication = Layer.effect(
@@ -133,17 +153,57 @@ export function makeBridge(directory: string, environment: NodeJS.ProcessEnv) {
   )
 
   const runtime = ManagedRuntime.make(
-    Layer.mergeAll(git, sessions, providers, makeReviewWorkspacesLayer(directory, environment)),
+    Layer.mergeAll(
+      git,
+      sessions,
+      providers,
+      makeReviewWorkspacesLayer(directory, environment),
+      LanguageIntelligence.layer(environment).pipe(
+        Layer.provide(makeRevisionSourcesLayer(environment)),
+      ),
+    ),
   )
 
   const gate = Semaphore.makeUnsafe(1)
+  const queries = new Map<number, () => Effect.Effect<void>>()
+  let languageGeneration = 0
+  let enabled: { readonly id: number; readonly session: string } | undefined
   let page: RepositoryPullRequestPage | undefined
   let pageDestination: string | undefined
 
   const execute = Effect.fn('StandaloneBridge.execute')(function* (
     request: Schema.Schema.Type<typeof Request>,
+    generation: number,
   ) {
     const saved = yield* ReviewSessions
+
+    if (request.op === 'language-cancel') {
+      const interrupt = queries.get(request.requestId)
+
+      if (interrupt) yield* interrupt()
+
+      // The native client may dismiss an enable whose reply is already in transit.
+      if (enabled?.id === request.requestId) {
+        const session = enabled.session
+        enabled = undefined
+        languageGeneration += 1
+        yield* (yield* LanguageIntelligence).disable(session)
+      }
+
+      return { kind: 'language-cancelled' as const, requestId: request.requestId }
+    }
+
+    if (request.op === 'language-disable') {
+      if (enabled?.session === request.session) enabled = undefined
+      yield* (yield* LanguageIntelligence).disable(request.session)
+
+      return {
+        kind: 'language' as const,
+        session: request.session,
+        state: 'unavailable' as const,
+        message: 'Language analysis disabled.',
+      }
+    }
 
     if (request.op === 'saved') {
       const catalog = yield* saved.list()
@@ -213,6 +273,41 @@ export function makeBridge(directory: string, environment: NodeJS.ProcessEnv) {
 
     const catalog = yield* saved.list()
     const current = catalog.sessions.find((entry) => entry.key === request.session)
+
+    if (!current) return yield* unavailable()
+
+    if (request.op === 'language-enable') {
+      if (generation !== languageGeneration)
+        return yield* new ReviewError({
+          operation: 'language',
+          message: 'Language analysis unavailable.',
+        })
+
+      const response = yield* (yield* LanguageIntelligence).enable(current.key, current.review)
+
+      if (response.state === 'limited') enabled = { id: request.id, session: current.key }
+
+      return { ...response, session: current.key }
+    }
+
+    if (request.op === 'hover' || request.op === 'definition') {
+      const language = yield* LanguageIntelligence
+
+      const response =
+        request.op === 'hover'
+          ? yield* language.hover(request, current.review)
+          : yield* language.definition(request, current.review)
+
+      return {
+        ...response,
+        session: current.key,
+        path: request.path,
+        side: request.side,
+        line: request.line,
+        character: request.character,
+      }
+    }
+
     const change = current?.review.files.find((file) => file.path === request.path)
 
     if (!current || !change) return yield* unavailable()
@@ -269,40 +364,101 @@ export function makeBridge(directory: string, environment: NodeJS.ProcessEnv) {
   })
 
   const handle = (line: string, signal?: AbortSignal) =>
-    runtime.runPromise(
-      Effect.gen(function* () {
+    runtime
+      .runPromise(
+        Effect.gen(function* () {
+          const envelope = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Struct({ id })))(
+            line,
+          )
+
+          const requestId = Option.isSome(envelope) ? envelope.value.id : 0
+          const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(Request))(line)
+
+          if (Option.isNone(decoded) || Buffer.byteLength(line) > 65536)
+            return { id: requestId, ok: false as const, error: 'Invalid request.' }
+
+          const request = decoded.value
+
+          if (request.op === 'language-disable') languageGeneration += 1
+          const generation = languageGeneration
+
+          const operation = Effect.withFiber((fiber) => {
+            const interrupt = () => Fiber.interrupt(fiber)
+
+            if (
+              request.op === 'hover' ||
+              request.op === 'definition' ||
+              request.op === 'language-enable'
+            )
+              queries.set(request.id, interrupt)
+
+            return execute(request, generation).pipe(
+              Effect.ensuring(
+                Effect.sync(() => {
+                  if (queries.get(request.id) === interrupt) queries.delete(request.id)
+                }),
+              ),
+            )
+          })
+
+          const independent = [
+            'language-enable',
+            'language-disable',
+            'language-cancel',
+            'hover',
+            'definition',
+          ].includes(request.op)
+
+          return yield* (independent ? operation : operation.pipe(gate.withPermits(1))).pipe(
+            Effect.match({
+              onSuccess: (response) => ({ id: requestId, ok: true as const, ...response }),
+              onFailure: (error) => ({
+                id: requestId,
+                ok: false as const,
+                error: independent
+                  ? 'Language analysis unavailable.'
+                  : error._tag === 'ReviewError' && error.operation === 'standalone file'
+                    ? 'Binary, oversized, or unsupported file unavailable.'
+                    : error._tag === 'AuthenticationRequired' ||
+                        error._tag === 'GitHubAuthenticationError' ||
+                        error._tag === 'AzureCliAuthenticationError'
+                      ? 'Authentication unavailable. Sign in with the provider CLI and retry.'
+                      : error._tag === 'ReviewStorageError'
+                        ? 'Saved review storage unavailable.'
+                        : 'Review operation unavailable. Check repository access and retry.',
+              }),
+            }),
+          )
+        }),
+        { signal },
+      )
+      .catch(() => {
         const envelope = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Struct({ id })))(
           line,
         )
 
-        const requestId = Option.isSome(envelope) ? envelope.value.id : 0
-        const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(Request))(line)
-
-        if (Option.isNone(decoded) || Buffer.byteLength(line) > 65536)
-          return { id: requestId, ok: false as const, error: 'Invalid request.' }
-
-        return yield* execute(decoded.value).pipe(
-          Effect.match({
-            onSuccess: (response) => ({ id: requestId, ok: true as const, ...response }),
-            onFailure: (error) => ({
-              id: requestId,
-              ok: false as const,
-              error:
-                error._tag === 'ReviewError' && error.operation === 'standalone file'
-                  ? 'Binary, oversized, or unsupported file unavailable.'
-                  : error._tag === 'AuthenticationRequired' ||
-                      error._tag === 'GitHubAuthenticationError' ||
-                      error._tag === 'AzureCliAuthenticationError'
-                    ? 'Authentication unavailable. Sign in with the provider CLI and retry.'
-                    : error._tag === 'ReviewStorageError'
-                      ? 'Saved review storage unavailable.'
-                      : 'Review operation unavailable. Check repository access and retry.',
+        const language = Schema.decodeUnknownOption(
+          Schema.fromJsonString(
+            Schema.Struct({
+              op: Schema.Literals([
+                'hover',
+                'definition',
+                'language-enable',
+                'language-disable',
+                'language-cancel',
+              ]),
             }),
-          }),
-        )
-      }).pipe(gate.withPermits(1)),
-      { signal },
-    )
+          ),
+        )(line)
+
+        return {
+          id: Option.isSome(envelope) ? envelope.value.id : 0,
+          ok: false as const,
+          error: Option.isSome(language)
+            ? 'Language analysis unavailable.'
+            : 'Review operation cancelled or unavailable.',
+        }
+      })
 
   /** Explicit local fixture seam: real Git comparison, retention, and catalog; never selected by the UI. */
   const compareLocal = (root: string, branch: string) =>
