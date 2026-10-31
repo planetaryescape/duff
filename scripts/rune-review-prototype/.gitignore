@@ -1,1 +1,4 @@
 /target/
+/.rune-source/
+/.rune-source.bootstrap.*/
+/.rune-source.lock/

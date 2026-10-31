@@ -9,4 +9,4 @@ command -v "${DUFF_NODE:-node}" >/dev/null || { echo 'Duff needs Node 22.18+ for
 "${DUFF_NODE:-node}" -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 22 || (major === 22 && minor < 18)) { console.error("Duff needs Node 22.18+ for node:sqlite."); process.exit(1); }'
 bash "$prototype/bridge/build.sh"
 export DUFF_BRIDGE="$prototype/bridge/dist/bridge.mjs"
-exec cargo run --locked --manifest-path "$prototype/Cargo.toml" -- "$@"
+exec "$prototype/native.sh" run --locked -- "$@"
