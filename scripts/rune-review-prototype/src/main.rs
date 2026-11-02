@@ -1,5 +1,6 @@
 //! Native local-first PR review over Duff's existing Effect core. No fixture mode.
 mod bridge;
+mod language;
 
 use bridge::{Bridge, ChangedFile, Payload, PullRequest, Saved};
 use rune::{
@@ -75,6 +76,8 @@ struct State {
     bridge: Option<Bridge>,
     serial: u64,
     busy: bool,
+    busy_id: Option<u64>,
+    language: language::Language,
     status: String,
     error: bool,
     destination: TextEdit,
@@ -107,6 +110,7 @@ impl State {
             .is_some_and(|bridge| bridge.send(request))
         {
             self.busy = true;
+            self.busy_id = Some(self.serial);
             self.error = false;
             self.status = status.to_owned();
         } else {
@@ -159,6 +163,7 @@ impl State {
         if let Some(review) = &self.review {
             if let Some(file) = review.files.get(index) {
                 let request = json!({"op":"file", "session":review.session, "path":file.path});
+                self.clear_language_file();
                 self.file = index;
                 self.loaded = false;
                 let mode = self.diff.mode();
@@ -232,6 +237,7 @@ impl State {
                 let index = last_file
                     .and_then(|path| files.iter().position(|file| file.path == path))
                     .unwrap_or(0);
+                self.disable_language();
                 self.review = Some(Review {
                     session,
                     title,
@@ -272,6 +278,7 @@ impl State {
                             DiffState::new(vec![FileDiff::from_texts(&path, &old_text, &new_text)]);
                         self.diff.set_mode(mode);
                         self.diff.set_wrap(true);
+                        self.language_sources(old_text, new_text);
                         self.loaded = true;
                         self.status = "Immutable Git blobs · viewed progress saved locally · no provider writes".to_owned();
                     }
@@ -300,6 +307,10 @@ impl State {
                     self.saved.len()
                 );
             }
+            _ => {
+                self.status = "Unexpected review response. Retry the operation.".to_owned();
+                self.error = true;
+            }
         }
     }
 }
@@ -311,6 +322,8 @@ fn init() -> State {
         bridge: None,
         serial: 0,
         busy: false,
+        busy_id: None,
+        language: language::Language::default(),
         status: "Starting local Effect core…".to_owned(),
         error: false,
         destination: TextEdit::new(std::env::var("DUFF_REPOSITORY").unwrap_or_default()),
@@ -704,8 +717,43 @@ fn review(s: &State, k: &Kit, tabs: bool) -> El {
         panel = panel.child(bar);
     }
     panel = panel.child(toolbar);
+    panel = panel.child(
+        col()
+            .w_full()
+            .px(12.0)
+            .py(6.0)
+            .gap(4.0)
+            .child(action(
+                "language-toggle",
+                if s.language.enabled {
+                    "Code intelligence · limited"
+                } else {
+                    "Enable code intelligence"
+                },
+                s.language.enabled,
+                k,
+                |s| {
+                    if s.language.enabled {
+                        s.disable_language();
+                    } else {
+                        s.language.trust_prompt = true;
+                    }
+                },
+            ))
+            .child(
+                label(&s.language.message, k.ty.small, MUTED)
+                    .w_full()
+                    .truncate()
+                    .label(&s.language.message),
+            ),
+    );
     if s.loaded {
-        panel.child(DiffView::new(|s: &State| &s.diff, |s: &mut State| &mut s.diff).build(s, k))
+        panel.child(
+            DiffView::new(|s: &State| &s.diff, |s: &mut State| &mut s.diff)
+                .on_symbol_hover(State::symbol_hover)
+                .on_symbol_press(State::symbol_press)
+                .build(s, k),
+        )
     } else {
         panel.child(
             col()
@@ -809,7 +857,7 @@ fn view(s: &State, _: &mut Cx<State>) -> El {
         k.ty.ui,
         MUTED,
     ));
-    col()
+    let base = col()
         .key("app")
         .w_full()
         .h_full()
@@ -826,7 +874,8 @@ fn view(s: &State, _: &mut Cx<State>) -> El {
                 .py(10.0)
                 .child(label(&s.status, k.ty.ui, if s.error { AMBER } else { MUTED }).wrap()),
         )
-        .child(footer)
+        .child(footer);
+    rune_kit::root(base, language::overlay(s, &k))
 }
 
 fn main() {
@@ -843,26 +892,36 @@ fn main() {
                 s.error = true;
             }
         }),
-        poll: Some(|s: &mut State, _, _| {
-            let reply = s
+        poll: Some(|s: &mut State, _, tx| {
+            let replies: Vec<_> = s
                 .bridge
                 .as_ref()
-                .and_then(|bridge| bridge.replies.try_recv().ok());
-            if let Some(reply) = reply {
-                s.busy = false;
-                match reply {
-                    Ok(payload) => s.accept(payload),
-                    Err(message) => {
-                        s.status = message;
-                        s.error = true;
-                    }
-                }
-                true
-            } else {
-                false
+                .map(|bridge| bridge.replies.try_iter().take(32).collect())
+                .unwrap_or_default();
+            let changed = !replies.is_empty();
+            if replies.len() == 32 {
+                tx.wake_after(std::time::Duration::from_millis(1));
             }
+            for reply in replies {
+                if s.busy_id == Some(reply.id) || reply.id == 0 {
+                    s.busy = false;
+                    s.busy_id = None;
+                    match reply.result {
+                        Ok(payload) => s.accept(payload),
+                        Err(message) => {
+                            s.status = message;
+                            s.error = true;
+                        }
+                    }
+                } else {
+                    s.accept_language(reply.id, reply.result);
+                }
+            }
+            s.poll_language(tx) || changed
         }),
-        on_key: Some(|s: &mut State, event: &KeyEvent, tx| s.diff.key(event, tx)),
+        on_key: Some(|s: &mut State, event: &KeyEvent, tx| {
+            s.language_key(event) || s.diff.key(event, tx)
+        }),
         ..AppSpec::new(
             "Duff — Standalone review prototype",
             (1560.0, 960.0),

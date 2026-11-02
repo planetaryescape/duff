@@ -1,0 +1,12 @@
+diff --git a/lib/common/connection.js b/lib/common/connection.js
+index 28d273dcd164265c583576166a79b6170a3ba4ae..2545139265afc6d2374dbaabc324e925795cf190 100644
+--- a/lib/common/connection.js
++++ b/lib/common/connection.js
+@@ -1088,7 +1088,6 @@ function createMessageConnection(messageReader, messageWriter, _logger, options)
+                     responsePromises.delete(id);
+                     responsePromise.reject(new messages_1.ResponseError(messages_1.ErrorCodes.MessageWriteError, error.message ? error.message : 'Unknown reason'));
+                     logger.error(`Sending request failed.`);
+-                    throw error;
+                 }
+             });
+         },
