@@ -8,7 +8,7 @@ import { SavedReview, SavedReviewCatalog, SavedReviews } from '@duff/core/saved-
 import { expect, it } from '@effect/vitest'
 import { Context, Effect, Exit, Layer, Option, Schema, Scope } from 'effect'
 
-import { makeSavedReviewStoreLayer } from './SavedReviewStore'
+import { makeSavedReviewStoreLayer } from './FileSavedReviews'
 
 const directory = Effect.acquireRelease(
   Effect.promise(() => mkdtemp(join(tmpdir(), 'duff-storage-'))),
@@ -268,13 +268,13 @@ it.effect(
                 `
       import { ManagedRuntime, Effect } from 'effect';
       import { SavedReviews } from '@duff/core/saved-reviews';
-      import { makeSavedReviewStoreLayer } from './src/review/SavedReviewStore';
+      import { makeSavedReviewStoreLayer } from '@duff/core/file-saved-reviews';
       const runtime = ManagedRuntime.make(makeSavedReviewStoreLayer(${JSON.stringify(path)}));
       await runtime.runPromise(Effect.gen(function* () { yield* (yield* SavedReviews).load() }));
       process.kill(process.pid, 'SIGKILL');
     `,
               ],
-              { cwd: join(process.cwd(), 'packages/extension'), stdio: 'ignore' },
+              { cwd: join(process.cwd(), 'packages/core'), stdio: 'ignore' },
             )
 
             child.once('error', reject)
