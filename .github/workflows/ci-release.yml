@@ -3,7 +3,7 @@ name: CI and Release
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, feat/standalone-app]
   workflow_dispatch:
 
 permissions:
@@ -25,6 +25,33 @@ jobs:
       - run: bun run check
       - run: bun run test
       - run: bun run package
+
+  native-check:
+    name: Native static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        if: hashFiles('scripts/rune-review-prototype/Cargo.toml') != ''
+        with:
+          toolchain: '1.98.1'
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        if: hashFiles('scripts/rune-review-prototype/Cargo.toml') != ''
+        with:
+          workspaces: scripts/rune-review-prototype -> target
+      - name: Install native build dependencies
+        if: hashFiles('scripts/rune-review-prototype/Cargo.toml') != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxi-dev libxrandr-dev libvulkan-dev
+      - name: Check Rust formatting and types
+        if: hashFiles('scripts/rune-review-prototype/Cargo.toml') != ''
+        env:
+          RUSTUP_TOOLCHAIN: '1.98.1'
+        run: |
+          bash scripts/rune-review-prototype/native.sh fmt -- --check
+          bash scripts/rune-review-prototype/native.sh check --locked
 
   release:
     name: Plan release
