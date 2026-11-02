@@ -38,7 +38,7 @@
     },
     "packages/extension": {
       "name": "duff",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "dependencies": {
         "@duff/core": "workspace:*",
         "effect": "4.0.5",
@@ -46,6 +46,13 @@
       },
       "devDependencies": {
         "@types/markdown-it": "^14.2.0",
+      },
+    },
+    "scripts/rune-review-prototype/bridge": {
+      "name": "@duff/rune-bridge-prototype",
+      "dependencies": {
+        "@duff/core": "workspace:*",
+        "effect": "4.0.5",
       },
     },
   },
@@ -56,6 +63,8 @@
     "@duff/anti-slop": ["@duff/anti-slop@workspace:packages/anti-slop"],
 
     "@duff/core": ["@duff/core@workspace:packages/core"],
+
+    "@duff/rune-bridge-prototype": ["@duff/rune-bridge-prototype@workspace:scripts/rune-review-prototype/bridge"],
 
     "@effect/platform-node": ["@effect/platform-node@4.0.5", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.5", "undici": "^8.11.2" }, "peerDependencies": { "effect": "^4.0.5", "redis": ">=5.0.0 <7.0.0" } }, "sha512-v4KD5fWvEUa4QmWFpZFbBsRhmfnTP6ETCME2r9ifyXVDPjhfpxpTZl41prjgQFMqZBHdWWCl7YC5ImbXv5ui5g=="],
 
