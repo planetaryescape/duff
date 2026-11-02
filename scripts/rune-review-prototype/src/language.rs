@@ -372,7 +372,19 @@ pub fn overlay(s: &State, k: &Kit) -> Option<El> {
             .label("Read-only definition peek")
             .child(
                 row()
-                    .child(label("DEFINITION · READ ONLY", k.ty.ui_medium, AMBER))
+                    .child(label(
+                        if s.language.targets.is_empty() {
+                            if s.language.pending.is_some() {
+                                "FINDING DEFINITION…"
+                            } else {
+                                "SOURCE UNAVAILABLE"
+                            }
+                        } else {
+                            "DEFINITION · READ ONLY"
+                        },
+                        k.ty.ui_medium,
+                        AMBER,
+                    ))
                     .child(row().grow(1.0))
                     .child(action("definition-back", "Back · Esc", false, k, |s| {
                         s.cancel_language_query();
@@ -440,6 +452,16 @@ pub fn overlay(s: &State, k: &Kit) -> Option<El> {
                     })
                     .child(lines),
             );
+            if target.truncated {
+                content = content.child(
+                    label(
+                        "Excerpt truncated · limited to 80 lines / 16,384 characters.",
+                        k.ty.small,
+                        MUTED,
+                    )
+                    .wrap(),
+                );
+            }
         }
         return Some(content.child(label(&s.language.message, k.ty.small, MUTED).wrap()));
     }

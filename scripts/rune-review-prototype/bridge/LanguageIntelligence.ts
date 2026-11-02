@@ -10,10 +10,16 @@ import { RevisionSources, type RevisionSource } from '@duff/core/revision-source
 import { Context, Effect, Exit, Fiber, Layer, Option, Schema, Semaphore } from 'effect'
 import {
   createSourceFile,
+  isClassElement,
+  isDeclarationStatement,
+  isExportDeclaration,
+  isImportDeclaration,
+  isImportEqualsDeclaration,
   isImportTypeNode,
   isJSDocImportTag,
   isLiteralTypeNode,
   isStringLiteral,
+  isVariableStatement,
   type Node,
   parseConfigFileTextToJson,
   preProcessFile,
@@ -69,6 +75,7 @@ export interface DefinitionTarget {
   readonly character: number
   readonly startLine: number
   readonly text: string
+  readonly truncated: boolean
 }
 
 interface Server {
@@ -464,7 +471,13 @@ async function makeServer(
   })
 
   const connection = createMessageConnection(child.stdout, child.stdin)
+  let connected = true
   let bytes = 0
+
+  connection.onDispose(() => {
+    connected = false
+  })
+  connection.onClose(() => connection.dispose())
 
   // A lifetime cap also bounds the JSON-RPC reader's partially received message buffer.
   child.stdout.on('data', (chunk: Buffer) => {
@@ -480,7 +493,7 @@ async function makeServer(
   let inflight = 0
 
   async function request(method: string, params: Schema.Json, caller: AbortSignal, millis = 5000) {
-    if (inflight >= 8) throw new Error('Language concurrency limit')
+    if (!connected || inflight >= 8) throw new Error('Language connection unavailable')
 
     const bounded = AbortSignal.any([caller, AbortSignal.timeout(millis)])
     const token = new CancellationTokenSource()
@@ -488,7 +501,7 @@ async function makeServer(
 
     const cancelled = new Promise<never>((_resolve, reject) => {
       aborted = () => {
-        token.cancel()
+        if (connected) token.cancel()
         reject(new Error('Language request cancelled'))
       }
 
@@ -517,7 +530,13 @@ async function makeServer(
   function close() {
     closed ??= (async () => {
       await request('shutdown', null, AbortSignal.timeout(1000), 1000).catch(() => undefined)
-      await connection.sendNotification('exit').catch(() => undefined)
+
+      try {
+        if (connected) await connection.sendNotification('exit')
+      } catch {
+        // A transport can close synchronously; process/source cleanup must still run.
+      }
+
       await waitForExit(exit, 1000)
       connection.dispose()
       child.stdin.destroy()
@@ -606,7 +625,7 @@ async function makeServer(
         initializationOptions: {
           disableAutomaticTypingAcquisition: true,
           plugins: [],
-          maxTsServerMemory: 256,
+          maxTsServerMemory: 512,
           tsserver: {
             path: tsserver,
             fallbackPath: tsserver,
@@ -687,12 +706,54 @@ async function makeServer(
             position.character > targetLine.length
           )
             continue
-          const candidate = Math.max(0, position.line - 4)
+          const syntax = createSourceFile(source.path, source.text, ScriptTarget.Latest, true)
+          const offset = syntax.getPositionOfLineAndCharacter(position.line, position.character)
+          let node: Node | undefined = syntax
+          let declaration: Node | undefined
+          let alias = false
+
+          while (node) {
+            if (
+              isImportDeclaration(node) ||
+              isImportEqualsDeclaration(node) ||
+              isExportDeclaration(node)
+            ) {
+              alias = true
+              break
+            }
+
+            if (isDeclarationStatement(node) || isVariableStatement(node) || isClassElement(node))
+              declaration = node
+
+            node = node
+              .getChildren(syntax)
+              .find((child) => child.getStart(syntax) <= offset && offset < child.getEnd())
+          }
+
+          // TS falls back to an import/re-export alias when its source is missing.
+          // That is not the definition the user asked to read.
+          if (alias) continue
+
+          const declarationStart = declaration
+            ? syntax.getLineAndCharacterOfPosition(declaration.getStart(syntax)).line
+            : position.line
+
+          const endLine = declaration
+            ? Math.min(
+                lines.length,
+                syntax.getLineAndCharacterOfPosition(declaration.getEnd()).line + 2,
+              )
+            : Math.min(lines.length, position.line + 9)
+
+          const candidate = Math.max(0, Math.min(declarationStart, position.line - 4))
 
           const startLine =
             lines.slice(candidate, position.line).join('\n').length > 8192
               ? position.line
               : candidate
+
+          const excerptEnd = Math.min(endLine, startLine + 80)
+          const excerpt = lines.slice(startLine, excerptEnd).join('\n')
 
           targets.push({
             path: source.path,
@@ -700,10 +761,8 @@ async function makeServer(
             line: position.line,
             character: position.character,
             startLine,
-            text: lines
-              .slice(startLine, position.line + 9)
-              .join('\n')
-              .slice(0, 16384),
+            text: excerpt.slice(0, 16384),
+            truncated: excerptEnd < endLine || excerpt.length > 16384,
           })
         }
 
@@ -949,7 +1008,9 @@ export class LanguageIntelligence extends Context.Service<
           return {
             kind: 'definition' as const,
             targets,
-            message: targets.length ? limited : `No authorised local definition result. ${limited}`,
+            message: targets.length
+              ? limited
+              : 'Source unavailable in this pinned revision. An unresolved import is not an implementation. External dependency sources are not supplied; Duff does not install them.',
           }
         })
 

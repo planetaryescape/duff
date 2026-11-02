@@ -100,6 +100,7 @@ pub struct DefinitionTarget {
     pub character: u32,
     pub start_line: u32,
     pub text: String,
+    pub truncated: bool,
 }
 
 pub struct Event {

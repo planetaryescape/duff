@@ -136,9 +136,27 @@ const languageFixture = Effect.gen(function* () {
     await writeFile(join(local.root, 'stable.ts'), 'export const stable: Date = new Date()\n')
     await writeFile(join(local.root, 'types.ts'), 'export const value: number = 42\n')
     await writeFile(join(local.root, 'data.json'), '{"files":["literal"],"answer":42}\n')
+
+    const body = Array.from(
+      { length: 30 },
+      (_, index) => `  const step${index} = input + ${index}`,
+    ).join('\n')
+
+    await writeFile(
+      join(local.root, 'implementation.ts'),
+      `export function calculate(input: number) {\n${body}\n  return input + 41\n}\n`,
+    )
+    await writeFile(
+      join(local.root, 'barrel.ts'),
+      'export { calculate as compute } from "./implementation"\n',
+    )
+    await writeFile(
+      join(local.root, 'oversized.ts'),
+      `export function oversized(input: number) {\n${Array.from({ length: 100 }, (_, index) => `  const step${index} = input + ${index}`).join('\n')}\n  return input + 999\n}\n`,
+    )
     await writeFile(
       join(local.root, 'use.ts'),
-      'import { value } from "./types"\r\n\tconst emoji = "😀"; value\r\nimport { stable } from "@stable"\r\nstable\r\nimport data from "./data.json"\r\ndata.answer\r\n',
+      'import { value } from "./types"\r\n\tconst emoji = "😀"; value\r\nimport { stable } from "@stable"\r\nstable\r\nimport data from "./data.json"\r\ndata.answer\r\nimport { compute } from "./barrel"\r\ncompute(1)\r\nimport { oversized } from "./oversized"\r\noversized(1)\r\n',
     )
     await writeFile(
       join(local.root, 'component.tsx'),
@@ -192,6 +210,10 @@ const languageFixture = Effect.gen(function* () {
     await local.git('commit', '-m', 'target tip')
     await local.git('checkout', 'main')
     await writeFile(join(local.root, 'types.ts'), '\n\nexport const value: string = "head"\n')
+    await writeFile(
+      join(local.root, 'implementation.ts'),
+      `export function calculate(input: number) {\n${body}\n  return input + 84\n}\n`,
+    )
     await local.git('mv', 'use.ts', 'renamed.ts')
 
     // Make the other fixture sources queryable changed files without changing their declarations.
@@ -736,6 +758,75 @@ it.live(
       const noResult = yield* Effect.promise(() => request('definition', 'new', 'renamed.ts', 0))
       expect(noResult).toMatchObject({ ok: true, targets: [] })
 
+      const external = yield* Effect.promise(() =>
+        bridge.handle(
+          JSON.stringify({
+            id: 86,
+            op: 'definition',
+            session: review.session,
+            path: 'missing.ts',
+            side: 'new',
+            line: 2,
+            character: 2,
+          }),
+        ),
+      )
+
+      expect(external).toMatchObject({ ok: true, kind: 'definition', targets: [] })
+
+      for (const [side, commit, result] of [
+        ['old', review.baseCommit, 41],
+        ['new', review.headCommit, 84],
+      ] as const) {
+        const implementation = yield* Effect.promise(() =>
+          bridge.handle(
+            JSON.stringify({
+              id: 87,
+              op: 'definition',
+              session: review.session,
+              path: 'renamed.ts',
+              side,
+              line: 7,
+              character: 2,
+            }),
+          ),
+        )
+
+        expect(implementation).toMatchObject({
+          ok: true,
+          kind: 'definition',
+          targets: [{ path: 'implementation.ts', commit, truncated: false }],
+        })
+
+        if (implementation.ok && implementation.kind === 'definition')
+          expect(implementation.targets[0]?.text).toContain(`return input + ${result}\n}`)
+      }
+
+      const oversized = yield* Effect.promise(() =>
+        bridge.handle(
+          JSON.stringify({
+            id: 88,
+            op: 'definition',
+            session: review.session,
+            path: 'renamed.ts',
+            side: 'new',
+            line: 9,
+            character: 2,
+          }),
+        ),
+      )
+
+      expect(oversized).toMatchObject({
+        ok: true,
+        kind: 'definition',
+        targets: [{ path: 'oversized.ts', truncated: true }],
+      })
+
+      if (oversized.ok && oversized.kind === 'definition') {
+        expect(oversized.targets[0]?.text.split('\n')).toHaveLength(80)
+        expect(oversized.targets[0]?.text).not.toContain('return input + 999')
+      }
+
       for (const [path, line, character, expected] of [
         ['component.tsx', 1, 37, 'string'],
         ['renamed.ts', 3, 2, 'Date'],
@@ -1245,4 +1336,161 @@ it.live(
       expect(yield* Effect.promise(() => readdir(temporary))).toEqual([])
     }),
   { timeout: 30000 },
+)
+
+it.live(
+  'server death leaves queries unavailable but shutdown still removes sources and owned descendants',
+  () =>
+    Effect.gen(function* () {
+      const local = yield* languageFixture
+      const bridge = makeBridge(local.data, environment)
+      const review = yield* Effect.promise(() => bridge.compareLocal(local.root, 'language-base'))
+
+      yield* Effect.promise(() => bridge.dispose())
+      const temporary = join(local.directory, 'temporary')
+      yield* Effect.promise(() => mkdir(temporary))
+      const owned = yield* bridgeProcess(local.data, { temporary })
+      const next = () => owned.iterator.next().then((line) => line.value ?? '')
+      owned.child.stdin.write(
+        `${JSON.stringify({ id: 180, op: 'language-enable', session: review.session })}\n`,
+      )
+      expect(yield* Effect.promise(next)).toContain('"state":"limited"')
+
+      const pids = yield* Effect.acquireRelease(
+        Effect.promise(() => childProcesses(owned.child.pid)),
+        (pids) =>
+          Effect.sync(() => {
+            for (const pid of pids) {
+              try {
+                process.kill(-pid, 'SIGKILL')
+              } catch {
+                /* Already released. */
+              }
+            }
+          }),
+      )
+
+      const leader = pids[0]
+
+      if (leader === undefined) throw new Error('Language process not acquired')
+      process.kill(leader, 'SIGKILL')
+      owned.child.stdin.write(
+        `${JSON.stringify({ id: 181, op: 'hover', session: review.session, path: 'renamed.ts', side: 'old', line: 1, character: 23 })}\n`,
+      )
+      expect(yield* Effect.promise(next)).toContain('"ok":false')
+      owned.child.stdin.end('{"op":"shutdown"}\n')
+
+      expect(yield* Effect.promise(() => owned.exit)).toBe(0)
+      expect(yield* Effect.promise(() => readdir(temporary))).toEqual([])
+
+      for (const pid of pids) expect(() => process.kill(pid, 0)).toThrow()
+    }),
+  { timeout: 30000 },
+)
+
+it.live(
+  'answers pinned symbols when a bounded project contains thousands of unchanged declarations',
+  () =>
+    Effect.gen(function* () {
+      const local = yield* fixture
+
+      const bridge = yield* Effect.acquireRelease(
+        Effect.sync(() => makeBridge(local.data, environment)),
+        (bridge) => Effect.promise(() => bridge.dispose()),
+      )
+
+      const properties = Array.from({ length: 200 }, (_, index) => `field${index}: string`).join(
+        '\n',
+      )
+
+      yield* Effect.forEach(
+        Array.from({ length: 2100 }, (_, index) => index),
+        (index) =>
+          Effect.promise(() =>
+            writeFile(
+              join(local.root, `other-${index}.ts`),
+              `export interface Other${index} {\n${properties}\n}\n`,
+            ),
+          ),
+        { concurrency: 32 },
+      )
+      yield* Effect.promise(async () => {
+        await writeFile(join(local.root, 'tsconfig.json'), '{"compilerOptions":{"strict":true}}')
+        await writeFile(join(local.root, 'types.ts'), 'export const value: number = 7\n')
+        await writeFile(
+          join(local.root, 'use.ts'),
+          'import { value } from "./types"\nexport const result = value\n',
+        )
+        await local.git('add', '.')
+        await local.git('commit', '-m', 'large project base')
+        await local.git('branch', 'large-base')
+        await writeFile(join(local.root, 'types.ts'), 'export const value: string = "head"\n')
+        await writeFile(
+          join(local.root, 'use.ts'),
+          'import { value } from "./types"\nexport const result = value\n\n',
+        )
+        await local.git('add', '.')
+        await local.git('commit', '-m', 'large project head')
+      })
+      const review = yield* Effect.promise(() => bridge.compareLocal(local.root, 'large-base'))
+
+      const enabled = yield* Effect.promise(() =>
+        bridge.handle(JSON.stringify({ id: 190, op: 'language-enable', session: review.session })),
+      )
+
+      expect(enabled).toMatchObject({ state: 'limited' })
+
+      for (const side of ['old', 'new']) {
+        const response = yield* Effect.promise(() =>
+          bridge.handle(
+            JSON.stringify({
+              id: 191,
+              op: 'hover',
+              session: review.session,
+              path: 'use.ts',
+              side,
+              line: 1,
+              character: 23,
+            }),
+          ),
+        )
+
+        expect(response).toMatchObject({ ok: true, kind: 'hover' })
+
+        if (response.ok && response.kind === 'hover')
+          expect(response.content).toContain(side === 'old' ? 'number' : 'string')
+      }
+    }),
+  { timeout: 45000 },
+)
+
+it.live('a rejected JSON-RPC stream write has no second unhandled rejection', () =>
+  Effect.gen(function* () {
+    const result = yield* Effect.promise(() =>
+      exec(
+        process.execPath,
+        [
+          '--input-type=module',
+          '--eval',
+          `
+import { PassThrough, Writable } from 'node:stream';
+import { createMessageConnection } from 'vscode-jsonrpc/node.js';
+const writer = new Writable({ write(_chunk, _encoding, callback) {
+  callback(Object.assign(new Error('fixture write failure'), { code: 'EPIPE' }));
+} });
+const connection = createMessageConnection(new PassThrough(), writer);
+writer.on('error', () => connection.dispose());
+connection.listen();
+try { await connection.sendRequest('shutdown', null); }
+catch { process.stdout.write('request rejected'); }
+await new Promise(resolve => setTimeout(resolve, 0));
+connection.dispose();
+`,
+        ],
+        { cwd: fileURLToPath(new URL('.', import.meta.url)), env: environment, maxBuffer: 16384 },
+      ),
+    )
+
+    expect(result.stdout).toContain('request rejected')
+  }),
 )

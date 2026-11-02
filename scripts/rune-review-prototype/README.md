@@ -31,7 +31,11 @@ Hover over a TypeScript/TSX symbol for its type/documentation. **Command-click**
 
 Results are explicitly **limited**: exact third-party dependencies, generated files and the project's TypeScript version are not supplied; configuration is restricted. Source-local answers are useful, but unresolved external symbols are not proof that no definition exists. An empty result and a failed language operation are shown separately. Language failure does not disable review reading or durable viewed progress. Source preparation and excerpts are bounded; oversized or unsupported contexts fail visibly.
 
+An import or re-export alone is not shown as a definition when its target is unresolved. The peek reports **Source unavailable** instead; it does not install missing dependencies. Resolved local definitions include their declaration body, up to 80 lines and 16,384 characters, with an explicit notice when truncated. Base and head still read separate immutable sources.
+
 Analysis selects TS/JS-family and JSON/JSONC inputs, including unchanged imports and configuration; it skips unrelated assets and vendored `.yarn` toolchains. Each tree may contain at most 4,096 entries, selected inputs at most 16 MiB in total and each selected blob at most 1 MiB. Unsafe paths, symlinks, submodules and case/normalization collisions fail closed rather than becoming a misleading successful context. Definition results contain at most eight bounded excerpts. Other-language files and missing dependencies remain outside this limited source context.
+
+Each revision's TypeScript process has a 512 MiB V8 heap ceiling; each language-server wrapper retains its 256 MiB ceiling. These are per-process heap budgets, not OS isolation or total resident-memory limits. Source extraction uses one bounded Git batch per revision. A closed server fails queries visibly but does not prevent process-group and temporary-source cleanup. Bun applies the pinned JSON-RPC patch to prevent failed writes from creating an unowned second rejection.
 
 ## Boundary and reuse
 

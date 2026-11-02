@@ -61,6 +61,7 @@
   },
   "patchedDependencies": {
     "@effected/commands@0.13.0": "patches/@effected%2Fcommands@0.13.0.patch",
+    "vscode-jsonrpc@8.2.1": "patches/vscode-jsonrpc@8.2.1.patch",
   },
   "packages": {
     "@duff/anti-slop": ["@duff/anti-slop@workspace:packages/anti-slop"],
