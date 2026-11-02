@@ -326,7 +326,17 @@ fn init() -> State {
         language: language::Language::default(),
         status: "Starting local Effect core…".to_owned(),
         error: false,
-        destination: TextEdit::new(std::env::var("DUFF_REPOSITORY").unwrap_or_default()),
+        destination: TextEdit::new(
+            std::env::var("DUFF_REPOSITORY")
+                .ok()
+                .or_else(|| {
+                    bridge::bundled_launch()
+                        .ok()
+                        .flatten()
+                        .and_then(|launch| launch.repository)
+                })
+                .unwrap_or_default(),
+        ),
         author: TextEdit::new(""),
         repository: String::new(),
         list_destination: String::new(),
@@ -879,6 +889,9 @@ fn view(s: &State, _: &mut Cx<State>) -> El {
 }
 
 fn main() {
+    if rune::set_app_icon(include_bytes!("../assets/duff.png").as_slice()).is_err() {
+        eprintln!("Duff's app icon is unavailable.");
+    }
     let spec = AppSpec {
         min_size: Some((1120.0, 700.0)),
         families: ("Inter", "ui-monospace, Inter"),
@@ -922,12 +935,7 @@ fn main() {
         on_key: Some(|s: &mut State, event: &KeyEvent, tx| {
             s.language_key(event) || s.diff.key(event, tx)
         }),
-        ..AppSpec::new(
-            "Duff — Standalone review prototype",
-            (1560.0, 960.0),
-            init,
-            view,
-        )
+        ..AppSpec::new("Duff", (1560.0, 960.0), init, view)
     };
     App::new(spec).modifier_keys().run();
 }

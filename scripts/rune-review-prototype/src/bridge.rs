@@ -108,6 +108,31 @@ pub struct Event {
     pub result: Result<Payload, String>,
 }
 
+#[derive(Deserialize)]
+pub(crate) struct AppLaunch {
+    node: String,
+    bridge: String,
+    path: String,
+    data: Option<String>,
+    pub repository: Option<String>,
+}
+
+pub(crate) fn bundled_launch() -> Result<Option<AppLaunch>, String> {
+    let executable =
+        std::env::current_exe().map_err(|_| "Cannot locate Duff's executable.".to_owned())?;
+    let Some(directory) = executable
+        .parent()
+        .filter(|directory| directory.file_name().is_some_and(|name| name == "MacOS"))
+    else {
+        return Ok(None);
+    };
+    let bytes = std::fs::read(directory.join("../Resources/launch.json"))
+        .map_err(|_| "Duff's app launch configuration is missing. Rebuild the app.".to_owned())?;
+    serde_json::from_slice(&bytes)
+        .map(Some)
+        .map_err(|_| "Duff's app launch configuration is invalid. Rebuild the app.".to_owned())
+}
+
 pub struct Bridge {
     child: Child,
     input: Arc<Mutex<Option<ChildStdin>>>,
@@ -117,19 +142,33 @@ pub struct Bridge {
 
 impl Bridge {
     pub fn start(wake: Waker) -> Result<Self, String> {
-        let script = std::env::var_os("DUFF_BRIDGE").unwrap_or_else(|| {
-            concat!(env!("CARGO_MANIFEST_DIR"), "/bridge/dist/bridge.mjs").into()
-        });
-        let mut child =
-            Command::new(std::env::var_os("DUFF_NODE").unwrap_or_else(|| "node".into()))
-                .arg(script)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::null())
-                .spawn()
-                .map_err(|_| {
-                    "Cannot start Node. Run the launcher with Node 22.18+ installed.".to_owned()
-                })?;
+        let launch = bundled_launch()?;
+        let script = std::env::var_os("DUFF_BRIDGE")
+            .or_else(|| launch.as_ref().map(|launch| launch.bridge.clone().into()))
+            .unwrap_or_else(|| {
+                concat!(env!("CARGO_MANIFEST_DIR"), "/bridge/dist/bridge.mjs").into()
+            });
+        let node = std::env::var_os("DUFF_NODE")
+            .or_else(|| launch.as_ref().map(|launch| launch.node.clone().into()))
+            .unwrap_or_else(|| "node".into());
+        let mut command = Command::new(node);
+        if let Some(launch) = launch {
+            command.env("PATH", launch.path);
+            if std::env::var_os("DUFF_STANDALONE_DATA").is_none() {
+                if let Some(data) = launch.data {
+                    command.env("DUFF_STANDALONE_DATA", data);
+                }
+            }
+        }
+        let mut child = command
+            .arg(script)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|_| {
+                "Cannot start Node. Run the launcher with Node 22.18+ installed.".to_owned()
+            })?;
         let pipes = child.stdin.take().zip(child.stdout.take());
         let Some((input, output)) = pipes else {
             let _ = child.kill();

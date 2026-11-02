@@ -10,7 +10,9 @@ Prerequisites: Bun, Node **22.18+**, Rust **1.98.1** through rustup (`rustup too
 bash scripts/rune-review-prototype/run.sh
 ```
 
-The launcher bundles the core bridge for **Node**, then builds and opens the native Rune app. Bun is the build tool; it is not the sidecar runtime because durable storage uses `node:sqlite`. The first Rust build downloads the pinned dependencies and prepares the local Rune source patch described below. Linux needs a working Vulkan driver, `libxkbcommon-dev` and the normal X11/Wayland libraries. macOS uses Metal and requires Xcode Command Line Tools. This is source-run software, not a signed or distributed application.
+The launcher bundles the core bridge for **Node**, then builds and opens the native Rune app. Bun is the build tool; it is not the sidecar runtime because durable storage uses `node:sqlite`. The first Rust build downloads the pinned dependencies and prepares the local Rune source patch described below. Linux needs a working Vulkan driver, `libxkbcommon-dev` and the normal X11/Wayland libraries. macOS uses Metal and requires Xcode Command Line Tools. This is source-run software, not a notarized or distributed application.
+
+On macOS, the launcher builds `dist/Duff.app` with Duff's icon, native executable and LaunchServices identity, then opens it. Set `DUFF_APP_PATH="$HOME/Applications/Duff.app"` to build into your Applications folder instead. The app can subsequently open from Finder or the Dock without a terminal. Its private generated launch configuration retains the selected Node executable, source bridge path, CLI search path and optional repository/data overrides; it does not store credentials. Keep the source checkout and Node installation in place. This is a local, ad-hoc-signed development app, not a notarized self-contained distribution. Close Duff before rebuilding; packaging refuses to replace a bundle from another checkout.
 
 1. Paste a GitHub or modern Azure repository URL and click **Load PRs**.
 2. Type an author name to filter the loaded PR pages. Use **Load more PRs** when available; the filter is not a server-wide search.

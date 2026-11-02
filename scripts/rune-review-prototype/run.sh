@@ -9,4 +9,8 @@ command -v "${DUFF_NODE:-node}" >/dev/null || { echo 'Duff needs Node 22.18+ for
 "${DUFF_NODE:-node}" -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 22 || (major === 22 && minor < 18)) { console.error("Duff needs Node 22.18+ for node:sqlite."); process.exit(1); }'
 bash "$prototype/bridge/build.sh"
 export DUFF_BRIDGE="$prototype/bridge/dist/bridge.mjs"
+if [[ "$(uname -s)" == Darwin ]]; then
+    bash "$prototype/macos.sh"
+    exec open -W "${DUFF_APP_PATH:-$prototype/dist/Duff.app}" --args "$@"
+fi
 exec "$prototype/native.sh" run --locked -- "$@"
