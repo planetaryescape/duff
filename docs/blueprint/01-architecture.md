@@ -17,6 +17,7 @@ Status: review, conservative local identity inspection, and shared GitHub/Azure 
 | Native PR review | [PullRequestReviewCommands.ts](../../packages/extension/src/pull-requests/PullRequestReviewCommands.ts) | Preparation state subscription, fetch consent and explicit refresh/exit commands |
 | Shared editor boundaries | [Operations.ts](../../packages/extension/src/Operations.ts), [Repository.ts](../../packages/extension/src/Repository.ts) | Operation tracing and error notifications; workspace-folder selection |
 | Composition root | [extension.ts](../../packages/extension/src/extension.ts) | Layers, feature registration and coordination, one managed runtime and disposal |
+| Terminal client | [main.tsx](../../packages/terminal/src/main.tsx), [contract](../terminal.md) | OpenTUI/React shell, scoped real Neovim PTY/RPC, local branch comparison through core exports, separate fingerprint-based progress |
 | Verification | [BranchReview.test.ts](../../packages/core/src/review/BranchReview.test.ts) | Real temporary repositories, divergence, dirty files, renames, detached HEAD, failures |
 | Git context | [GitContext.ts](../../packages/core/src/git-context/GitContext.ts), [test](../../packages/core/src/git-context/GitContext.test.ts), [view](../../packages/extension/src/git-context/GitContextView.ts) | Safe local identity, config provenance, sanitized remotes, helper declarations |
 | Git execution | [GitProcess.ts](../../packages/core/src/git-context/GitProcess.ts) | Activation-supplied environment isolation, Effect Node spawner and `@effected/git` Layer; custom commands run through `@effected/commands` |
@@ -25,6 +26,7 @@ Status: review, conservative local identity inspection, and shared GitHub/Azure 
 
 `packages/core` owns headless capabilities by feature. Each service keeps its schemas, errors, implementation Layer, and tests nearby. `packages/extension` owns the editor integration and telemetry.
 Dependencies point extension → core. Cross-package imports use explicit exports and `workspace:*` dependencies. Core can use Node for local Git adapters, but cannot depend on VS Code or the extension.
+The optional terminal client also depends on core, never extension internals. Neovim owns mutable buffers and editor features; terminal code owns its UI, decorations and progress file. It adds no provider discovery or telemetry exporter. Its composition root runs one scoped Effect program, separate from the extension runtime.
 The extension supplies the environment to the GitContext Layer during activation. Importing core does not inspect Git configuration or select the process environment.
 The private root owns the pinned Bun version, shared tooling, aggregate scripts, and one lockfile. Each package has its own typecheck; only the extension enables VS Code ambient types.
 Bun bundles all runtime workspace dependencies into `packages/extension/dist/extension.js`; only VS Code and Node runtime modules remain external. The extension manifest stays inside `packages/extension`.

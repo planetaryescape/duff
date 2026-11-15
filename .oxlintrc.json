@@ -67,6 +67,14 @@
   },
   "overrides": [
     {
+      "files": ["packages/terminal/src/main.tsx"],
+      "rules": { "effecttsgo/strict-effect-provide": "off" }
+    },
+    {
+      "files": ["packages/terminal/src/ReviewApp.tsx"],
+      "rules": { "no-control-regex": "off" }
+    },
+    {
       "files": ["packages/core/src/**/*.ts", "packages/extension/src/**/*.ts"],
       "rules": { "duff/named-returns": "error" }
     },
@@ -91,7 +99,7 @@
       }
     },
     {
-      "files": ["packages/extension/src/**/*.ts"],
+      "files": ["packages/extension/src/**/*.ts", "packages/terminal/src/**/*.{ts,tsx}"],
       "rules": {
         "no-restricted-imports": [
           "error",

@@ -23,6 +23,10 @@ jobs:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
       - run: bun run check
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          version: v0.11.5
+          neovim: true
       - run: bun run test
       - run: bun run package
 

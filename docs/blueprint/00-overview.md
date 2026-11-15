@@ -50,3 +50,7 @@ Commit-story navigation, review notes, and binary rendering remain outside the c
 - Context inspection starts cancellable discovery; `duff.automaticDiscovery` disables background reads, while Check Pull Requests performs an explicit manual read.
 
 See [provider strategies](03-identity-and-provider-strategies.md) for proposed defaults and safety constraints.
+
+## Optional terminal client
+
+The owner requested a second client built with OpenTUI/React and normal Neovim, with direct editing rather than a read-only viewer plus editor handoff. This is additive: the native VS Code contracts above stay unchanged. The terminal first flow reuses local committed branch discovery, but displays live editable workspace buffers against the pinned merge base. Terminal progress is independent of extension storage. See [D017](02-decision-log.md#d017-editable-neovim-terminal-client) and the [implemented flow and qualification limits](../terminal.md).

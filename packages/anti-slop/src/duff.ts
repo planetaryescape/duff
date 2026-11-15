@@ -59,12 +59,13 @@ export const runtimeBoundary = defineRule({
   meta: {
     type: 'problem',
     messages: {
-      runtime: 'Run Effect and construct ManagedRuntime only at the extension integration boundary.',
+      runtime: 'Run Effect and construct ManagedRuntime only at a client integration boundary.',
       span: 'Name meaningful operations with Effect.fn("Domain.operation").',
     },
   },
   create(context) {
-    const entrypoint = context.filename.replaceAll('\\', '/').endsWith('/extension/src/extension.ts')
+    const filename = context.filename.replaceAll('\\', '/')
+    const entrypoint = filename.endsWith('/extension/src/extension.ts') || filename.endsWith('/terminal/src/main.tsx')
 
     return {
       CallExpression(node) {

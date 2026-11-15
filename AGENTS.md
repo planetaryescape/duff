@@ -1,6 +1,7 @@
 # Duff
 
-Duff is a local VS Code review extension. Use Bun for installs and scripts.
+Duff has a VS Code review extension and an optional OpenTUI/Neovim terminal client.
+Use Bun for installs and scripts.
 Use https://ratstack.sh/llms.txt as the reference for Effect and enforceable boundaries.
 Search its rules and skills before non-trivial work. Read the installed Effect AGENTS.md and source before using APIs.
 Report code that violates these patterns. Local product choices take precedence over template-specific rules.
@@ -15,6 +16,7 @@ Use the owner's `maintaining-blueprints` skill in `~/dotfiles` when maintaining 
 - `packages/core` owns headless application capabilities, grouped by feature. Keep schemas, service contracts, errors, Git implementations, and tests together. It cannot import VS Code or extension code.
 - Core's Git implementations are local adapters behind Effect services. Invoke Git without a shell. Decode external values with Schema. Supply the environment at activation rather than reading it during module import.
 - `packages/extension` owns native views, VS Code callbacks, telemetry, and one managed runtime. Dispose it on deactivation.
+- `packages/terminal` owns the OpenTUI shell, embedded Neovim, and separate terminal progress. Reuse core through declared exports. Neovim owns editing and unsaved-buffer decisions; never replace it with a simulated editor. Terminal Effect execution belongs only in `src/main.tsx`.
 - Import core through its declared exports, not relative source paths. Dependencies point extension → core. Create packages only for independently useful responsibilities, not technical layers.
 - Review views live under `packages/extension/src/review`. Clicking opens immutable diffs; opening a workspace file is a separate action.
 - Keep expected failures typed. Do not turn failed comparisons into empty successful reviews.
@@ -26,6 +28,7 @@ Use the owner's `maintaining-blueprints` skill in `~/dotfiles` when maintaining 
 ## Verification
 
 Run `bun run check`, `bun run test`, and `bun run build`.
+Terminal integration tests require Neovim 0.10+ and run under Bun via `bun run test:terminal`. They use temporary Git repositories and isolated Neovim config, never the owner's project files or editor config. See `docs/terminal.md` for the first-flow contract.
 The fence is type-aware Oxlint with patched `@effect/tsgo` correctness diagnostics and vendored anti-slop rules, not ESLint. Bun install patches the pinned tools. Oxfmt owns formatting; use `bun run format` and `bun run lint:fix`. Keep policy exceptions explicit in `.oxlintrc.json`. Rule tests require Node 22.18+.
 Run `bun run package` for a self-contained VSIX under `packages/extension`; smoke-test the installed artifact after packaging changes.
 Use Effect-aware tests with real temporary Git repositories for Git behavior.

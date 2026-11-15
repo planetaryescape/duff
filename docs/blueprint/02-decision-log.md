@@ -166,3 +166,15 @@ Alternatives: built-in inline inputs with an explicit Save Draft action weaken a
 Consequences: no automatic replay after uncertain writes; explicit recovery cannot silently retarget comments or overwrite later edits. Pending provider comments remain labelled and cannot be submitted as a review through Duff. Initial new-thread support is single-line, GitHub current-head/right and Azure proven iteration/base or head. Workspace-backed visibility does not independently persist preferences for duplicate windows sharing a workspace. Those limits and adjacent composition are disclosed implementation choices, not separately owner-confirmed requirements.
 Revisit when: stable native input events become available, provider evidence supports broader anchors, or duplicate-window preferences need independent persistence.
 References: [problem](../../.specs/inline-pr-comments/00-problem.md), [alternatives](../../.specs/inline-pr-comments/02-alternatives.md), [contracts](../../.specs/inline-pr-comments/03-contracts.md), [verification plan](../../.specs/inline-pr-comments/06-test-plan.md).
+
+## D017: Editable Neovim terminal client
+
+Status: owner-confirmed client direction; first-flow implementation choices documented separately. Date: 2026-11-15.
+
+Chosen: a fresh, minimal OpenTUI/React shell with the user's real Neovim, config and editor navigation. The owner requires direct interaction with editable code, not an editor handoff. Borrow review workflow from `xiaoxinghu/diff-review` and visual/navigation ideas from `modem-dev/hunk`.
+Reason: provide another Duff client without rebuilding an IDE or changing the VS Code experience.
+Implementation choice: embed Neovim in OpenTUI's terminal component and use private RPC for opening files, virtual diff decorations and save notifications. Reuse core branch comparison. Store terminal progress separately; do not change existing review databases.
+Alternatives: Hunk's reusable renderer is read-only, so sharing it would require a separate editing surface. Implementing a Neovim external-UI renderer adds unnecessary PoC complexity.
+Consequences: editable workspace contents can differ from the pinned committed HEAD. The UI labels that distinction. Neovim-specific integration cannot transparently substitute an arbitrary `$EDITOR`; shell aliases require an executable wrapper. The first slice excludes provider review and comments.
+Revisit when: the real editor workflow shows a need for another renderer, client-independent progress, or remote review entry points.
+Reference: [terminal contract, controls and verification limits](../terminal.md).

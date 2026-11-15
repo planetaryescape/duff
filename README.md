@@ -3,6 +3,21 @@
 Find pull requests across repositories and review their pinned source in VS Code.
 Source: [planetaryescape/duff](https://github.com/planetaryescape/duff).
 
+## Terminal client PoC
+
+Review and edit a local branch in your own Neovim, inside a minimal OpenTUI/React shell:
+
+```sh
+bun install
+bun run tui --repo /path/to/repository --base main
+```
+
+Requires Linux or macOS, Bun 1.3.5+, and Neovim 0.10+. F6 switches between the changed-file list and the real editor buffer. Your Neovim configuration loads normally; no review-specific mappings are installed. Set `DUFF_NVIM` or pass `--editor 'nvim -u /path/to/init.lua'` to choose a Neovim executable or wrapper. Otherwise Duff uses `VISUAL`, `EDITOR`, then `nvim`. Shell aliases are not inherited.
+
+The list contains committed branch changes. The editor compares live workspace buffers against the pinned merge base, so unsaved and uncommitted edits can differ from the committed review. Saving writes the real file. No fetch, checkout, staging, provider writes, or existing extension storage changes occur.
+
+See [terminal flow, controls, storage, and limits](docs/terminal.md).
+
 ## Install the latest release
 
 With [GitHub CLI](https://cli.github.com) signed in (`gh auth login`) and your
