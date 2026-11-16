@@ -398,3 +398,17 @@ The combined fix is pushed to PR #25 and its GitHub Check passed. A no-mock run 
 Line totals for that live comparison remain explicitly unavailable with `work-limit-exceeded`; independent Git measured +4,198/−21, not a returned API total. This preserves the existing content-work budget rather than presenting partial totals as complete. The exact-diff pagination probes and regression tests qualify the target-advancement correction independently of that budget.
 
 Native installed-artifact interaction remains unverified: the isolated macOS VSCodium host exposed no CDP renderer and display capture was unavailable. Other editor windows were preserved. This is live core/macOS qualification, not a claimed native dashboard click-through. PR review found no confirmed blockers; merge and post-merge artifact verification are the remaining delivery steps at recording. No release or deployment was manually triggered.
+
+## 2026-11-15: Editable terminal review first flow
+
+Scope: an optional OpenTUI/React client with real, normally configured Neovim; committed branch file discovery through existing core exports; editable workspace buffers against the pinned merge base; virtual removed lines, hunk movement, viewed progress and restart recovery. Existing core and VS Code runtime source are unchanged. [D017](blueprint/02-decision-log.md#d017-editable-neovim-terminal-client) records the owner's direction; [terminal.md](terminal.md) records behavior and limits.
+
+Real-PTY verification on Linux used Bun 1.3.13 and Neovim 0.12.4, temporary Git repositories and an isolated config with a custom mapping. The full CLI passed click-to-focus and F6 switching, real editing/saving, progress restoration across process restart, invalidation after save, resizing, cancelling an unsaved-buffer quit prompt and clean exit. Service checks passed virtual-line rendering without file mutation, undo, repeated read-only deleted-buffer opening, binary/symlink refusal, nested repository roots, concurrent-writer refusal and corrupt-progress preservation. Reversing save invalidation made its regression fail; restoring it passed.
+
+Integration uncovered two OpenTUI seams: parser key codes need normalization before embedded-terminal encoding, and `createRoot().render()` must be called once, with subsequent state delivered through a subscribed store. Repeated root rendering retained stale keyboard handlers. Resize explicitly synchronizes Neovim dimensions and requests redraw. These fixes are exercised by the real CLI test, not module mocks.
+
+Verification: `bun run check`; 333 existing application tests plus four terminal integration tests and policy-rule tests; `bun run build`; and `bun run package` passed. A separate run drove the same CLI flow against `packages/terminal/dist/main.js`. A local text screen capture is retained at `~/.cache/duff-terminal-review.txt`; no screenshot or private artifact was uploaded. Nested PTY tests emit native cursor/resize warnings without failing.
+
+Limits: no macOS execution, owner-plugin/LSP-stack qualification, Windows, clipboard-provider check or large-diff stress result is claimed. Extension packaging still contains only its existing files; this work did not install the VSIX into an owner editor or change extension packaging rules. Owner repositories and Git configuration remained unchanged.
+
+Delivery at recording: local implementation on `feat/terminal-neovim-review`, pending commit and PR publication. No release or deployment was triggered.

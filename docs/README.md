@@ -5,6 +5,7 @@ The plan describes future work. The log records observed delivery.
 
 | Record | Purpose | Status |
 | --- | --- | --- |
+| [Terminal client](terminal.md) | Editable local review with OpenTUI and normal Neovim | First-flow PoC; verification and limits recorded |
 | [Blueprint](blueprint/README.md) | Product, architecture, and decisions | Mixed, sections labelled |
 | [Capabilities and review session](blueprint/04-capabilities-and-review-session.md) | Discovery, exact-revision PR preparation, saved sessions and job ownership | Implemented; qualification and limits in the delivery log |
 | [Implementation plan](implementation-plan.md) | Ordered, usable slices | Current |

@@ -4,10 +4,11 @@
   "packageManager": "bun@1.4.0",
   "workspaces": ["packages/*"],
   "scripts": {
-    "build": "bun run --cwd packages/extension build",
+    "build": "bun run --cwd packages/extension build && bun run --cwd packages/terminal build",
     "watch": "bun run --cwd packages/extension watch",
     "dev": "fish scripts/dev.fish",
     "dev:local": "DUFF_TELEMETRY=local fish scripts/dev.fish",
+    "tui": "bun run packages/terminal/src/main.tsx",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "oxlint --deny-warnings .",
     "lint:fix": "oxlint --deny-warnings --fix .",
@@ -15,7 +16,8 @@
     "format:check": "oxfmt --check packages .vscode .oxlintrc.json .oxfmtrc.json",
     "check": "bun run format:check && bun run typecheck && bun run lint",
     "test:app": "vitest run packages/core packages/extension --maxWorkers=1",
-    "test": "bun run test:app && bun run --cwd packages/anti-slop test",
+    "test": "bun run test:app && bun run test:terminal && bun run --cwd packages/anti-slop test",
+    "test:terminal": "bun --bun node_modules/vitest/vitest.mjs run packages/terminal --maxWorkers=1",
     "package": "bun run build && bun run --cwd packages/extension package",
     "prepare": "effect-tsgo patch --typescript --oxlint"
   },

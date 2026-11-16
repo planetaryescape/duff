@@ -39,11 +39,13 @@ tester.run('duff/runtime-boundary', runtimeBoundary, {
     'Effect.fn("Review.compare")(function* () {});',
     'Effect.fnUntraced(function* () {});',
     { code: 'ManagedRuntime.make(layer); Effect.runPromise(work);', filename: '/duff/packages/extension/src/extension.ts' },
+    { code: 'Effect.runPromise(work);', filename: '/duff/packages/terminal/src/main.tsx' },
   ],
   invalid: [
     { code: 'Effect.fn(function* () {});', errors: [{ messageId: 'span' }] },
     { code: 'Effect.fn(name)(function* () {});', errors: [{ messageId: 'span' }] },
     { code: 'Effect.runPromise(work);', errors: [{ messageId: 'runtime' }] },
     { code: 'ManagedRuntime.make(layer);', errors: [{ messageId: 'runtime' }] },
+    { code: 'Effect.runPromise(work);', filename: '/duff/packages/terminal/src/ReviewApp.tsx', errors: [{ messageId: 'runtime' }] },
   ],
 })
