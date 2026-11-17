@@ -71,7 +71,7 @@
       "rules": { "effecttsgo/strict-effect-provide": "off" }
     },
     {
-      "files": ["packages/terminal/src/ReviewApp.tsx"],
+      "files": ["packages/terminal/src/FileNavigation.ts"],
       "rules": { "no-control-regex": "off" }
     },
     {

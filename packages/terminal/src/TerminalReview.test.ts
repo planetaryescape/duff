@@ -1,5 +1,14 @@
 import { execFile } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -25,7 +34,7 @@ const environment = { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBA
 
 const fixture = Effect.acquireRelease(
   Effect.promise(async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'duff-terminal-test-'))
+    const directory = await realpath(await mkdtemp(join(tmpdir(), 'duff-terminal-test-')))
     const root = join(directory, 'repo')
     await mkdir(root)
     const git = (...args: string[]) => execute('git', ['-C', root, ...args], { env: environment })
@@ -117,7 +126,7 @@ it.live(
         environment,
         terminal,
         notification: (method, args) => {
-          Queue.offerUnsafe(notifications, [method, args])
+          if (method === 'duff.saved') Queue.offerUnsafe(notifications, [method, args])
         },
         exited: () => {},
       })
@@ -223,7 +232,12 @@ it.live(
               `nvim -u "${files.config}" -i NONE`,
             ],
             {
-              env: { ...environment, XDG_STATE_HOME: files.stateDirectory, TERM: 'xterm-256color' },
+              env: {
+                ...environment,
+                XDG_CONFIG_HOME: join(files.directory, 'config'),
+                XDG_STATE_HOME: files.stateDirectory,
+                TERM: 'xterm-256color',
+              },
               terminal: { cols: 100, rows: 28, data: (_terminal, data) => terminal.write(data) },
             },
           )
@@ -247,7 +261,7 @@ it.live(
           yield* waitForText(terminal, 'export const value = 2')
           yield* Effect.promise(() => view.renderOnce())
           yield* Effect.promise(() => view.mockMouse.click(50, 3))
-          yield* waitForText(terminal, ':DuffViewed')
+          yield* waitForText(terminal, 'F8 next hunk')
           yield* Effect.promise(() => view.mockInput.typeText(':DuffViewed'))
           view.mockInput.pressEnter()
           yield* waitForText(terminal, '1/2 viewed')
@@ -270,7 +284,7 @@ it.live(
           const child = yield* launch
           yield* waitForText(terminal, '1/2 viewed')
           view.mockInput.pressKey('F6')
-          yield* waitForText(terminal, ':DuffViewed')
+          yield* waitForText(terminal, 'F8 next hunk')
           yield* Effect.promise(() => view.mockInput.typeText('GQA live'))
           yield* waitForText(terminal, '-- INSERT --')
           view.mockInput.pressEscape()

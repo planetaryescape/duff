@@ -21,6 +21,14 @@ export const Fingerprint = Schema.Struct({
 
 export interface Fingerprint extends Schema.Schema.Type<typeof Fingerprint> {}
 
+const HunkMovement = Schema.Struct({
+  moved: Schema.Boolean,
+  path: Schema.String,
+  reviewed: Schema.Boolean,
+})
+
+export interface HunkMovement extends Schema.Schema.Type<typeof HunkMovement> {}
+
 export class Neovim extends Context.Service<
   Neovim,
   {
@@ -30,7 +38,7 @@ export class Neovim extends Context.Service<
       readonly: boolean,
     ) => Effect.Effect<string, EditorError>
     readonly fingerprint: () => Effect.Effect<Fingerprint, EditorError>
-    readonly hunk: (direction: number) => Effect.Effect<void, EditorError>
+    readonly hunk: (direction: number, edge?: boolean) => Effect.Effect<HunkMovement, EditorError>
     readonly reset: () => Effect.Effect<void, EditorError>
     readonly quit: () => Effect.Effect<void, EditorError>
   }
@@ -157,11 +165,15 @@ export const makeNeovimLayer = (options: EditorOptions) =>
             Effect.mapError(editorFailure),
           )
         }),
-        hunk: Effect.fn('Neovim.hunk')(function* (direction) {
-          yield* Effect.tryPromise({
-            try: () => client.lua('DuffReview.hunk(...)', [direction]),
+        hunk: Effect.fn('Neovim.hunk')(function* (direction, edge = false) {
+          const movement = yield* Effect.tryPromise({
+            try: () => client.lua('return DuffReview.hunk(...)', [direction, edge]),
             catch: editorFailure,
           })
+
+          return yield* Schema.decodeUnknownEffect(HunkMovement)(movement).pipe(
+            Effect.mapError(editorFailure),
+          )
         }),
         reset: Effect.fn('Neovim.reset')(function* () {
           yield* Effect.tryPromise({

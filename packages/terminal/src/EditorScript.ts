@@ -23,7 +23,8 @@ local function refresh(buffer)
   for _, change in ipairs(changes) do
     local old_start, old_count, new_start, new_count = unpack(change)
     local row = math.min(math.max(new_start - 1, 0), count - 1)
-    table.insert(hunks[buffer], row + 1)
+    if new_count == 0 then row = math.min(math.max(new_start, 0), count - 1) end
+    table.insert(hunks[buffer], { line = row + 1, removed = old_count })
     for offset = 0, new_count - 1 do
       local line = new_start - 1 + offset
       if line < count then
@@ -55,6 +56,14 @@ local function refresh(buffer)
 end
 
 _G.DuffReview = {}
+
+local function show_hunk(buffer, hunk)
+  vim.api.nvim_win_set_cursor(0, { hunk.line, 0 })
+  vim.cmd("normal! zvzz")
+  if hunk.line == 1 and hunk.removed > 0 then
+    vim.fn.winrestview({ topline = 1, topfill = hunk.removed })
+  end
+end
 
 function DuffReview.reset()
   for buffer, _ in pairs(bases) do
@@ -97,10 +106,11 @@ function DuffReview.open(path, base, readonly)
   vim.api.nvim_set_current_buf(buffer)
   if not readonly then
     refresh(buffer)
-    local first = vim.diff(base, text(buffer), { result_type = "indices" })[1]
-    if first and first[1] == 1 and first[2] > 0 then
-      vim.fn.winrestview({ topline = 1, topfill = first[2] })
-    end
+    local first = (hunks[buffer] or {})[1]
+    if first then show_hunk(buffer, first) end
+  else
+    hunks[buffer] = { { line = 1, removed = 0 } }
+    vim.api.nvim_win_set_cursor(0, { 1, 0 })
   end
   return vim.fn.sha256(text(buffer))
 end
@@ -110,17 +120,29 @@ function DuffReview.fingerprint()
   return { path = vim.api.nvim_buf_get_name(buffer), hash = vim.fn.sha256(text(buffer)) }
 end
 
-function DuffReview.hunk(direction)
+function DuffReview.hunk(direction, edge)
   local buffer = vim.api.nvim_get_current_buf()
   local line = vim.api.nvim_win_get_cursor(0)[1]
   local positions = hunks[buffer] or {}
+  local result = {
+    path = vim.api.nvim_buf_get_name(buffer),
+    moved = false,
+    reviewed = bases[buffer] ~= nil,
+  }
   if direction < 0 then positions = vim.fn.reverse(vim.deepcopy(positions)) end
+  if edge and positions[1] then
+    show_hunk(buffer, positions[1])
+    result.moved = true
+    return result
+  end
   for _, target in ipairs(positions) do
-    if (direction > 0 and target > line) or (direction < 0 and target < line) then
-      vim.api.nvim_win_set_cursor(0, { target, 0 })
-      return
+    if (direction > 0 and target.line > line) or (direction < 0 and target.line < line) then
+      show_hunk(buffer, target)
+      result.moved = true
+      return result
     end
   end
+  return result
 end
 
 local group = vim.api.nvim_create_augroup("DuffReview", { clear = true })
@@ -137,8 +159,15 @@ vim.api.nvim_create_autocmd("BufWipeout", {
   group = group,
   callback = function(event) bases[event.buf] = nil; hunks[event.buf] = nil end,
 })
+vim.api.nvim_create_autocmd("BufEnter", {
+  group = group,
+  callback = function(event)
+    vim.rpcnotify(channel, "duff.active", vim.api.nvim_buf_get_name(event.buf))
+  end,
+})
 vim.api.nvim_create_user_command("DuffFiles", function() vim.rpcnotify(channel, "duff.files") end, {})
 vim.api.nvim_create_user_command("DuffViewed", function() vim.rpcnotify(channel, "duff.viewed") end, {})
-vim.api.nvim_create_user_command("DuffNextHunk", function() DuffReview.hunk(1) end, {})
-vim.api.nvim_create_user_command("DuffPreviousHunk", function() DuffReview.hunk(-1) end, {})
+vim.api.nvim_create_user_command("DuffNextHunk", function() vim.rpcnotify(channel, "duff.hunk", 1) end, {})
+vim.api.nvim_create_user_command("DuffPreviousHunk", function() vim.rpcnotify(channel, "duff.hunk", -1) end, {})
+vim.api.nvim_create_user_command("DuffToggleView", function() vim.rpcnotify(channel, "duff.toggle-view") end, {})
 `

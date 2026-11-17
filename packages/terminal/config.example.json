@@ -1,0 +1,9 @@
+{
+  "fileView": "tree",
+  "sidebarWidth": 40,
+  "keys": {
+    "focus": "f6",
+    "previousHunk": "f7",
+    "nextHunk": "f8"
+  }
+}
