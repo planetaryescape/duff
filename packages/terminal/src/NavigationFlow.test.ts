@@ -115,6 +115,7 @@ it.live(
                 XDG_CONFIG_HOME: files.configHome,
                 XDG_STATE_HOME: join(files.directory, 'state'),
                 TERM: 'xterm-256color',
+                COLORTERM: 'truecolor',
               },
               terminal: {
                 cols: 120,
@@ -168,7 +169,7 @@ it.live(
       const text = (value: string) =>
         wait(`Expected ${value}`, () => terminal.screen().text.includes(value))
 
-      const chrome = (red: number, green: number, blue: number) =>
+      const chrome = (phase: string, red: number, green: number, blue: number) =>
         Effect.promise(async () => {
           await view.renderOnce()
 
@@ -189,7 +190,7 @@ it.live(
             (matches) => matches,
             () =>
               new NavigationFailure({
-                message: `Expected Duff chrome RGB ${red}, ${green}, ${blue}`,
+                message: `Expected Duff chrome after ${phase} RGB ${red}, ${green}, ${blue}`,
               }),
           ),
           Effect.retry({ times: 25, schedule: Schedule.spaced('40 millis') }),
@@ -213,7 +214,7 @@ it.live(
       yield* text('Changed files · list')
       yield* text('v viewed')
       yield* text('line60 = 6000')
-      yield* chrome(239, 241, 245)
+      yield* chrome('startup', 239, 241, 245)
       expect(sidebar()).toContain('useDeliveryPinLocation.ts')
       expect(sidebar()).toContain('normalizeRoute.ts')
       expect(terminal.screen().text).not.toContain('line145 = 14500')
@@ -225,9 +226,9 @@ it.live(
       )
       expect(terminalOutput).not.toContain('warning(stream):')
       yield* editorCommand('set background=dark')
-      yield* chrome(20, 24, 30)
+      yield* chrome('dark option', 20, 24, 30)
       yield* editorCommand('colorscheme morning')
-      yield* chrome(239, 241, 245)
+      yield* chrome('morning colorscheme', 239, 241, 245)
       view.mockInput.pressKey('F3')
       yield* text('line145 = 14500')
       view.mockInput.pressKey('F3')
