@@ -94,6 +94,8 @@ it.live(
       view.renderer.root.add(terminal)
       terminal.focus()
 
+      let terminalOutput = ''
+
       const child = yield* Effect.acquireRelease(
         Effect.sync(() => {
           const child = Bun.spawn(
@@ -114,7 +116,14 @@ it.live(
                 XDG_STATE_HOME: join(files.directory, 'state'),
                 TERM: 'xterm-256color',
               },
-              terminal: { cols: 120, rows: 30, data: (_terminal, bytes) => terminal.write(bytes) },
+              terminal: {
+                cols: 120,
+                rows: 30,
+                data: (_terminal, bytes) => {
+                  terminalOutput += Buffer.from(bytes).toString()
+                  terminal.write(bytes)
+                },
+              },
             },
           )
 
@@ -183,6 +192,10 @@ it.live(
       yield* captureEvidence(process.env.DUFF_TERMINAL_EVIDENCE_DIR, 'list-first-hunk-120x30', view)
       view.mockInput.pressKey('F4')
       yield* text('F3 next hunk')
+      yield* editorCommand(
+        "lua io.stderr:write(string.char(27) .. '[8;20;184t'); io.stderr:flush()",
+      )
+      expect(terminalOutput).not.toContain('warning(stream):')
       view.mockInput.pressKey('F3')
       yield* text('line145 = 14500')
       view.mockInput.pressKey('F3')

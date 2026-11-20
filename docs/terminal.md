@@ -98,6 +98,8 @@ Neovim owns syntax, plugins, completion, language servers, navigation and undo. 
 
 The terminal adapter normalizes OpenTUI parser key codes before native terminal encoding, including Kitty Escape and function keys. Resize updates both PTY dimensions and Neovim dimensions, then requests a full redraw.
 
+While Duff owns the interactive screen, native diagnostics cannot write to the same terminal and overwrite rendered cells. Startup and exit errors still use standard error. Redirect standard error to a file before launch to capture native diagnostics during a review.
+
 ## Storage and safety
 
 Terminal progress is separate from extension sessions and databases:

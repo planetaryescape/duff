@@ -14,6 +14,7 @@ import { type Action, initialAppState, ReviewHost } from './ReviewApp'
 import { ReviewStore } from './ReviewStore'
 import { readTerminalSettings } from './TerminalConfig'
 import { makeTerminalControllerLayer, TerminalController } from './TerminalController'
+import { protectTerminalOutput } from './TerminalOutput'
 import { makeTerminalReviewLayer, TerminalError } from './TerminalReview'
 
 const help = `Duff terminal review
@@ -65,7 +66,9 @@ const program = Effect.gen(function* () {
     return 0
   }
 
-  if (process.platform !== 'linux' && process.platform !== 'darwin')
+  const platform = process.platform
+
+  if (platform !== 'linux' && platform !== 'darwin')
     return yield* new TerminalError({
       message: 'The terminal client currently supports Linux and macOS only.',
     })
@@ -104,6 +107,15 @@ const program = Effect.gen(function* () {
       }
     }),
     (release) => Effect.sync(release),
+  )
+
+  yield* Effect.acquireRelease(
+    Effect.try({
+      try: () => protectTerminalOutput(platform),
+      catch: () =>
+        new TerminalError({ message: 'Could not protect the terminal from native diagnostics.' }),
+    }),
+    (restore) => Effect.sync(restore),
   )
 
   const renderer = yield* Effect.acquireRelease(
