@@ -9,6 +9,7 @@ import { attach } from 'neovim'
 import { createLogger } from 'winston'
 
 import { editorLua } from './EditorScript'
+import type { EditorDisplay } from './TerminalConfig'
 
 export class EditorError extends Schema.TaggedError<EditorError>()('EditorError', {
   message: Schema.String,
@@ -21,6 +22,14 @@ export const Fingerprint = Schema.Struct({
 
 export interface Fingerprint extends Schema.Schema.Type<typeof Fingerprint> {}
 
+const HunkMovement = Schema.Struct({
+  moved: Schema.Boolean,
+  path: Schema.String,
+  reviewed: Schema.Boolean,
+})
+
+export interface HunkMovement extends Schema.Schema.Type<typeof HunkMovement> {}
+
 export class Neovim extends Context.Service<
   Neovim,
   {
@@ -30,7 +39,8 @@ export class Neovim extends Context.Service<
       readonly: boolean,
     ) => Effect.Effect<string, EditorError>
     readonly fingerprint: () => Effect.Effect<Fingerprint, EditorError>
-    readonly hunk: (direction: number) => Effect.Effect<void, EditorError>
+    readonly display: (settings: EditorDisplay) => Effect.Effect<void, EditorError>
+    readonly hunk: (direction: number, edge?: boolean) => Effect.Effect<HunkMovement, EditorError>
     readonly reset: () => Effect.Effect<void, EditorError>
     readonly quit: () => Effect.Effect<void, EditorError>
   }
@@ -137,6 +147,17 @@ export const makeNeovimLayer = (options: EditorOptions) =>
       }).pipe(Effect.timeout('10 seconds'), Effect.mapError(editorFailure))
 
       return Neovim.of({
+        display: Effect.fn('Neovim.display')(function* (settings) {
+          yield* Effect.tryPromise({
+            try: () =>
+              client.lua('DuffReview.display(...)', [
+                settings.focusMode,
+                settings.showRemovedLines,
+                settings.focusContext,
+              ]),
+            catch: editorFailure,
+          })
+        }),
         open: Effect.fn('Neovim.open')(function* (path, base, readonly) {
           const hash = yield* Effect.tryPromise({
             try: () => client.lua('return DuffReview.open(...)', [path, base, readonly]),
@@ -157,11 +178,15 @@ export const makeNeovimLayer = (options: EditorOptions) =>
             Effect.mapError(editorFailure),
           )
         }),
-        hunk: Effect.fn('Neovim.hunk')(function* (direction) {
-          yield* Effect.tryPromise({
-            try: () => client.lua('DuffReview.hunk(...)', [direction]),
+        hunk: Effect.fn('Neovim.hunk')(function* (direction, edge = false) {
+          const movement = yield* Effect.tryPromise({
+            try: () => client.lua('return DuffReview.hunk(...)', [direction, edge]),
             catch: editorFailure,
           })
+
+          return yield* Schema.decodeUnknownEffect(HunkMovement)(movement).pipe(
+            Effect.mapError(editorFailure),
+          )
         }),
         reset: Effect.fn('Neovim.reset')(function* () {
           yield* Effect.tryPromise({

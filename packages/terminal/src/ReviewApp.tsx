@@ -1,17 +1,41 @@
-import { type BoxRenderable, type EmbeddedTerminalRenderable } from '@opentui/core'
+import type { EmbeddedTerminalRenderable } from '@opentui/core'
 import { useKeyboard, useTerminalDimensions } from '@opentui/react'
-import { useLayoutEffect, useRef, useSyncExternalStore } from 'react'
+import { useSyncExternalStore } from 'react'
 
+import { EditorPane } from './EditorPane'
+import { displayPath } from './FileNavigation'
+import { FileSidebar } from './FileSidebar'
+import { ReviewFooter } from './ReviewFooter'
+import { ReviewHelp } from './ReviewHelp'
 import type { ReviewStore } from './ReviewStore'
+import {
+  type ReviewMode,
+  ReviewPaletteContext,
+  reviewPalettes,
+  useReviewPalette,
+} from './ReviewTheme'
+import type { EditorDisplay, TerminalSettings } from './TerminalConfig'
 import type { TerminalState } from './TerminalReview'
 
 export type Action =
   | { readonly type: 'focus' }
   | { readonly type: 'files' }
   | { readonly type: 'editor' }
-  | { readonly type: 'select'; readonly index: number }
+  | { readonly type: 'select'; readonly key: string }
+  | { readonly type: 'move'; readonly direction: number }
+  | { readonly type: 'edge'; readonly end: boolean }
+  | { readonly type: 'collapse' }
+  | { readonly type: 'expand' }
+  | { readonly type: 'toggleView' }
+  | { readonly type: 'unviewed' }
+  | { readonly type: 'active'; readonly path: string }
+  | { readonly type: 'theme'; readonly mode: ReviewMode }
   | { readonly type: 'open' }
   | { readonly type: 'viewed' }
+  | { readonly type: 'viewedNext' }
+  | { readonly type: 'focusMode' }
+  | { readonly type: 'removedLines' }
+  | { readonly type: 'help' }
   | { readonly type: 'refresh' }
   | { readonly type: 'hunk'; readonly direction: number }
   | { readonly type: 'quit' }
@@ -21,10 +45,40 @@ export type Action =
 
 export interface AppState {
   readonly review: TerminalState | undefined
-  readonly selectedIndex: number
+  readonly settings: TerminalSettings
+  readonly fileView: 'list' | 'tree'
+  readonly collapsed: ReadonlySet<string>
+  readonly selection: string | undefined
+  readonly activePath: string | undefined
   readonly editorFocused: boolean
   readonly error: string | undefined
   readonly busy: boolean
+  readonly display: EditorDisplay
+  readonly helpOpen: boolean
+  readonly notice: string | undefined
+  readonly mode: ReviewMode
+}
+
+export function initialAppState(settings: TerminalSettings): AppState {
+  return {
+    review: undefined,
+    settings,
+    fileView: settings.fileView,
+    collapsed: new Set(),
+    selection: undefined,
+    activePath: undefined,
+    editorFocused: false,
+    error: undefined,
+    busy: true,
+    display: {
+      focusMode: settings.focusMode,
+      showRemovedLines: settings.showRemovedLines,
+      focusContext: settings.focusContext,
+    },
+    helpOpen: false,
+    notice: undefined,
+    mode: 'dark',
+  }
 }
 
 interface AppProps {
@@ -33,114 +87,104 @@ interface AppProps {
   readonly dispatch: (action: Action) => void
 }
 
-function EditorPane({
-  terminal,
-  focused,
-}: {
-  readonly terminal: EmbeddedTerminalRenderable
-  readonly focused: boolean
-}) {
-  const container = useRef<BoxRenderable>(null)
-  useLayoutEffect(() => {
-    const box = container.current
-    box?.add(terminal)
-
-    return () => {
-      box?.remove(terminal)
-    }
-  }, [terminal])
-  useLayoutEffect(() => {
-    if (focused) terminal.focus()
-    else terminal.blur()
-  }, [terminal, focused])
-
-  return <box ref={container} flexGrow={1} minWidth={1} overflow="hidden" />
-}
-
-function FileList({
-  state,
-  dispatch,
-  width,
-  height,
-}: {
-  readonly state: AppState
-  readonly dispatch: AppProps['dispatch']
-  readonly width: number
-  readonly height: number
-}) {
-  const files = state.review?.review.files ?? []
-  const start = Math.max(0, state.selectedIndex - height + 2)
-
-  return (
-    <box
-      width={width}
-      flexShrink={0}
-      flexDirection="column"
-      border={['right']}
-      borderColor={state.editorFocused ? '#30343b' : '#7799bb'}
-    >
-      <text fg="#9199a5">
-        {' '}
-        {state.review?.viewed.size ?? 0}/{files.length} viewed
-      </text>
-      {state.review && files.length === 0 ? <text fg="#9199a5"> No changed files</text> : null}
-      {files.slice(start, start + height - 1).map((file, offset) => {
-        const index = start + offset
-        const selected = index === state.selectedIndex
-        const viewed = state.review?.viewed.has(file.path)
-
-        return (
-          <text
-            key={file.path}
-            height={1}
-            bg={selected ? '#263242' : undefined}
-            fg={viewed ? '#7c8994' : '#d6dce4'}
-            onMouseDown={() => {
-              dispatch({ type: 'select', index })
-              dispatch({ type: 'open' })
-            }}
-          >
-            {` ${viewed ? '✓' : file.status} ${file.path.replaceAll(/[\x00-\x1f\x7f]/g, '?')}`}
-          </text>
-        )
-      })}
-    </box>
-  )
-}
-
 export function ReviewApp({ state, terminal, dispatch }: AppProps) {
   const { width, height } = useTerminalDimensions()
+  const palette = useReviewPalette()
+
+  const keys = state.settings.keys
   useKeyboard((key) => {
     if (key.eventType === 'release') return
 
-    if (key.name === 'f6') {
+    if (state.helpOpen) {
       key.preventDefault()
       key.stopPropagation()
-      dispatch({ type: 'focus' })
+
+      if (key.name === keys.help || key.name === 'escape' || key.name === 'q')
+        dispatch({ type: 'help' })
 
       return
     }
 
-    if (state.editorFocused || key.ctrl || key.meta) return
-    const files = state.review?.review.files ?? []
+    if (!key.ctrl && !key.meta && !key.shift) {
+      let global: Action | undefined
+
+      if (key.name === keys.focus && !key.repeated) global = { type: 'focus' }
+
+      if (key.name === keys.previousHunk) global = { type: 'hunk', direction: -1 }
+
+      if (key.name === keys.nextHunk) global = { type: 'hunk', direction: 1 }
+
+      if (key.name === keys.markNext && !key.repeated) global = { type: 'viewedNext' }
+
+      if (key.name === keys.focusMode && !key.repeated) global = { type: 'focusMode' }
+
+      if (key.name === keys.removedLines && !key.repeated) global = { type: 'removedLines' }
+
+      if (key.name === keys.help && !key.repeated) global = { type: 'help' }
+
+      if (global) {
+        key.preventDefault()
+        key.stopPropagation()
+        dispatch(global)
+
+        return
+      }
+    }
+
+    if (terminal.focused || key.ctrl || key.meta) return
 
     switch (key.name) {
       case 'j':
       case 'down':
-        dispatch({ type: 'select', index: Math.min(files.length - 1, state.selectedIndex + 1) })
+        dispatch({ type: 'move', direction: 1 })
         break
       case 'k':
       case 'up':
-        dispatch({ type: 'select', index: Math.max(0, state.selectedIndex - 1) })
+        dispatch({ type: 'move', direction: -1 })
+        break
+      case 'h':
+      case 'left':
+        dispatch({ type: 'collapse' })
+        break
+      case 'l':
+      case 'right':
+        dispatch({ type: 'expand' })
+        break
+      case 'g':
+        dispatch({ type: 'edge', end: key.shift })
+        break
+      case 'home':
+        dispatch({ type: 'edge', end: false })
+        break
+      case 'end':
+        dispatch({ type: 'edge', end: true })
+        break
+      case 'tab':
+        dispatch({ type: 'editor' })
         break
       case 'return':
         dispatch({ type: 'open' })
         break
       case 'v':
-        dispatch({ type: 'viewed' })
+        dispatch({ type: key.shift ? 'viewedNext' : 'viewed' })
+        break
+      case 'u':
+        dispatch({ type: 'unviewed' })
+        break
+      case 't':
+        dispatch({ type: 'toggleView' })
         break
       case 'r':
         dispatch({ type: 'refresh' })
+        break
+      case 'z':
+        dispatch({ type: 'focusMode' })
+        break
+      case 'd':
+        dispatch({ type: 'removedLines' })
+        break
+      case '?':
+        dispatch({ type: 'help' })
         break
       case ']':
         dispatch({ type: 'hunk', direction: 1 })
@@ -159,34 +203,30 @@ export function ReviewApp({ state, terminal, dispatch }: AppProps) {
     ? `${comparison.headBranch} → ${comparison.baseBranch}`
     : 'Opening review'
 
-  let footer = 'F6 editor  j/k files  enter open  v viewed  [/] hunk  r refresh  q quit'
-
-  if (state.editorFocused)
-    footer = 'F6 files  :DuffViewed  :DuffNextHunk  :DuffPreviousHunk  :qa to quit'
-
-  if (state.busy) footer = 'Loading…'
-
-  if (state.error) footer = state.error
-
   return (
-    <box flexDirection="column" width="100%" height="100%" backgroundColor="#14181e">
-      <text height={1} fg="#d6dce4">
+    <box flexDirection="column" width="100%" height="100%" backgroundColor={palette.background}>
+      <text height={1} fg={palette.text} wrapMode="none" truncate>
         {' '}
         {`duff  ${title}  ·  editable workspace vs merge base`}
       </text>
       <box flexDirection="row" flexGrow={1} overflow="hidden">
-        <FileList
+        <FileSidebar
           state={state}
           dispatch={dispatch}
-          width={Math.max(16, Math.min(36, Math.floor(width * 0.26)))}
-          height={Math.max(2, height - 2)}
+          width={Math.max(20, Math.min(state.settings.sidebarWidth, Math.floor(width * 0.45)))}
+          height={Math.max(3, height - 3)}
         />
-        <EditorPane terminal={terminal} focused={state.editorFocused} />
+        <box flexDirection="column" flexGrow={1} minWidth={1}>
+          <text height={1} fg={palette.muted} wrapMode="none" truncate>
+            {' '}
+            {state.activePath ? displayPath(state.activePath) : 'Neovim'}
+            {state.review?.viewed.has(state.activePath ?? '') ? '  ✓ viewed' : ''}
+          </text>
+          <EditorPane terminal={terminal} />
+        </box>
       </box>
-      <text height={1} fg={state.error ? '#ef9b91' : '#9199a5'}>
-        {' '}
-        {footer}
-      </text>
+      <ReviewFooter state={state} dispatch={dispatch} width={width} />
+      {state.helpOpen ? <ReviewHelp keys={keys} width={width} height={height} /> : null}
     </box>
   )
 }
@@ -202,5 +242,9 @@ export function ReviewHost({
 }) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
 
-  return <ReviewApp state={state} terminal={terminal} dispatch={dispatch} />
+  return (
+    <ReviewPaletteContext.Provider value={reviewPalettes[state.mode]}>
+      <ReviewApp state={state} terminal={terminal} dispatch={dispatch} />
+    </ReviewPaletteContext.Provider>
+  )
 }

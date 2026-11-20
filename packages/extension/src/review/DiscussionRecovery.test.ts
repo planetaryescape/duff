@@ -1,19 +1,21 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 
-import { AttemptId, DraftId, ThreadId, ResolutionInput } from '@duff/core/discussion'
+import { AttemptId, discussionKey, DraftId, ThreadId, ResolutionInput } from '@duff/core/discussion'
 import {
   DiscussionDraftStore,
   DiscussionIds,
   Draft,
+  DraftEnvelope,
   type AttemptIntent,
 } from '@duff/core/discussion-drafts'
 import { Discussions } from '@duff/core/discussions'
 import { PullRequests } from '@duff/core/pull-requests'
 import { BranchReview } from '@duff/core/review'
 import { it } from '@effect/vitest'
-import { Effect, Layer, Option, Stream } from 'effect'
+import { Effect, Layer, Option, Schema, Stream } from 'effect'
 import { afterEach, beforeEach, describe, expect } from 'vitest'
 
 import { makeDiscussionDraftStoreLayer } from './DiscussionDraftStore'
@@ -45,6 +47,32 @@ function draftFixture(index: number, pr: string): Draft {
   })
 }
 
+function seedDrafts(directory: string, drafts: readonly Draft[]) {
+  const encode = Schema.encodeSync(Schema.fromJsonString(Schema.toCodecJson(DraftEnvelope)))
+  const db = new DatabaseSync(join(directory, 'discussion.sqlite'))
+
+  try {
+    db.exec('BEGIN IMMEDIATE')
+
+    const insert = db.prepare(
+      'INSERT INTO drafts (id, discussion_key, revision, payload_json) VALUES (?, ?, ?, ?)',
+    )
+
+    for (const draft of drafts) {
+      insert.run(
+        draft.id,
+        discussionKey(draft.key),
+        draft.version,
+        encode({ version: 1, value: draft }),
+      )
+    }
+
+    db.exec('COMMIT')
+  } finally {
+    db.close()
+  }
+}
+
 describe('global discussion recovery through real SQLite', () => {
   let directory: string
   beforeEach(() => {
@@ -64,14 +92,12 @@ describe('global discussion recovery through real SQLite', () => {
         draftFixture(index, index < 101 ? '22' : '23'),
       )
 
-      yield* run(
-        DiscussionDraftStore.use((store) =>
-          Effect.forEach(drafts, store.create, { discard: true }),
-        ),
-      )
-      const firstDraft = drafts[0]
+      const [firstDraft, ...remainingDrafts] = drafts
 
       if (!firstDraft) throw new Error('Missing fixture draft')
+
+      yield* run(DiscussionDraftStore.use((store) => store.create(firstDraft)))
+      seedDrafts(directory, remainingDrafts)
 
       const pending: AttemptIntent = {
         id: AttemptId.make('pending'),
