@@ -8,6 +8,12 @@ import { FileSidebar } from './FileSidebar'
 import { ReviewFooter } from './ReviewFooter'
 import { ReviewHelp } from './ReviewHelp'
 import type { ReviewStore } from './ReviewStore'
+import {
+  type ReviewMode,
+  ReviewPaletteContext,
+  reviewPalettes,
+  useReviewPalette,
+} from './ReviewTheme'
 import type { EditorDisplay, TerminalSettings } from './TerminalConfig'
 import type { TerminalState } from './TerminalReview'
 
@@ -23,6 +29,7 @@ export type Action =
   | { readonly type: 'toggleView' }
   | { readonly type: 'unviewed' }
   | { readonly type: 'active'; readonly path: string }
+  | { readonly type: 'theme'; readonly mode: ReviewMode }
   | { readonly type: 'open' }
   | { readonly type: 'viewed' }
   | { readonly type: 'viewedNext' }
@@ -49,6 +56,7 @@ export interface AppState {
   readonly display: EditorDisplay
   readonly helpOpen: boolean
   readonly notice: string | undefined
+  readonly mode: ReviewMode
 }
 
 export function initialAppState(settings: TerminalSettings): AppState {
@@ -69,6 +77,7 @@ export function initialAppState(settings: TerminalSettings): AppState {
     },
     helpOpen: false,
     notice: undefined,
+    mode: 'dark',
   }
 }
 
@@ -80,6 +89,8 @@ interface AppProps {
 
 export function ReviewApp({ state, terminal, dispatch }: AppProps) {
   const { width, height } = useTerminalDimensions()
+  const palette = useReviewPalette()
+
   const keys = state.settings.keys
   useKeyboard((key) => {
     if (key.eventType === 'release') return
@@ -193,8 +204,8 @@ export function ReviewApp({ state, terminal, dispatch }: AppProps) {
     : 'Opening review'
 
   return (
-    <box flexDirection="column" width="100%" height="100%" backgroundColor="#14181e">
-      <text height={1} fg="#d6dce4" wrapMode="none" truncate>
+    <box flexDirection="column" width="100%" height="100%" backgroundColor={palette.background}>
+      <text height={1} fg={palette.text} wrapMode="none" truncate>
         {' '}
         {`duff  ${title}  ·  editable workspace vs merge base`}
       </text>
@@ -206,7 +217,7 @@ export function ReviewApp({ state, terminal, dispatch }: AppProps) {
           height={Math.max(3, height - 3)}
         />
         <box flexDirection="column" flexGrow={1} minWidth={1}>
-          <text height={1} fg="#9199a5" wrapMode="none" truncate>
+          <text height={1} fg={palette.muted} wrapMode="none" truncate>
             {' '}
             {state.activePath ? displayPath(state.activePath) : 'Neovim'}
             {state.review?.viewed.has(state.activePath ?? '') ? '  ✓ viewed' : ''}
@@ -231,5 +242,9 @@ export function ReviewHost({
 }) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot)
 
-  return <ReviewApp state={state} terminal={terminal} dispatch={dispatch} />
+  return (
+    <ReviewPaletteContext.Provider value={reviewPalettes[state.mode]}>
+      <ReviewApp state={state} terminal={terminal} dispatch={dispatch} />
+    </ReviewPaletteContext.Provider>
+  )
 }

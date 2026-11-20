@@ -7,7 +7,7 @@ import { promisify } from 'node:util'
 
 import { expect, it } from '@effect/vitest'
 import { createTestRenderer } from '@opentui/core/testing'
-import { Effect, Schema } from 'effect'
+import { Effect, Schedule, Schema } from 'effect'
 
 import { captureEvidence } from '../test/Capture'
 import { EditorTerminal } from './EditorTerminal'
@@ -71,7 +71,7 @@ const fixture = Effect.acquireRelease(
     const editor = join(directory, 'init.lua')
     await writeFile(
       editor,
-      'vim.opt.swapfile = false\nvim.opt.shadafile = "NONE"\nvim.opt.termguicolors = true\n',
+      'vim.opt.swapfile = false\nvim.opt.shadafile = "NONE"\nvim.opt.termguicolors = true\nvim.opt.background = "light"\n',
     )
 
     return { directory, root, configHome, config, settings, editor, git }
@@ -168,6 +168,33 @@ it.live(
       const text = (value: string) =>
         wait(`Expected ${value}`, () => terminal.screen().text.includes(value))
 
+      const chrome = (red: number, green: number, blue: number) =>
+        Effect.promise(async () => {
+          await view.renderOnce()
+
+          const title = view
+            .captureSpans()
+            .lines[0]?.spans.find((span) => span.text.includes('duff'))
+
+          const background = title?.bg
+
+          return (
+            background !== undefined &&
+            Math.round(background.r * 255) === red &&
+            Math.round(background.g * 255) === green &&
+            Math.round(background.b * 255) === blue
+          )
+        }).pipe(
+          Effect.filterOrFail(
+            (matches) => matches,
+            () =>
+              new NavigationFailure({
+                message: `Expected Duff chrome RGB ${red}, ${green}, ${blue}`,
+              }),
+          ),
+          Effect.retry({ times: 25, schedule: Schedule.spaced('40 millis') }),
+        )
+
       const command = Effect.fn('NavigationTest.command')(function* (value: string) {
         yield* Effect.promise(() => view.mockInput.typeText(value))
         view.mockInput.pressEnter()
@@ -186,6 +213,7 @@ it.live(
       yield* text('Changed files · list')
       yield* text('v viewed')
       yield* text('line60 = 6000')
+      yield* chrome(239, 241, 245)
       expect(sidebar()).toContain('useDeliveryPinLocation.ts')
       expect(sidebar()).toContain('normalizeRoute.ts')
       expect(terminal.screen().text).not.toContain('line145 = 14500')
@@ -196,6 +224,10 @@ it.live(
         "lua io.stderr:write(string.char(27) .. '[8;20;184t'); io.stderr:flush()",
       )
       expect(terminalOutput).not.toContain('warning(stream):')
+      yield* editorCommand('set background=dark')
+      yield* chrome(20, 24, 30)
+      yield* editorCommand('colorscheme morning')
+      yield* chrome(239, 241, 245)
       view.mockInput.pressKey('F3')
       yield* text('line145 = 14500')
       view.mockInput.pressKey('F3')

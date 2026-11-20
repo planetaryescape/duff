@@ -165,6 +165,16 @@ function DuffReview.hunk(direction, edge)
 end
 
 local group = vim.api.nvim_create_augroup("DuffReview", { clear = true })
+local function report_background()
+  vim.rpcnotify(channel, "duff.theme", vim.o.background)
+end
+vim.api.nvim_create_autocmd("OptionSet", {
+  group = group, pattern = "background", callback = report_background,
+})
+vim.api.nvim_create_autocmd("ColorScheme", {
+  group = group, callback = report_background,
+})
+report_background()
 vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "BufWritePost" }, {
   group = group,
   callback = function(event)

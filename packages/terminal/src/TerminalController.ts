@@ -119,6 +119,15 @@ export const makeTerminalControllerLayer = (store: ReviewStore) =>
 
       const update = Effect.fn('TerminalController.update')(
         function* (action: Action) {
+          if (action.type === 'theme') {
+            if (state.mode !== action.mode) {
+              state = { ...state, mode: action.mode }
+              store.set(state)
+            }
+
+            return
+          }
+
           state = { ...state, error: undefined, notice: undefined, busy: false }
 
           switch (action.type) {

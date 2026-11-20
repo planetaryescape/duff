@@ -96,6 +96,8 @@ OpenTUI hosts the real terminal process. A private, temporary RPC socket connect
 
 Neovim owns syntax, plugins, completion, language servers, navigation and undo. Duff does not install project dependencies or configure an LSP. Those require the same setup as opening the repository directly in your editor.
 
+Duff's sidebar, footer and help use a light or dark palette based on Neovim's `background` setting. Changes to that setting or to the colorscheme update Duff without restarting, while Neovim still controls the editor colors.
+
 The terminal adapter normalizes OpenTUI parser key codes before native terminal encoding, including Kitty Escape and function keys. Resize updates both PTY dimensions and Neovim dimensions, then requests a full redraw.
 
 While Duff owns the interactive screen, native diagnostics cannot write to the same terminal and overwrite rendered cells. Startup and exit errors still use standard error. Redirect standard error to a file before launch to capture native diagnostics during a review.

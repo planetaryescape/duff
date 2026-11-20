@@ -1,3 +1,4 @@
+import { useReviewPalette } from './ReviewTheme'
 import type { TerminalSettings } from './TerminalConfig'
 
 interface HelpProps {
@@ -7,6 +8,8 @@ interface HelpProps {
 }
 
 export function ReviewHelp({ keys, width, height }: HelpProps) {
+  const palette = useReviewPalette()
+
   const lines = [
     'Review controls',
     `${keys.focus.toUpperCase()}  Switch files / Neovim`,
@@ -35,13 +38,13 @@ export function ReviewHelp({ keys, width, height }: HelpProps) {
       width={Math.max(24, Math.min(74, width - 4))}
       height={Math.min(21, height - 4)}
       border
-      backgroundColor="#202832"
-      borderColor="#7799bb"
+      backgroundColor={palette.panel}
+      borderColor={palette.focusedBorder}
       paddingX={1}
       flexDirection="column"
     >
       {lines.slice(0, Math.max(1, height - 6)).map((line, index) => (
-        <text key={index} height={1} wrapMode="none" truncate fg="#d6dce4">
+        <text key={index} height={1} wrapMode="none" truncate fg={palette.text}>
           {line}
         </text>
       ))}

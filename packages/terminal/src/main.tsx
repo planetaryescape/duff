@@ -178,6 +178,12 @@ const program = Effect.gen(function* () {
 
       if (method === 'duff.toggle-view') dispatch({ type: 'toggleView' })
 
+      if (method === 'duff.theme') {
+        const mode = args[0]
+
+        if (mode === 'light' || mode === 'dark') dispatch({ type: 'theme', mode })
+      }
+
       if (method === 'duff.active') {
         const decoded = Schema.decodeUnknownOption(Schema.Tuple([Schema.String]))(args)
 
