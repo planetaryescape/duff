@@ -1,5 +1,8 @@
 #!/bin/sh
 set -e
 bun run check
-bun run test
+(
+  unset $(git rev-parse --local-env-vars)
+  bun run test
+)
 bun run build
