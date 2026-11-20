@@ -21,6 +21,7 @@ export const makeTerminalControllerLayer = (store: ReviewStore) =>
       const review = yield* TerminalReview
       const editor = yield* Neovim
       let state = store.getSnapshot()
+      yield* editor.display(state.display)
       const files = () => state.review?.review.files ?? []
       const rows = () => navigationRows(files(), state.fileView, state.collapsed)
       const row = () => selectedRow(rows(), state.selection)
@@ -118,7 +119,7 @@ export const makeTerminalControllerLayer = (store: ReviewStore) =>
 
       const update = Effect.fn('TerminalController.update')(
         function* (action: Action) {
-          state = { ...state, error: undefined, busy: false }
+          state = { ...state, error: undefined, notice: undefined, busy: false }
 
           switch (action.type) {
             case 'focus':
@@ -203,6 +204,50 @@ export const makeTerminalControllerLayer = (store: ReviewStore) =>
               }
 
               state = { ...state, review: yield* review.toggleViewed() }
+              break
+            case 'viewedNext': {
+              if (!state.editorFocused) {
+                const current = row()
+
+                if (current?.kind !== 'file') break
+                yield* openFile(current.file)
+              }
+
+              const active = yield* editor.fingerprint()
+              const file = matchingFile(active.path)
+              state = { ...state, review: yield* review.markViewed() }
+              const index = files().findIndex((candidate) => candidate.path === file?.path)
+              const candidates = [...files().slice(index + 1), ...files().slice(0, index + 1)]
+              const next = candidates.find((candidate) => !state.review?.viewed.has(candidate.path))
+
+              if (next) {
+                state = { ...state, editorFocused: true, busy: true }
+                store.set(state)
+                yield* openFile(next)
+              } else {
+                state = { ...state, notice: 'All files viewed' }
+              }
+
+              break
+            }
+
+            case 'focusMode':
+            case 'removedLines': {
+              const display = {
+                focusMode: state.display.focusMode,
+                showRemovedLines: state.display.showRemovedLines,
+                focusContext: state.display.focusContext,
+              }
+
+              if (action.type === 'focusMode') display.focusMode = !display.focusMode
+              else display.showRemovedLines = !display.showRemovedLines
+              yield* editor.display(display)
+              state = { ...state, display }
+              break
+            }
+
+            case 'help':
+              state = { ...state, helpOpen: !state.helpOpen }
               break
             case 'unviewed': {
               const index = files().findIndex((file) => file.path === row()?.path)

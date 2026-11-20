@@ -5,8 +5,10 @@ import { useSyncExternalStore } from 'react'
 import { EditorPane } from './EditorPane'
 import { displayPath } from './FileNavigation'
 import { FileSidebar } from './FileSidebar'
+import { ReviewFooter } from './ReviewFooter'
+import { ReviewHelp } from './ReviewHelp'
 import type { ReviewStore } from './ReviewStore'
-import type { TerminalSettings } from './TerminalConfig'
+import type { EditorDisplay, TerminalSettings } from './TerminalConfig'
 import type { TerminalState } from './TerminalReview'
 
 export type Action =
@@ -23,6 +25,10 @@ export type Action =
   | { readonly type: 'active'; readonly path: string }
   | { readonly type: 'open' }
   | { readonly type: 'viewed' }
+  | { readonly type: 'viewedNext' }
+  | { readonly type: 'focusMode' }
+  | { readonly type: 'removedLines' }
+  | { readonly type: 'help' }
   | { readonly type: 'refresh' }
   | { readonly type: 'hunk'; readonly direction: number }
   | { readonly type: 'quit' }
@@ -40,6 +46,9 @@ export interface AppState {
   readonly editorFocused: boolean
   readonly error: string | undefined
   readonly busy: boolean
+  readonly display: EditorDisplay
+  readonly helpOpen: boolean
+  readonly notice: string | undefined
 }
 
 export function initialAppState(settings: TerminalSettings): AppState {
@@ -53,6 +62,13 @@ export function initialAppState(settings: TerminalSettings): AppState {
     editorFocused: false,
     error: undefined,
     busy: true,
+    display: {
+      focusMode: settings.focusMode,
+      showRemovedLines: settings.showRemovedLines,
+      focusContext: settings.focusContext,
+    },
+    helpOpen: false,
+    notice: undefined,
   }
 }
 
@@ -68,6 +84,16 @@ export function ReviewApp({ state, terminal, dispatch }: AppProps) {
   useKeyboard((key) => {
     if (key.eventType === 'release') return
 
+    if (state.helpOpen) {
+      key.preventDefault()
+      key.stopPropagation()
+
+      if (key.name === keys.help || key.name === 'escape' || key.name === 'q')
+        dispatch({ type: 'help' })
+
+      return
+    }
+
     if (!key.ctrl && !key.meta && !key.shift) {
       let global: Action | undefined
 
@@ -76,6 +102,14 @@ export function ReviewApp({ state, terminal, dispatch }: AppProps) {
       if (key.name === keys.previousHunk) global = { type: 'hunk', direction: -1 }
 
       if (key.name === keys.nextHunk) global = { type: 'hunk', direction: 1 }
+
+      if (key.name === keys.markNext && !key.repeated) global = { type: 'viewedNext' }
+
+      if (key.name === keys.focusMode && !key.repeated) global = { type: 'focusMode' }
+
+      if (key.name === keys.removedLines && !key.repeated) global = { type: 'removedLines' }
+
+      if (key.name === keys.help && !key.repeated) global = { type: 'help' }
 
       if (global) {
         key.preventDefault()
@@ -121,7 +155,7 @@ export function ReviewApp({ state, terminal, dispatch }: AppProps) {
         dispatch({ type: 'open' })
         break
       case 'v':
-        dispatch({ type: 'viewed' })
+        dispatch({ type: key.shift ? 'viewedNext' : 'viewed' })
         break
       case 'u':
         dispatch({ type: 'unviewed' })
@@ -131,6 +165,15 @@ export function ReviewApp({ state, terminal, dispatch }: AppProps) {
         break
       case 'r':
         dispatch({ type: 'refresh' })
+        break
+      case 'z':
+        dispatch({ type: 'focusMode' })
+        break
+      case 'd':
+        dispatch({ type: 'removedLines' })
+        break
+      case '?':
+        dispatch({ type: 'help' })
         break
       case ']':
         dispatch({ type: 'hunk', direction: 1 })
@@ -149,15 +192,6 @@ export function ReviewApp({ state, terminal, dispatch }: AppProps) {
     ? `${comparison.headBranch} → ${comparison.baseBranch}`
     : 'Opening review'
 
-  let footer = `${keys.focus.toUpperCase()} editor  j/k files  Enter open  h/l fold  t view  ${keys.previousHunk.toUpperCase()}/${keys.nextHunk.toUpperCase()} hunks`
-
-  if (state.editorFocused)
-    footer = `${keys.focus.toUpperCase()} files  ${keys.previousHunk.toUpperCase()} prev hunk  ${keys.nextHunk.toUpperCase()} next hunk  :qa quit`
-
-  if (state.busy) footer = 'Loading…'
-
-  if (state.error) footer = state.error
-
   return (
     <box flexDirection="column" width="100%" height="100%" backgroundColor="#14181e">
       <text height={1} fg="#d6dce4" wrapMode="none" truncate>
@@ -169,20 +203,19 @@ export function ReviewApp({ state, terminal, dispatch }: AppProps) {
           state={state}
           dispatch={dispatch}
           width={Math.max(20, Math.min(state.settings.sidebarWidth, Math.floor(width * 0.45)))}
-          height={Math.max(3, height - 2)}
+          height={Math.max(3, height - 3)}
         />
         <box flexDirection="column" flexGrow={1} minWidth={1}>
           <text height={1} fg="#9199a5" wrapMode="none" truncate>
             {' '}
             {state.activePath ? displayPath(state.activePath) : 'Neovim'}
+            {state.review?.viewed.has(state.activePath ?? '') ? '  ✓ viewed' : ''}
           </text>
           <EditorPane terminal={terminal} />
         </box>
       </box>
-      <text height={1} fg={state.error ? '#ef9b91' : '#9199a5'} wrapMode="none" truncate>
-        {' '}
-        {footer}
-      </text>
+      <ReviewFooter state={state} dispatch={dispatch} width={width} />
+      {state.helpOpen ? <ReviewHelp keys={keys} width={width} height={height} /> : null}
     </box>
   )
 }

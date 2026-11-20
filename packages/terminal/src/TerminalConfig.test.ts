@@ -37,15 +37,41 @@ it.effect(
       expect(yield* readTerminalSettings(location)).toEqual({
         fileView: 'tree',
         sidebarWidth: 40,
-        keys: { focus: 'f6', previousHunk: 'f7', nextHunk: 'f8' },
+        icons: 'text',
+        focusMode: false,
+        showRemovedLines: true,
+        focusContext: 3,
+        keys: {
+          focus: 'f6',
+          previousHunk: 'f7',
+          nextHunk: 'f8',
+          markNext: 'f9',
+          focusMode: 'f10',
+          removedLines: 'f11',
+          help: 'f12',
+        },
       })
       const path = terminalConfigPath(location)
       yield* Effect.promise(() => mkdir(join(home, '.config/duff'), { recursive: true }))
-      yield* Effect.promise(() => writeFile(path, '{"fileView":"list","keys":{"nextHunk":"f9"}}'))
+      yield* Effect.promise(() =>
+        writeFile(path, '{"fileView":"list","icons":"nerd","keys":{"nextHunk":"f1"}}'),
+      )
       expect(yield* readTerminalSettings(location)).toEqual({
         fileView: 'list',
         sidebarWidth: 40,
-        keys: { focus: 'f6', previousHunk: 'f7', nextHunk: 'f9' },
+        icons: 'nerd',
+        focusMode: false,
+        showRemovedLines: true,
+        focusContext: 3,
+        keys: {
+          focus: 'f6',
+          previousHunk: 'f7',
+          nextHunk: 'f1',
+          markNext: 'f9',
+          focusMode: 'f10',
+          removedLines: 'f11',
+          help: 'f12',
+        },
       })
     }),
 )
@@ -63,9 +89,15 @@ it.effect(
         '{"fileView":"grid"}',
         '{"fileVeiw":"list"}',
         '{"sidebarWidth":5}',
+        '{"icons":"emoji"}',
         '{"keys":{"nextHunk":"f6"}}',
         '{"keys":{"focus":"q"}}',
         '{"keys":{"typo":"f9"}}',
+        '{"keys":{"markNext":"f8"}}',
+        '{"focusMode":"yes"}',
+        '{"showRemovedLines":1}',
+        '{"focusContext":-1}',
+        '{"focusContext":21}',
         'null',
       ]) {
         yield* Effect.promise(() => writeFile(path, content))

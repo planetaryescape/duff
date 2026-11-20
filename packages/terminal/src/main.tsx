@@ -29,6 +29,8 @@ Defaults to DUFF_NVIM, VISUAL, EDITOR, then nvim on PATH. The command must run N
 Config: $XDG_CONFIG_HOME/duff/config.json, otherwise ~/.config/duff/config.json.
 Use --check-config to validate configuration without opening the UI.
 Defaults: F6 switches focus, F7/F8 move across review hunks and files.
+F9 marks viewed and opens the next unread file. F10 folds unchanged code.
+F11 shows/hides removed lines. F12 opens help; Escape closes it.
 In the sidebar: j/k move, Enter opens at the first diff, h/l fold, t toggles list/tree.
 :qa refuses unsaved buffers. :qa! explicitly discards them.
 `
@@ -136,7 +138,7 @@ const program = Effect.gen(function* () {
   yield* Effect.acquireRelease(
     Effect.sync(() =>
       store.subscribe(() => {
-        if (store.getSnapshot().editorFocused) terminal.focus()
+        if (store.getSnapshot().editorFocused && !store.getSnapshot().helpOpen) terminal.focus()
         else terminal.blur()
       }),
     ),
@@ -153,6 +155,14 @@ const program = Effect.gen(function* () {
       if (method === 'duff.files') dispatch({ type: 'files' })
 
       if (method === 'duff.viewed') dispatch({ type: 'viewed' })
+
+      if (method === 'duff.viewed-next') dispatch({ type: 'viewedNext' })
+
+      if (method === 'duff.focus-mode') dispatch({ type: 'focusMode' })
+
+      if (method === 'duff.removed-lines') dispatch({ type: 'removedLines' })
+
+      if (method === 'duff.help') dispatch({ type: 'help' })
 
       if (method === 'duff.toggle-view') dispatch({ type: 'toggleView' })
 

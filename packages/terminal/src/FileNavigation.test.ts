@@ -7,6 +7,7 @@ import {
   navigationRows,
   revealFile,
   selectedRow,
+  viewedDirectories,
 } from './FileNavigation'
 
 const files = [
@@ -78,4 +79,22 @@ it('distinguishes a deleted file from a directory at the same path and neutraliz
 
   expect(rows.map((row) => row.key)).toEqual(['directory:src', 'file:src/new.ts', 'file:src'])
   expect(displayPath('src/\x1b[31mfile\n.ts')).toBe('src/?[31mfile?.ts')
+})
+
+it('marks a directory viewed only when every changed file beneath it is viewed', () => {
+  expect(
+    viewedDirectories(
+      files,
+      new Set(['src/components/DeliveryPinCard/index.tsx', 'src/types/order.ts', 'legacy.ts']),
+    ),
+  ).toEqual(new Set(['src/components/DeliveryPinCard', 'src/types']))
+  expect(viewedDirectories(files, new Set(files.map((file) => file.path)))).toEqual(
+    new Set([
+      'src',
+      'src/components',
+      'src/components/DeliveryPinCard',
+      'src/components/OrderTracking',
+      'src/types',
+    ]),
+  )
 })

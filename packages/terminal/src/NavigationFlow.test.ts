@@ -119,12 +119,13 @@ it.live(
           )
 
           terminal.onData = (bytes) => child.terminal?.write(bytes)
+          terminal.onTerminalResize = (cols, rows) => child.terminal?.resize(cols, rows)
 
           return child
         }),
         (child) =>
           Effect.promise(async () => {
-            child.kill('SIGTERM')
+            child.kill('SIGKILL')
             await child.exited
             child.terminal?.close()
           }),
@@ -163,7 +164,18 @@ it.live(
         view.mockInput.pressEnter()
       })
 
+      let sequence = 0
+
+      const editorCommand = Effect.fn('NavigationTest.editorCommand')(function* (value: string) {
+        sequence += 1
+        yield* command(
+          `:execute '${value.replaceAll("'", "''")}' | redraw! | echo 'ready' . '${sequence}'`,
+        )
+        yield* text(`ready${sequence}`)
+      })
+
       yield* text('Changed files · list')
+      yield* text('v viewed')
       yield* text('line60 = 6000')
       expect(sidebar()).toContain('useDeliveryPinLocation.ts')
       expect(sidebar()).toContain('normalizeRoute.ts')
@@ -258,6 +270,111 @@ it.live(
       view.mockInput.pressEnter()
       yield* text('F3 next hunk')
       yield* text('line60 = 6000')
+      yield* text('F9 read+next')
+      view.mockInput.pressKey('F12')
+      yield* text('Review controls')
+      yield* text('Mark viewed and open next unread')
+      yield* captureEvidence(process.env.DUFF_TERMINAL_EVIDENCE_DIR, 'review-help-120x30', view)
+      view.mockInput.pressEscape()
+      yield* wait(
+        'Help closes without consuming editor input',
+        () => !terminal.screen().text.includes('Review controls'),
+      )
+
+      yield* editorCommand('setlocal foldmethod=manual foldlevel=0 foldtext=foldtext()')
+      yield* editorCommand('12,15fold')
+      yield* editorCommand('10,20fold')
+      yield* editorCommand('normal! 60G')
+      yield* text('line60 = 6000')
+      view.mockInput.pressKey('F10')
+      yield* wait(
+        'Focus mode shows both hunks and folds distant unchanged lines',
+        () =>
+          terminal.screen().text.includes('unchanged lines') &&
+          terminal.screen().text.includes('line145 = 14500') &&
+          !terminal.screen().text.includes('line70 = 70'),
+      )
+      yield* text('focus on')
+      yield* captureEvidence(process.env.DUFF_TERMINAL_EVIDENCE_DIR, 'focus-mode-120x30', view)
+      view.mockInput.pressKey('F11')
+      yield* wait(
+        'Removed lines can be hidden while additions remain visible',
+        () =>
+          terminal.screen().text.includes('removed off') &&
+          !terminal.screen().text.includes('- export const line60 = 60') &&
+          terminal.screen().text.includes('line60 = 6000'),
+      )
+      yield* captureEvidence(process.env.DUFF_TERMINAL_EVIDENCE_DIR, 'removed-hidden-120x30', view)
+      view.mockInput.pressKey('F11')
+      yield* text('- export const line60 = 60')
+      yield* editorCommand("call setline(100, 'export const line100 = 12345')")
+      yield* text('line100 = 12345')
+      yield* editorCommand("call setline(100, 'export const line100 = 100')")
+      yield* editorCommand('write')
+      yield* wait(
+        'Focus folds recompute after real buffer edits and saves',
+        () =>
+          !terminal.screen().text.includes('line100 = 12345') &&
+          terminal.screen().text.includes('line145 = 14500'),
+      )
+      view.mockInput.pressKey('F10')
+      yield* text('focus off')
+      yield* command(
+        ':redraw! | lua print(vim.inspect({vim.wo.foldmethod, vim.wo.foldlevel, vim.fn.foldclosed(10), vim.fn.foldclosedend(10)}))',
+      )
+      yield* text('{ "manual", 0, 10, 20 }')
+      yield* editorCommand('normal! 10Gzo')
+      yield* command(
+        ':redraw! | lua print(vim.inspect({vim.fn.foldclosed(12), vim.fn.foldclosedend(12)}))',
+      )
+      yield* text('{ 12, 15 }')
+      yield* editorCommand('normal! 60G')
+      view.mockInput.pressKey('F10')
+      yield* text('focus on')
+      view.mockInput.pressKey('F9')
+      yield* text('1/3 viewed')
+      yield* text('line100 = 10000')
+      view.mockInput.pressKey('F9')
+      yield* text('2/3 viewed')
+      yield* text('export const removed = true')
+      view.mockInput.pressKey('F9')
+      yield* text('3/3 viewed')
+      yield* text('All files viewed')
+      view.mockInput.pressKey('F9')
+      yield* text('All files viewed')
+      expect(sidebar()).toContain('3/3 viewed')
+      yield* captureEvidence(
+        process.env.DUFF_TERMINAL_EVIDENCE_DIR,
+        'all-files-viewed-120x30',
+        view,
+      )
+      yield* editorCommand('enew')
+      view.mockInput.pressKey('F9')
+      yield* text('The active buffer is not part of this review.')
+      expect(sidebar()).toContain('3/3 viewed')
+      view.resize(80, 24)
+      terminal.width = 80
+      terminal.height = 24
+      yield* Effect.promise(() => view.renderOnce())
+      yield* wait(
+        'The native terminal resizes to 80 columns',
+        () => terminal.screen().columns === 80,
+      )
+      yield* wait(
+        'The CLI redraws its header and both footer rows at 80 by 24',
+        () =>
+          terminal.screen().lines[0]?.includes('duff') === true &&
+          terminal.screen().lines.at(-1)?.includes('F9 read+next') === true,
+      )
+      view.mockInput.pressKey('F12')
+      yield* text('Review controls')
+      yield* text('Escape closes help')
+      yield* captureEvidence(process.env.DUFF_TERMINAL_EVIDENCE_DIR, 'review-help-80x24', view)
+      view.mockInput.pressEscape()
+      yield* wait(
+        'Compact help closes and returns focus to Neovim',
+        () => !terminal.screen().text.includes('Review controls'),
+      )
       expect(yield* Effect.promise(() => readFile(files.config, 'utf8'))).toBe(files.settings)
       yield* command(':qa')
       expect(yield* Effect.promise(() => child.exited).pipe(Effect.timeout('5 seconds'))).toBe(0)

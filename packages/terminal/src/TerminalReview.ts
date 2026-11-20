@@ -44,6 +44,7 @@ export class TerminalReview extends Context.Service<
     readonly load: () => Effect.Effect<TerminalState, TerminalError | EditorError>
     readonly open: (file: FileChange) => Effect.Effect<TerminalState, TerminalError | EditorError>
     readonly toggleViewed: () => Effect.Effect<TerminalState, TerminalError | EditorError>
+    readonly markViewed: () => Effect.Effect<TerminalState, TerminalError | EditorError>
     readonly saved: (path: string, hash: string) => Effect.Effect<TerminalState, TerminalError>
   }
 >()('duff/terminal/TerminalReview') {}
@@ -167,6 +168,36 @@ export const makeTerminalReviewLayer = (options: ReviewOptions) =>
         return yield* state()
       })
 
+      const markViewed = Effect.fn('TerminalReview.markViewed')(function* (toggle: boolean) {
+        const active = yield* editor.fingerprint()
+        const review = yield* current()
+
+        const file = review.files.find(
+          (file) =>
+            active.path === join(root, file.path) ||
+            active.path === `duff://deleted/${join(root, file.path)}`,
+        )
+
+        if (!file)
+          return yield* new TerminalError({
+            message: 'The active buffer is not part of this review.',
+          })
+        const before = viewed.get(file.path)
+
+        if (toggle && before === active.hash) viewed.delete(file.path)
+        else viewed.set(file.path, active.hash)
+        yield* persist().pipe(
+          Effect.tapError(() =>
+            Effect.sync(() => {
+              if (before) viewed.set(file.path, before)
+              else viewed.delete(file.path)
+            }),
+          ),
+        )
+
+        return yield* state()
+      })
+
       return TerminalReview.of({
         load: Effect.fn('TerminalReview.load')(function* () {
           const branches = yield* git
@@ -232,35 +263,8 @@ export const makeTerminalReviewLayer = (options: ReviewOptions) =>
           return yield* state()
         }),
         open,
-        toggleViewed: Effect.fn('TerminalReview.toggleViewed')(function* () {
-          const active = yield* editor.fingerprint()
-          const review = yield* current()
-
-          const file = review.files.find(
-            (file) =>
-              active.path === join(root, file.path) ||
-              active.path === `duff://deleted/${join(root, file.path)}`,
-          )
-
-          if (!file)
-            return yield* new TerminalError({
-              message: 'The active buffer is not part of this review.',
-            })
-          const before = viewed.get(file.path)
-
-          if (before === active.hash) viewed.delete(file.path)
-          else viewed.set(file.path, active.hash)
-          yield* persist().pipe(
-            Effect.tapError(() =>
-              Effect.sync(() => {
-                if (before) viewed.set(file.path, before)
-                else viewed.delete(file.path)
-              }),
-            ),
-          )
-
-          return yield* state()
-        }),
+        toggleViewed: () => markViewed(true),
+        markViewed: () => markViewed(false),
         saved: Effect.fn('TerminalReview.saved')(function* (path, hash) {
           const relativePath = relative(root, path)
           const before = viewed.get(relativePath)

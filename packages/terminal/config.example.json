@@ -1,9 +1,17 @@
 {
   "fileView": "tree",
   "sidebarWidth": 40,
+  "icons": "text",
+  "focusMode": false,
+  "showRemovedLines": true,
+  "focusContext": 3,
   "keys": {
     "focus": "f6",
     "previousHunk": "f7",
-    "nextHunk": "f8"
+    "nextHunk": "f8",
+    "markNext": "f9",
+    "focusMode": "f10",
+    "removedLines": "f11",
+    "help": "f12"
   }
 }

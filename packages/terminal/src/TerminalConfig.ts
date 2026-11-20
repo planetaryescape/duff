@@ -22,20 +22,38 @@ const Keys = Schema.Struct({
   focus: FunctionKey.pipe(Schema.withDecodingDefaultKey(Effect.succeed('f6'))),
   previousHunk: FunctionKey.pipe(Schema.withDecodingDefaultKey(Effect.succeed('f7'))),
   nextHunk: FunctionKey.pipe(Schema.withDecodingDefaultKey(Effect.succeed('f8'))),
+  markNext: FunctionKey.pipe(Schema.withDecodingDefaultKey(Effect.succeed('f9'))),
+  focusMode: FunctionKey.pipe(Schema.withDecodingDefaultKey(Effect.succeed('f10'))),
+  removedLines: FunctionKey.pipe(Schema.withDecodingDefaultKey(Effect.succeed('f11'))),
+  help: FunctionKey.pipe(Schema.withDecodingDefaultKey(Effect.succeed('f12'))),
 }).check(
   Schema.makeFilter(
     (keys) =>
-      new Set([keys.focus, keys.previousHunk, keys.nextHunk]).size === 3 ||
+      new Set(Object.values(keys)).size === Object.values(keys).length ||
       'Global navigation keys must be distinct.',
   ),
 )
 
+export const EditorDisplay = Schema.Struct({
+  focusMode: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(false))),
+  showRemovedLines: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(true))),
+  focusContext: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 20 })).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed(3)),
+  ),
+})
+
+export interface EditorDisplay extends Schema.Schema.Type<typeof EditorDisplay> {}
+
 export const TerminalSettings = Schema.Struct({
+  ...EditorDisplay.fields,
   fileView: Schema.Literals(['list', 'tree']).pipe(
     Schema.withDecodingDefaultKey(Effect.succeed('tree')),
   ),
   sidebarWidth: Schema.Int.check(Schema.isBetween({ minimum: 24, maximum: 80 })).pipe(
     Schema.withDecodingDefaultKey(Effect.succeed(40)),
+  ),
+  icons: Schema.Literals(['text', 'nerd']).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed('text')),
   ),
   keys: Keys.pipe(Schema.withDecodingDefaultKey(Effect.succeed({}))),
 })
@@ -94,7 +112,7 @@ export const readTerminalSettings = Effect.fn('TerminalConfig.read')(function* (
     Effect.mapError(
       () =>
         new TerminalConfigError({
-          message: `Invalid Duff configuration at ${path}. Expected fileView "list" or "tree", sidebarWidth 24..80, and distinct function keys (f1..f12) under keys.focus, keys.previousHunk and keys.nextHunk. Unknown fields are not accepted.`,
+          message: `Invalid Duff configuration at ${path}. Expected fileView "list" or "tree", sidebarWidth 24..80, icons "text" or "nerd", boolean focusMode/showRemovedLines, focusContext 0..20, and distinct function keys (f1..f12) under keys. Unknown fields are not accepted.`,
         }),
     ),
   )

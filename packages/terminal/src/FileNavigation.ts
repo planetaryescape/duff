@@ -135,3 +135,23 @@ export function moveSelection(
 export function displayPath(path: string): string {
   return path.replaceAll(/[\x00-\x1f\x7f]/g, '?')
 }
+
+export function viewedDirectories(
+  files: ReadonlyArray<FileChange>,
+  viewed: ReadonlySet<string>,
+): ReadonlySet<string> {
+  const complete = new Set<string>()
+  const incomplete = new Set<string>()
+
+  for (const file of files) {
+    const parts = file.path.split('/').slice(0, -1)
+    const target = viewed.has(file.path) ? complete : incomplete
+
+    for (let length = 1; length <= parts.length; length++)
+      target.add(parts.slice(0, length).join('/'))
+  }
+
+  for (const path of incomplete) complete.delete(path)
+
+  return complete
+}
