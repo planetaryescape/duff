@@ -9,6 +9,7 @@
     "dev": "fish scripts/dev.fish",
     "dev:local": "DUFF_TELEMETRY=local fish scripts/dev.fish",
     "tui": "bun run packages/terminal/src/main.tsx",
+    "compile:terminal": "bun run --cwd packages/terminal compile",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "oxlint --deny-warnings .",
     "lint:fix": "oxlint --deny-warnings --fix .",

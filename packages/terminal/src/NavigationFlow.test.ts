@@ -71,7 +71,18 @@ const fixture = Effect.acquireRelease(
     const editor = join(directory, 'init.lua')
     await writeFile(
       editor,
-      'vim.opt.swapfile = false\nvim.opt.shadafile = "NONE"\nvim.opt.termguicolors = true\nvim.opt.background = "light"\n',
+      `vim.opt.swapfile = false
+vim.opt.shadafile = "NONE"
+vim.opt.termguicolors = true
+vim.opt.background = "light"
+vim.opt.laststatus = 2
+function DuffFixtureSize()
+  local ui = vim.api.nvim_list_uis()[1]
+  if not ui then return "" end
+  return string.format("grid:%dx%d ui:%dx%d", vim.o.columns, vim.o.lines, ui.width, ui.height)
+end
+vim.opt.statusline = "%!v:lua.DuffFixtureSize()"
+`,
     )
 
     return { directory, root, configHome, config, settings, editor, git }
@@ -98,10 +109,15 @@ it.live(
 
       const child = yield* Effect.acquireRelease(
         Effect.sync(() => {
+          const executable = process.env.DUFF_TERMINAL_EXECUTABLE
+
+          const entry = executable
+            ? [executable]
+            : ['bun', fileURLToPath(new URL('./main.tsx', import.meta.url))]
+
           const child = Bun.spawn(
             [
-              'bun',
-              fileURLToPath(new URL('./main.tsx', import.meta.url)),
+              ...entry,
               '--repo',
               files.root,
               '--base',
@@ -229,6 +245,9 @@ it.live(
       yield* chrome('dark option', 20, 24, 30)
       yield* editorCommand('colorscheme morning')
       yield* chrome('morning colorscheme', 239, 241, 245)
+      yield* editorCommand(
+        'lua assert(type(vim.api.nvim_get_hl(0, { name = "DuffAddedLine" }).bg) == "number")',
+      )
       view.mockInput.pressKey('F3')
       yield* text('line145 = 14500')
       view.mockInput.pressKey('F3')
@@ -421,6 +440,20 @@ it.live(
         'Compact help closes and returns focus to Neovim',
         () => !terminal.screen().text.includes('Review controls'),
       )
+
+      for (const { width, height, editorWidth, editorHeight } of [
+        { width: 80, height: 24, editorWidth: 44, editorHeight: 20 },
+        { width: 160, height: 45, editorWidth: 116, editorHeight: 41 },
+        { width: 60, height: 18, editorWidth: 33, editorHeight: 14 },
+        { width: 120, height: 30, editorWidth: 76, editorHeight: 26 },
+      ]) {
+        view.resize(width, height)
+        terminal.width = width
+        terminal.height = height
+        yield* Effect.promise(() => view.renderOnce())
+        yield* text(`grid:${editorWidth}x${editorHeight} ui:${editorWidth}x${editorHeight}`)
+      }
+
       expect(yield* Effect.promise(() => readFile(files.config, 'utf8'))).toBe(files.settings)
       yield* command(':qa')
       expect(yield* Effect.promise(() => child.exited).pipe(Effect.timeout('5 seconds'))).toBe(0)

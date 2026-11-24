@@ -101,7 +101,22 @@ export const makeNeovimLayer = (options: EditorOptions) =>
           }),
       )
 
-      options.terminal.onData = (data) => child.terminal?.write(data)
+      options.terminal.onData = (data, source) => {
+        if (source === 'response') {
+          // OpenTUI 0.5.6 advertises mode 2048 but emits no resize reports.
+          const response = Buffer.from(data)
+            .toString()
+            .replaceAll('\x1b[?2048;2$y', '\x1b[?2048;0$y')
+            .replaceAll('\x1b[?2048;1$y', '\x1b[?2048;0$y')
+
+          child.terminal?.write(response)
+
+          return
+        }
+
+        child.terminal?.write(data)
+      }
+
       options.terminal.onTerminalResize = (cols, rows) => child.terminal?.resize(cols, rows)
 
       const socket = yield* Effect.acquireRelease(
@@ -125,14 +140,6 @@ export const makeNeovimLayer = (options: EditorOptions) =>
         writer: socket,
         options: { logger: createLogger({ silent: true }) },
       })
-
-      options.terminal.onTerminalResize = (cols, rows) => {
-        child.terminal?.resize(cols, rows)
-        client.notify('nvim_exec_lua', [
-          'local cols, rows = ...; vim.o.columns = cols; vim.o.lines = rows; vim.cmd("redraw!")',
-          [cols, rows],
-        ])
-      }
 
       client.on('notification', options.notification)
 

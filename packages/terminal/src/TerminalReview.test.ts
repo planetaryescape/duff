@@ -56,6 +56,10 @@ const fixture = Effect.acquireRelease(
       `vim.opt.swapfile = false
 vim.opt.shadafile = "NONE"
 vim.opt.termguicolors = true
+vim.opt.background = "light"
+vim.api.nvim_set_hl(0, "Normal", { fg = "#282f3d", bg = "#eff1f5" })
+vim.api.nvim_set_hl(0, "DiffAdd", { bg = "#00ff00" })
+vim.api.nvim_set_hl(0, "DiffDelete", { fg = "#ffffff", bg = "#ff0000" })
 vim.keymap.set("n", "Q", "gg0", {})
 vim.g.duff_fixture_config = true
 `,
@@ -147,6 +151,17 @@ it.live(
         if (first) yield* review.open(first)
         yield* waitForText(terminal, 'export const value = 2')
         yield* waitForText(terminal, '- export const value = 1')
+        yield* Effect.promise(() => view.renderOnce())
+        const spans = view.captureSpans().lines.flatMap((line) => line.spans)
+        const added = spans.find((span) => span.text === ' value = ')
+        const keyword = spans.find((span) => span.text === 'export')
+        const removedLine = spans.find((span) => span.text.includes('- export const value = 1'))
+        expect(added?.bg?.toInts()).toEqual([223, 230, 231, 255])
+        expect(added?.fg?.toInts()).toEqual([40, 47, 61, 255])
+        expect(keyword?.bg?.toInts()).toEqual([223, 230, 231, 255])
+        expect(keyword?.fg?.toInts()).toEqual([20, 22, 27, 255])
+        expect(removedLine?.bg?.toInts()).toEqual([233, 225, 229, 255])
+        expect(removedLine?.fg?.toInts()).toEqual([40, 47, 61, 255])
         view.resize(80, 24)
         yield* Effect.promise(() => view.renderOnce())
         yield* waitForText(terminal, 'export const value = 2')

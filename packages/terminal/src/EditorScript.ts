@@ -1,4 +1,5 @@
 import { focusLua } from './EditorFocus'
+import { editorThemeLua } from './EditorTheme'
 
 export const editorLua = String.raw`
 local channel = ...
@@ -10,6 +11,7 @@ local show_removed = true
 local focus_context = 3
 
 ${focusLua}
+${editorThemeLua}
 
 local function text(buffer)
   local lines = vim.api.nvim_buf_get_lines(buffer, 0, -1, false)
@@ -36,7 +38,7 @@ local function refresh(buffer)
       local line = new_start - 1 + offset
       if line < count then
         vim.api.nvim_buf_set_extmark(buffer, namespace, line, 0, {
-          line_hl_group = "DiffAdd", sign_text = "+", sign_hl_group = "DiffAdd",
+          line_hl_group = "DuffAddedLine", sign_text = "+", sign_hl_group = "DuffAddedSign",
           priority = 90,
         })
       end
@@ -44,7 +46,7 @@ local function refresh(buffer)
     if old_count > 0 then
       local removed = {}
       for offset = 0, old_count - 1 do
-        table.insert(removed, { { "- " .. (previous[old_start + offset] or ""), "DiffDelete" } })
+        table.insert(removed, { { "- " .. (previous[old_start + offset] or ""), "DuffRemovedText" } })
       end
       local anchor = row
       local above = true
@@ -55,7 +57,7 @@ local function refresh(buffer)
       vim.api.nvim_buf_set_extmark(buffer, namespace, anchor, 0, {
         virt_lines = show_removed and removed or {}, virt_lines_above = above,
         sign_text = new_count > 0 and "~" or "_",
-        sign_hl_group = new_count > 0 and "DiffChange" or "DiffDelete", priority = 100,
+        sign_hl_group = new_count > 0 and "DuffChangedSign" or "DuffDeletedSign", priority = 100,
       })
     end
   end
@@ -114,7 +116,7 @@ function DuffReview.open(path, base, readonly)
     vim.api.nvim_buf_clear_namespace(buffer, namespace, 0, -1)
     for row = 0, vim.api.nvim_buf_line_count(buffer) - 1 do
       vim.api.nvim_buf_set_extmark(buffer, namespace, row, 0, {
-        line_hl_group = "DiffDelete", sign_text = "-", sign_hl_group = "DiffDelete",
+        line_hl_group = "DuffDeletedLine", sign_text = "-", sign_hl_group = "DuffDeletedSign",
       })
     end
   else
@@ -166,6 +168,7 @@ end
 
 local group = vim.api.nvim_create_augroup("DuffReview", { clear = true })
 local function report_background()
+  review_highlights()
   vim.rpcnotify(channel, "duff.theme", vim.o.background)
 end
 vim.api.nvim_create_autocmd("OptionSet", {
